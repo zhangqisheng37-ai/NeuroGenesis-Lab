@@ -1,0 +1,7 @@
+{"tick": 1, "ready_events": 1, "emitted_events": 1, "alive_neurons": 2, "queue_size": 5, "avg_energy": 1.04}
+{"tick": 2, "ready_events": 2, "emitted_events": 1, "alive_neurons": 2, "queue_size": 4, "avg_energy": 1.13}
+{"tick": 3, "ready_events": 2, "emitted_events": 1, "alive_neurons": 2, "queue_size": 3, "avg_energy": 1.22}
+{"tick": 4, "ready_events": 2, "emitted_events": 1, "alive_neurons": 2, "queue_size": 2, "avg_energy": 1.31}
+{"tick": 5, "ready_events": 2, "emitted_events": 1, "alive_neurons": 2, "queue_size": 1, "avg_energy": 1.4}
+{"tick": 6, "ready_events": 1, "emitted_events": 0, "alive_neurons": 2, "queue_size": 0, "avg_energy": 1.44}
+{"tick": 7, "ready_events": 0, "emitted_events": 0, "alive_neurons": 2, "queue_size": 0, "avg_energy": 1.43}
