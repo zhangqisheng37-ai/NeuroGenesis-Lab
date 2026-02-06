@@ -43,7 +43,7 @@ def main() -> None:
         }
         records.append(record)
 
-    output_path = ROOT / "run.jsonl"
+    output_path = ROOT / "jsonl" / "run.jsonl"
     JsonlWriter(output_path).write(records)
     print(output_path)
 

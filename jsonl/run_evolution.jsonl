@@ -77,3 +77,4 @@
 {"tick": 77, "ready_events": 2, "emitted_events": 0, "alive_neurons": 3, "prediction_error": 0.052992530046394565, "total_neurons": 3, "corpse_count": 0, "queue_size": 4}
 {"tick": 78, "ready_events": 1, "emitted_events": 0, "alive_neurons": 3, "prediction_error": 0.04640487360918009, "total_neurons": 3, "corpse_count": 0, "queue_size": 3}
 {"tick": 79, "ready_events": 1, "emitted_events": 0, "alive_neurons": 3, "prediction_error": 0.04255736476292183, "total_neurons": 3, "corpse_count": 0, "queue_size": 2}
+{"type": "summary", "ticks": 79, "min_neurons": 3, "max_neurons": 6, "avg_neurons": 5.5063, "final_neurons": 3, "final_corpse_count": 0}

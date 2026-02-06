@@ -1,0 +1,2 @@
+{"query": "1+3=?", "filled": "1+3=4"}
+{"type": "summary", "sample_count": 3, "trigram_rules": 1, "bigram_rules": 4}

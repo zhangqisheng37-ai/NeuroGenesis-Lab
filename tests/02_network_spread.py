@@ -8,6 +8,7 @@ sys.path.append(str(ROOT / "src"))
 from neurogenesis_lab.encoding import Encoder
 from neurogenesis_lab.neuron import AdExNeuron, IzhikevichNeuron, LIFNeuron
 from neurogenesis_lab.network import Network
+from neurogenesis_lab.observability import JsonlWriter, NetworkObserver
 
 
 def main() -> None:
@@ -30,9 +31,20 @@ def main() -> None:
     events = encoder.to_events(encoder.encode_expr(expr), src_id=neuron_a.id)
     network.enqueue(events)
 
+    observer = NetworkObserver(network)
+    records: list[dict] = []
+
     for tick in range(1, 12):
         snapshot = network.tick(tick)
-        print(snapshot)
+        metrics = observer.get_tick_metrics(tick)
+        records.append({"snapshot": snapshot, "metrics": metrics})
+
+    final_metrics = observer.get_tick_metrics(11)
+    records.append({"type": "summary", "ticks": 11, "final_metrics": final_metrics})
+
+    output_path = ROOT / "jsonl" / "run_network_spread.jsonl"
+    JsonlWriter(output_path).write(records)
+    print(output_path)
 
 
 if __name__ == "__main__":

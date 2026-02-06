@@ -21,6 +21,8 @@ def main() -> None:
 
     tokens = encoder.encode_expr("1+1=2")
     records: list[dict] = []
+    neuron_counts: list[int] = []
+    corpse_counts: list[int] = []
     for tick in range(1, 80):
         if tick % 4 == 0:
             source = neurons[tick % len(neurons)]
@@ -38,8 +40,23 @@ def main() -> None:
             "queue_size": len(network.queue),
         }
         records.append(record)
+        neuron_counts.append(record["total_neurons"])
+        corpse_counts.append(record["corpse_count"])
 
-    output_path = ROOT / "run_evolution.jsonl"
+    avg_neurons = sum(neuron_counts) / len(neuron_counts) if neuron_counts else 0.0
+    records.append(
+        {
+            "type": "summary",
+            "ticks": len(records),
+            "min_neurons": min(neuron_counts) if neuron_counts else 0,
+            "max_neurons": max(neuron_counts) if neuron_counts else 0,
+            "avg_neurons": round(avg_neurons, 4),
+            "final_neurons": neuron_counts[-1] if neuron_counts else 0,
+            "final_corpse_count": corpse_counts[-1] if corpse_counts else 0,
+        }
+    )
+
+    output_path = ROOT / "jsonl" / "run_evolution.jsonl"
     JsonlWriter(output_path).write(records)
     print(output_path)
 

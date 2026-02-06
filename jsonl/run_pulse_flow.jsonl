@@ -1,0 +1,6 @@
+{"token_id": 49, "t": 1, "src_id": "encoder", "meta": {"symbol": "1", "pos": 1}}
+{"token_id": 43, "t": 2, "src_id": "encoder", "meta": {"symbol": "+", "pos": 2}}
+{"token_id": 49, "t": 3, "src_id": "encoder", "meta": {"symbol": "1", "pos": 3}}
+{"token_id": 61, "t": 4, "src_id": "encoder", "meta": {"symbol": "=", "pos": 4}}
+{"token_id": 50, "t": 5, "src_id": "encoder", "meta": {"symbol": "2", "pos": 5}}
+{"type": "summary", "expr": "1+1=2", "token_count": 5, "event_count": 5, "unique_tokens": 4}
