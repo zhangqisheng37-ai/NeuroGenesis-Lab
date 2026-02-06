@@ -1,51 +1,36 @@
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.append(str(ROOT / "src"))
+if str(ROOT / "src") not in sys.path:
+    sys.path.append(str(ROOT / "src"))
 
-from neurogenesis_lab.encoding import Encoder
-from neurogenesis_lab.neuron import AdExNeuron, IzhikevichNeuron, LIFNeuron
+from neurogenesis_lab.encoding import Event
+from neurogenesis_lab.neuron import LIFNeuron
 from neurogenesis_lab.network import Network
-from neurogenesis_lab.observability import JsonlWriter, NetworkObserver
 
 
-def main() -> None:
-    encoder = Encoder()
-    neuron_a = LIFNeuron()
-    neuron_b = IzhikevichNeuron()
-    neuron_c = AdExNeuron()
+def test_spike_emits_events_and_uses_current_tick_for_delay() -> None:
+    neuron_a = LIFNeuron(tau_m=1.0, r_m=30.0, v_th=-64.0)
+    neuron_b = LIFNeuron()
     network = Network(
-        neurons={
-            neuron_a.id: neuron_a,
-            neuron_b.id: neuron_b,
-            neuron_c.id: neuron_c,
-        }
+        neurons={neuron_a.id: neuron_a, neuron_b.id: neuron_b},
+        input_current_scale=5.0,
     )
-    network.connect(neuron_a.id, neuron_b.id, weight=1.0, delay=1)
-    network.connect(neuron_b.id, neuron_c.id, weight=1.0, delay=1)
-    network.connect(neuron_c.id, neuron_a.id, weight=1.0, delay=1)
+    network.connect(neuron_a.id, neuron_b.id, weight=1.0, delay=2)
 
-    expr = "11111111"
-    events = encoder.to_events(encoder.encode_expr(expr), src_id=neuron_a.id)
-    network.enqueue(events)
+    network.enqueue([Event(token_id=ord("1"), t=1, src_id=neuron_a.id, meta={"weight": 1.0})])
 
-    observer = NetworkObserver(network)
-    records: list[dict] = []
+    tick_1 = network.tick(1)
+    assert tick_1["emitted_events"] > 0
+    assert tick_1["prediction_error"] == 0.0
+    assert len(network.queue._heap) > 0
+    assert network.queue._heap[0][0] == 3
 
-    for tick in range(1, 12):
-        snapshot = network.tick(tick)
-        metrics = observer.get_tick_metrics(tick)
-        records.append({"snapshot": snapshot, "metrics": metrics})
+    tick_2 = network.tick(2)
+    assert tick_2["ready_events"] == 0
+    assert tick_2["prediction_error"] >= 0.0
 
-    final_metrics = observer.get_tick_metrics(11)
-    records.append({"type": "summary", "ticks": 11, "final_metrics": final_metrics})
-
-    output_path = ROOT / "jsonl" / "run_network_spread.jsonl"
-    JsonlWriter(output_path).write(records)
-    print(output_path)
-
-
-if __name__ == "__main__":
-    main()
+    tick_3 = network.tick(3)
+    assert tick_3["ready_events"] >= 1
+    assert tick_3["prediction_error"] >= 0.0

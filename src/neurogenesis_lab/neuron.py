@@ -81,10 +81,11 @@ class Neuron:
     def on_spike(self) -> None:
         self.energy = max(0.0, self.energy - self.spike_cost)
 
-    def emit(self, event: Event) -> list[Event]:
+    def emit(self, event: Event, current_tick: int | None = None) -> list[Event]:
         emitted: list[Event] = []
         if not self.links:
             return emitted
+        base_tick = event.t if current_tick is None else current_tick
         for neighbor_id, link in self.links.items():
             weight = float(link.get("weight", 1.0))
             delay = int(link.get("delay", 0))
@@ -93,7 +94,7 @@ class Neuron:
             emitted.append(
                 Event(
                     token_id=event.token_id,
-                    t=event.t + max(0, delay),
+                    t=base_tick + max(0, delay),
                     src_id=neighbor_id,
                     meta={"weight": weight, "from": self.id},
                 )

@@ -1,24 +1,23 @@
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.append(str(ROOT / "src"))
+if str(ROOT / "src") not in sys.path:
+    sys.path.append(str(ROOT / "src"))
 
 from neurogenesis_lab.encoding import Tokenizer
 from neurogenesis_lab.learning import RuleComposer, RuleDiscovery
-from neurogenesis_lab.observability import JsonlWriter
 
 
-def main() -> None:
+def test_rule_discovery_and_composer_fill_missing_token() -> None:
     tokenizer = Tokenizer()
     samples = [
         tokenizer.encode("1+1=2"),
         tokenizer.encode("1+2=3"),
         tokenizer.encode("2+1=3"),
     ]
-    discovery = RuleDiscovery(min_support=2)
-    store = discovery.discover(samples)
+
+    store = RuleDiscovery(min_support=2).discover(samples)
     composer = RuleComposer(store=store)
 
     query = tokenizer.encode("1+3=?")
@@ -27,25 +26,6 @@ def main() -> None:
     filled = composer.apply(masked, missing_token=-1)
     answer = "".join(tokenizer.decode_token(token) for token in filled)
 
-    records = [
-        {
-            "query": "1+3=?",
-            "filled": answer,
-        }
-    ]
-    records.append(
-        {
-            "type": "summary",
-            "sample_count": len(samples),
-            "trigram_rules": len(store.trigram_support),
-            "bigram_rules": len(store.bigram_support),
-        }
-    )
-
-    output_path = ROOT / "jsonl" / "run_rule_discovery.jsonl"
-    JsonlWriter(output_path).write(records)
-    print(output_path)
-
-
-if __name__ == "__main__":
-    main()
+    assert len(store.bigram_support) > 0
+    assert len(store.trigram_support) > 0
+    assert answer == "1+3=4"

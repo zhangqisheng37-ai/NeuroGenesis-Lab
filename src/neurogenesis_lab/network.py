@@ -58,6 +58,7 @@ class Network:
     max_links: int = 200
     corpse_ttl: int = 50
     scavenger_radius: float = 2.5
+    input_current_scale: float = 1.0
 
     def connect(self, source_id: str, target_id: str, weight: float = 1.0, delay: int = 0) -> None:
         neuron = self.neurons[source_id]
@@ -84,10 +85,10 @@ class Network:
             input_current = 0.0
             for event in events:
                 neuron.receive(event)
-                input_current += float(event.meta.get("weight", 1.0))
+                input_current += float(event.meta.get("weight", 1.0)) * self.input_current_scale
             spiked = neuron.update(dt, input_current)
             if spiked and neuron.last_event is not None:
-                emitted.extend(neuron.emit(neuron.last_event))
+                emitted.extend(neuron.emit(neuron.last_event, current_tick=tick))
             neuron.move()
             neuron.energy = max(0.0, neuron.energy - self.energy_decay)
             energy_loss = max(0.0, neuron.last_energy - neuron.energy)
