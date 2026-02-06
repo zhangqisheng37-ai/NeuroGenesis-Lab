@@ -141,6 +141,41 @@ class Neuron:
             "states": dict(self.states),
         }
 
+    def _mutate_value(self, value: float, scale: float) -> float:
+        if scale <= 0:
+            return value
+        return value * (1.0 + random.uniform(-scale, scale))
+
+    def spawn(self, mutation_scale: float, energy_share: float) -> "Neuron":
+        child = type(self)()
+        child.pos = (self.pos[0] + random.uniform(-0.5, 0.5), self.pos[1] + random.uniform(-0.5, 0.5))
+        child.energy = max(0.0, self.energy * energy_share)
+        child.states = {"energy": child.energy, "entropy": 0.0, "emotion": 0.0, "novelty": 0.0}
+        for attr in [
+            "tau_m",
+            "r_m",
+            "v_th",
+            "v_rest",
+            "v_reset",
+            "spike_cost",
+            "input_gain",
+            "a",
+            "b",
+            "c",
+            "d",
+            "v_peak",
+            "delta_t",
+            "tau_w",
+        ]:
+            if hasattr(self, attr) and hasattr(child, attr):
+                value = getattr(self, attr)
+                if isinstance(value, (int, float)):
+                    setattr(child, attr, self._mutate_value(float(value), mutation_scale))
+        child.v = self.v
+        child.u = self.u
+        child.w = self.w
+        return child
+
 
 @dataclass
 class LIFNeuron(Neuron):
