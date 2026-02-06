@@ -37,6 +37,16 @@ class NetworkObserver:
 
         total_connections = sum(len(n.links) for n in neurons)
         avg_energy = sum(n.energy for n in alive_neurons) / len(alive_neurons) if alive_neurons else 0.0
+        avg_novelty = (
+            sum(n.states["novelty"] for n in alive_neurons) / len(alive_neurons)
+            if alive_neurons
+            else 0.0
+        )
+        avg_emotion = (
+            sum(n.states["emotion"] for n in alive_neurons) / len(alive_neurons)
+            if alive_neurons
+            else 0.0
+        )
 
         metrics = {
             "tick": tick,
@@ -47,6 +57,8 @@ class NetworkObserver:
             "avg_connections": total_connections / len(neurons) if neurons else 0.0,
             "avg_energy": avg_energy,
             "queue_size": len(self._network.queue),
+            "avg_novelty": avg_novelty,
+            "avg_emotion": avg_emotion,
         }
 
         return metrics
@@ -69,6 +81,7 @@ class NetworkObserver:
             "memory_size": len(neuron.mem),
             "recent_tokens": recent_tokens,
             "top_transitions": observations["transition_counts"][:5],
+            "states": observations["states"],
         }
 
     def get_debug_info(self, tick: int) -> dict:

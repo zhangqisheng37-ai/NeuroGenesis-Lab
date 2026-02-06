@@ -6,14 +6,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(ROOT / "src"))
 
 from neurogenesis_lab.encoding import Encoder
-from neurogenesis_lab.neuron import Neuron
+from neurogenesis_lab.neuron import LIFNeuron
 from neurogenesis_lab.network import Network
 
 
 def main() -> None:
     encoder = Encoder()
-    neuron_a = Neuron()
-    neuron_b = Neuron()
+    neuron_a = LIFNeuron()
+    neuron_b = LIFNeuron()
     network = Network(neurons={neuron_a.id: neuron_a, neuron_b.id: neuron_b})
     network.connect(neuron_a.id, neuron_b.id, weight=1.0, delay=1)
 
