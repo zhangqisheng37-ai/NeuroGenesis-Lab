@@ -14,8 +14,15 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(maximum, value))
 
 
+def safe_float(value: float, fallback: float = 0.0) -> float:
+    """防止 NaN/Inf 污染"""
+    if math.isfinite(value):
+        return value
+    return fallback
+
+
 def calculate_reward(novelty: float, energy_loss: float) -> float:
-    return novelty - energy_loss
+    return safe_float(novelty - energy_loss)
 
 
 @dataclass
@@ -44,6 +51,11 @@ class Neuron:
     r_m: float = 1.0
     spike_cost: float = 0.05
     input_gain: float = 0.05
+    move_cost: float = 0.01
+    # 演化 fitness 跟踪
+    spike_count: int = 0
+    propagation_count: int = 0
+    prediction_hits: int = 0
 
     def __post_init__(self) -> None:
         self.mem = deque(self.mem, maxlen=self.mem_size)
@@ -70,8 +82,9 @@ class Neuron:
         return []
 
     def update(self, dt: float, input_current: float) -> bool:
+        input_current = safe_float(input_current)
         dv = (-(self.v - self.v_rest) + self.r_m * input_current) / self.tau_m
-        self.v += dv * dt
+        self.v = safe_float(self.v + dv * dt, self.v_reset)
         if self.v >= self.v_th:
             self.v = self.v_reset
             self.on_spike()
@@ -80,6 +93,7 @@ class Neuron:
 
     def on_spike(self) -> None:
         self.energy = max(0.0, self.energy - self.spike_cost)
+        self.spike_count += 1
 
     def emit(self, event: Event, current_tick: int | None = None) -> list[Event]:
         emitted: list[Event] = []
@@ -91,10 +105,13 @@ class Neuron:
             delay = int(link.get("delay", 0))
             if weight <= 0:
                 continue
+            if delay < 0:
+                delay = 0
+            self.propagation_count += 1
             emitted.append(
                 Event(
                     token_id=event.token_id,
-                    t=base_tick + max(0, delay),
+                    t=base_tick + delay,
                     src_id=neighbor_id,
                     meta={"weight": weight, "from": self.id},
                 )
@@ -107,8 +124,8 @@ class Neuron:
         dx = random.uniform(-1.0, 1.0)
         dy = random.uniform(-1.0, 1.0)
         self.pos = (self.pos[0] + dx, self.pos[1] + dy)
-        self.energy = max(0.0, self.energy - 0.01)
-        if self.energy == 0.0:
+        self.energy = max(0.0, self.energy - self.move_cost)
+        if self.energy <= 0.0:
             self.alive = False
 
     def apply_reward(self, reward: float) -> None:
@@ -147,6 +164,16 @@ class Neuron:
             return value
         return value * (1.0 + random.uniform(-scale, scale))
 
+    def fitness(self, weights: dict[str, float] | None = None) -> float:
+        """计算适应度得分"""
+        w = weights or {"propagation": 1.0, "energy_efficiency": 0.5, "prediction_hit": 0.8}
+        score = (
+            w.get("propagation", 1.0) * self.propagation_count
+            + w.get("energy_efficiency", 0.5) * self.energy
+            + w.get("prediction_hit", 0.8) * self.prediction_hits
+        )
+        return safe_float(score)
+
     def spawn(self, mutation_scale: float, energy_share: float) -> "Neuron":
         child = type(self)()
         child.pos = (self.pos[0] + random.uniform(-0.5, 0.5), self.pos[1] + random.uniform(-0.5, 0.5))
@@ -160,6 +187,7 @@ class Neuron:
             "v_reset",
             "spike_cost",
             "input_gain",
+            "move_cost",
             "a",
             "b",
             "c",
@@ -171,7 +199,8 @@ class Neuron:
             if hasattr(self, attr) and hasattr(child, attr):
                 value = getattr(self, attr)
                 if isinstance(value, (int, float)):
-                    setattr(child, attr, self._mutate_value(float(value), mutation_scale))
+                    mutated = self._mutate_value(float(value), mutation_scale)
+                    setattr(child, attr, safe_float(mutated, float(value)))
         child.v = self.v
         child.u = self.u
         child.w = self.w
@@ -181,8 +210,9 @@ class Neuron:
 @dataclass
 class LIFNeuron(Neuron):
     def update(self, dt: float, input_current: float) -> bool:
+        input_current = safe_float(input_current)
         dv = (-(self.v - self.v_rest) + self.r_m * input_current) / self.tau_m
-        self.v += dv * dt
+        self.v = safe_float(self.v + dv * dt, self.v_reset)
         if self.v >= self.v_th:
             self.v = self.v_reset
             self.on_spike()
@@ -204,10 +234,11 @@ class IzhikevichNeuron(Neuron):
             self.u = self.b * self.v
 
     def update(self, dt: float, input_current: float) -> bool:
+        input_current = safe_float(input_current)
         dv = 0.04 * self.v * self.v + 5 * self.v + 140 - self.u + input_current
         du = self.a * (self.b * self.v - self.u)
-        self.v += dv * dt
-        self.u += du * dt
+        self.v = safe_float(self.v + dv * dt, self.c)
+        self.u = safe_float(self.u + du * dt, self.b * self.c)
         if self.v >= self.v_peak:
             self.v = self.c
             self.u += self.d
@@ -225,11 +256,15 @@ class AdExNeuron(Neuron):
     v_peak: float = -40.0
 
     def update(self, dt: float, input_current: float) -> bool:
-        exp_term = self.delta_t * math.exp((self.v - self.v_th) / self.delta_t)
+        input_current = safe_float(input_current)
+        exp_arg = (self.v - self.v_th) / self.delta_t
+        # 限制指数参数防止溢出
+        exp_arg = min(exp_arg, 20.0)
+        exp_term = self.delta_t * math.exp(exp_arg)
         dv = (-(self.v - self.v_rest) + exp_term - self.w + input_current) / self.tau_m
         dw = (self.a * (self.v - self.v_rest) - self.w) / self.tau_w
-        self.v += dv * dt
-        self.w += dw * dt
+        self.v = safe_float(self.v + dv * dt, self.v_reset)
+        self.w = safe_float(self.w + dw * dt, 0.0)
         if self.v >= self.v_peak:
             self.v = self.v_reset
             self.w += self.b

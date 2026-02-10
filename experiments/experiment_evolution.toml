@@ -1,0 +1,31 @@
+# 长程演化实验 — 500 ticks，观察规则涌现与种群稳定性
+[simulation]
+ticks = 500
+seed = 42
+dt = 1.0
+
+[neuron]
+v_th = -48.0                   # 降低阈值，更易放电
+spike_cost = 0.04
+input_gain = 0.06
+mem_size = 128                 # 更大记忆容量
+
+[network]
+max_neurons = 80
+max_links = 400
+reproduction_threshold = 2.0   # 更容易繁殖
+reproduction_share = 0.4
+mutation_scale = 0.05
+energy_decay = 0.003           # 缓慢衰减，延长存活
+corpse_ttl = 80                # 尸体保留更久
+move_cost = 0.005
+
+[evolution]
+mutation_amplitude = 0.05
+congestion_penalty = 0.15      # 稍强拥堵惩罚
+min_neurons = 5                # 保底更多神经元
+
+[evolution.fitness_weights]
+propagation = 1.0
+energy_efficiency = 0.8        # 更重视能量效率
+prediction_hit = 1.0           # 更重视预测命中

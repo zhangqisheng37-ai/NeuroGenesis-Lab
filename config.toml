@@ -1,0 +1,40 @@
+# NeuroGenesis Lab — 默认仿真配置
+# 用法: python -m neurogenesis_lab run --config config.toml
+
+[simulation]
+ticks = 100
+seed = 42
+dt = 1.0
+
+[neuron]
+v_rest = -65.0
+v_reset = -65.0
+v_th = -50.0
+tau_m = 20.0
+r_m = 1.0
+spike_cost = 0.05
+input_gain = 0.05
+mem_size = 64
+
+[network]
+reproduction_threshold = 2.5
+reproduction_share = 0.4
+mutation_scale = 0.05
+energy_decay = 0.005
+max_neurons = 50
+max_links = 200
+corpse_ttl = 50
+scavenger_radius = 2.5
+input_current_scale = 1.0
+move_cost = 0.01
+
+[evolution]
+mutation_amplitude = 0.05
+energy_budget_per_tick = 0.0      # 0 = 不限
+congestion_penalty = 0.1
+min_neurons = 2
+
+[evolution.fitness_weights]
+propagation = 1.0
+energy_efficiency = 0.5
+prediction_hit = 0.8

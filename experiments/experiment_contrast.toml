@@ -1,0 +1,32 @@
+# 对照实验 — 对比不同突变幅度的演化效果
+# 运行方式:
+#   python -m neurogenesis_lab run --config experiments/experiment_contrast.toml --seed 1
+#   python -m neurogenesis_lab run --config experiments/experiment_contrast.toml --seed 2
+# 对比两组结果的 PE 收敛速度和存活率
+
+[simulation]
+ticks = 200
+seed = 1
+dt = 1.0
+
+[neuron]
+v_th = -50.0
+spike_cost = 0.05
+input_gain = 0.05
+
+[network]
+max_neurons = 50
+max_links = 200
+reproduction_threshold = 2.5
+mutation_scale = 0.10          # 较高突变率
+energy_decay = 0.005
+
+[evolution]
+mutation_amplitude = 0.10       # 与 mutation_scale 配合
+congestion_penalty = 0.1
+min_neurons = 3
+
+[evolution.fitness_weights]
+propagation = 1.0
+energy_efficiency = 0.5
+prediction_hit = 0.8

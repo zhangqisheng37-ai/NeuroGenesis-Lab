@@ -1,0 +1,17 @@
+# 最小实验 — 10 个神经元，50 ticks，快速验证
+[simulation]
+ticks = 50
+seed = 42
+dt = 1.0
+
+[neuron]
+v_th = -50.0
+spike_cost = 0.05
+
+[network]
+max_neurons = 20
+max_links = 100
+energy_decay = 0.005
+
+[evolution]
+min_neurons = 2

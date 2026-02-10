@@ -26,7 +26,7 @@ def test_reproduction_happens_when_energy_above_threshold() -> None:
 
 def test_death_removes_neuron_and_creates_corpse() -> None:
     doomed = LIFNeuron(energy=0.0)
-    network = Network(neurons={doomed.id: doomed}, max_neurons=8)
+    network = Network(neurons={doomed.id: doomed}, max_neurons=8, min_neurons=0)
 
     network.tick(1)
 
