@@ -9,7 +9,7 @@ dt = 1.0
 [neuron]
 v_rest = -65.0
 v_reset = -65.0
-v_th = -50.0
+v_th = -55.0
 tau_m = 20.0
 r_m = 1.0
 spike_cost = 0.05
@@ -20,12 +20,12 @@ mem_size = 64
 reproduction_threshold = 2.5
 reproduction_share = 0.4
 mutation_scale = 0.05
-energy_decay = 0.005
+energy_decay = 0.003
 max_neurons = 50
 max_links = 200
 corpse_ttl = 50
 scavenger_radius = 2.5
-input_current_scale = 1.0
+input_current_scale = 1.5
 move_cost = 0.01
 
 [evolution]

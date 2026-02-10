@@ -29,7 +29,7 @@ class NeuronParams:
     """神经元动力学参数"""
     v_rest: float = -65.0
     v_reset: float = -65.0
-    v_th: float = -50.0
+    v_th: float = -55.0
     tau_m: float = 20.0
     r_m: float = 1.0
     spike_cost: float = 0.05
@@ -61,12 +61,12 @@ class NetworkParams:
     reproduction_threshold: float = 2.5
     reproduction_share: float = 0.4
     mutation_scale: float = 0.05
-    energy_decay: float = 0.005
+    energy_decay: float = 0.003
     max_neurons: int = 50
     max_links: int = 200
     corpse_ttl: int = 50
     scavenger_radius: float = 2.5
-    input_current_scale: float = 1.0
+    input_current_scale: float = 1.5
     move_cost: float = 0.01
 
     def validate(self) -> list[str]:

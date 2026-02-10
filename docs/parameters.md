@@ -20,7 +20,7 @@
 |------|------|--------|------|
 | `v_rest` | float | -65.0 | 静息电位 (mV) |
 | `v_reset` | float | -65.0 | 重置电位 (mV) |
-| `v_th` | float | -50.0 | 阈值电位 (mV)，低于此值不放电 |
+| `v_th` | float | -55.0 | 阈值电位 (mV)，低于此值不放电 |
 | `tau_m` | float | 20.0 | 膜时间常数 (ms)，控制电位衰减速度 |
 | `r_m` | float | 1.0 | 膜电阻 (MΩ)，影响输入电流对电位的影响 |
 | `spike_cost` | float | 0.05 | 每次放电消耗的能量 |
@@ -41,12 +41,12 @@
 | `reproduction_threshold` | float | 2.5 | 繁殖所需最低能量 |
 | `reproduction_share` | float | 0.4 | 繁殖时子代获得的能量比例 |
 | `mutation_scale` | float | 0.05 | 繁殖突变缩放因子 |
-| `energy_decay` | float | 0.005 | 每 tick 能量自然衰减量 |
+| `energy_decay` | float | 0.003 | 每 tick 能量自然衰减量 |
 | `max_neurons` | int | 50 | 网络中同时存在的最大神经元数 |
 | `max_links` | int | 200 | 网络中最大连接数 |
 | `corpse_ttl` | int | 50 | 尸体存留 tick 数 |
 | `scavenger_radius` | float | 2.5 | 拣食者范围 (距尸体的最大距离) |
-| `input_current_scale` | float | 1.0 | 外部输入电流缩放 |
+| `input_current_scale` | float | 1.5 | 外部输入电流缩放 |
 | `move_cost` | float | 0.01 | 神经元移动的能量消耗 |
 
 **调参建议**：

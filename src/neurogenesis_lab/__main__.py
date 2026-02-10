@@ -180,8 +180,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     encoder = Encoder()
     expr = getattr(args, "expr", "1+2=3") or "1+2=3"
     input_weight = max(0.0, float(getattr(args, "input_weight", 40.0) or 40.0))
+    stim_interval = max(1, int(getattr(args, "stim_interval", 5) or 5))
     tokens = encoder.encode_expr(expr)
-    for tick_start in range(1, min(cfg.ticks, 20), 5):
+    for tick_start in range(1, cfg.ticks + 1, stim_interval):
         base_events = encoder.to_events(tokens, src_id=neurons[0].id)
         scheduled = [
             Event(
@@ -191,6 +192,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 meta={**e.meta, "weight": input_weight},
             )
             for e in base_events
+            if e.t + tick_start <= cfg.ticks
         ]
         network.enqueue(scheduled)
 
@@ -300,6 +302,12 @@ def main() -> None:
         type=float,
         default=40.0,
         help="外部注入事件的默认权重（用于激活动力学）",
+    )
+    run_parser.add_argument(
+        "--stim-interval",
+        type=int,
+        default=5,
+        help="外部刺激注入间隔（tick）",
     )
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
     run_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
