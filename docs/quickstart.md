@@ -121,5 +121,7 @@ print(f"confidence(1,2,3) = {miner.confidence((1, 2, 3))}")
 
 ## 下一步
 
-- 参阅 [parameters.md](parameters.md) 了解所有可配置参数
-- 参阅 [faq.md](faq.md) 查看常见问题
+- 参阅 [参数说明 (Parameters)](parameters.md) 了解所有可配置参数
+- 参阅 [架构设计 (Architecture)](architecture.md) 理解系统内部工作原理
+- 参阅 [可观测性指标 (Metrics)](metrics.md) 查看数据字段说明
+- 参阅 [常见问题 (FAQ)](faq.md) 查看常见问题
