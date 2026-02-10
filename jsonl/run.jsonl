@@ -1,7 +1,0 @@
-{"tick": 1, "ready_events": 1, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.0, "queue_size": 4, "avg_energy": 1.01, "avg_novelty": 0.05, "avg_emotion": 0.025}
-{"tick": 2, "ready_events": 1, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.5050742519669756, "queue_size": 3, "avg_energy": 1.02, "avg_novelty": 0.1, "avg_emotion": 0.075}
-{"tick": 3, "ready_events": 1, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.32075915357520857, "queue_size": 2, "avg_energy": 1.03, "avg_novelty": 0.09, "avg_emotion": 0.12}
-{"tick": 4, "ready_events": 1, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.2720669358578885, "queue_size": 1, "avg_energy": 1.04, "avg_novelty": 0.14, "avg_emotion": 0.19}
-{"tick": 5, "ready_events": 1, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.26849202427283725, "queue_size": 0, "avg_energy": 1.05, "avg_novelty": 0.19, "avg_emotion": 0.285}
-{"tick": 6, "ready_events": 0, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.25099184748330305, "queue_size": 0, "avg_energy": 1.035, "avg_novelty": 0.1862, "avg_emotion": 0.3687}
-{"tick": 7, "ready_events": 0, "emitted_events": 0, "alive_neurons": 2, "prediction_error": 0.24686253423365004, "queue_size": 0, "avg_energy": 1.02, "avg_novelty": 0.1825, "avg_emotion": 0.4489}

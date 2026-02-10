@@ -105,8 +105,8 @@ class EvolutionParams:
         errors: list[str] = []
         if self.mutation_amplitude < 0:
             errors.append(f"mutation_amplitude 不能为负: {self.mutation_amplitude}")
-        if self.min_neurons < 1:
-            errors.append(f"min_neurons 至少为 1: {self.min_neurons}")
+        if self.min_neurons < 0:
+            errors.append(f"min_neurons 不能为负: {self.min_neurons}")
         return errors
 
 

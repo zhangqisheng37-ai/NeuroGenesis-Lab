@@ -17,7 +17,14 @@ import time
 from pathlib import Path
 
 from neurogenesis_lab import __version__
-from neurogenesis_lab.config import SCHEMA_VERSION, SimConfig, seed_all
+from neurogenesis_lab.config import (
+    SCHEMA_VERSION,
+    EvolutionParams,
+    NetworkParams,
+    NeuronParams,
+    SimConfig,
+    seed_all,
+)
 from neurogenesis_lab.encoding import Encoder, Event
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron, IzhikevichNeuron, AdExNeuron
@@ -41,18 +48,81 @@ def _load_toml_config(path: Path) -> dict:
 def _build_sim_config(args: argparse.Namespace) -> SimConfig:
     """从命令行参数和可选 TOML 文件构建配置"""
     cfg = SimConfig()
+
+    def _section(data: dict, name: str) -> dict:
+        value = data.get(name, {})
+        return value if isinstance(value, dict) else {}
+
+    def _float_map(values: dict[str, object], allowed: set[str]) -> dict[str, float]:
+        mapped: dict[str, float] = {}
+        for key, val in values.items():
+            if key in allowed:
+                mapped[key] = float(val)
+        return mapped
+
     if hasattr(args, "config") and args.config:
         toml_data = _load_toml_config(Path(args.config))
-        sim = toml_data.get("simulation", {})
-        if "ticks" in sim:
-            cfg = SimConfig(ticks=sim["ticks"], seed=cfg.seed, dt=cfg.dt)
-        if "seed" in sim:
-            cfg = SimConfig(ticks=cfg.ticks, seed=sim["seed"], dt=cfg.dt)
+        sim = _section(toml_data, "simulation")
+        neuron = _section(toml_data, "neuron")
+        network = _section(toml_data, "network")
+        evolution = _section(toml_data, "evolution")
+        fitness_weights = _section(evolution, "fitness_weights")
+
+        cfg = SimConfig(
+            ticks=int(sim.get("ticks", cfg.ticks)),
+            seed=int(sim.get("seed", cfg.seed)),
+            dt=float(sim.get("dt", cfg.dt)),
+            neuron=NeuronParams(
+                v_rest=float(neuron.get("v_rest", cfg.neuron.v_rest)),
+                v_reset=float(neuron.get("v_reset", cfg.neuron.v_reset)),
+                v_th=float(neuron.get("v_th", cfg.neuron.v_th)),
+                tau_m=float(neuron.get("tau_m", cfg.neuron.tau_m)),
+                r_m=float(neuron.get("r_m", cfg.neuron.r_m)),
+                spike_cost=float(neuron.get("spike_cost", cfg.neuron.spike_cost)),
+                input_gain=float(neuron.get("input_gain", cfg.neuron.input_gain)),
+                mem_size=int(neuron.get("mem_size", cfg.neuron.mem_size)),
+            ),
+            network=NetworkParams(
+                reproduction_threshold=float(
+                    network.get("reproduction_threshold", cfg.network.reproduction_threshold)
+                ),
+                reproduction_share=float(network.get("reproduction_share", cfg.network.reproduction_share)),
+                mutation_scale=float(network.get("mutation_scale", cfg.network.mutation_scale)),
+                energy_decay=float(network.get("energy_decay", cfg.network.energy_decay)),
+                max_neurons=int(network.get("max_neurons", cfg.network.max_neurons)),
+                max_links=int(network.get("max_links", cfg.network.max_links)),
+                corpse_ttl=int(network.get("corpse_ttl", cfg.network.corpse_ttl)),
+                scavenger_radius=float(network.get("scavenger_radius", cfg.network.scavenger_radius)),
+                input_current_scale=float(
+                    network.get("input_current_scale", cfg.network.input_current_scale)
+                ),
+                move_cost=float(network.get("move_cost", cfg.network.move_cost)),
+            ),
+            evolution=EvolutionParams(
+                fitness_weights={
+                    **cfg.evolution.fitness_weights,
+                    **_float_map(
+                        fitness_weights,
+                        allowed={"propagation", "energy_efficiency", "prediction_hit"},
+                    ),
+                },
+                mutation_amplitude=float(
+                    evolution.get("mutation_amplitude", cfg.evolution.mutation_amplitude)
+                ),
+                energy_budget_per_tick=float(
+                    evolution.get("energy_budget_per_tick", cfg.evolution.energy_budget_per_tick)
+                ),
+                congestion_penalty=float(evolution.get("congestion_penalty", cfg.evolution.congestion_penalty)),
+                min_neurons=int(evolution.get("min_neurons", cfg.evolution.min_neurons)),
+            ),
+        )
     # 命令行覆盖
     if hasattr(args, "ticks") and args.ticks is not None:
-        cfg = SimConfig(ticks=args.ticks, seed=cfg.seed, dt=cfg.dt)
+        cfg.ticks = args.ticks
     if hasattr(args, "seed") and args.seed is not None:
-        cfg = SimConfig(ticks=cfg.ticks, seed=args.seed, dt=cfg.dt)
+        cfg.seed = args.seed
+    if hasattr(args, "dt") and args.dt is not None:
+        cfg.dt = args.dt
     return cfg
 
 
@@ -73,13 +143,33 @@ def cmd_run(args: argparse.Namespace) -> None:
     # 创建网络
     neuron_count = getattr(args, "neurons", 8) or 8
     neuron_types = [LIFNeuron, IzhikevichNeuron, AdExNeuron]
-    neurons = [neuron_types[i % len(neuron_types)]() for i in range(neuron_count)]
+    common_neuron_kwargs = {
+        "v_rest": cfg.neuron.v_rest,
+        "v_reset": cfg.neuron.v_reset,
+        "v_th": cfg.neuron.v_th,
+        "tau_m": cfg.neuron.tau_m,
+        "r_m": cfg.neuron.r_m,
+        "spike_cost": cfg.neuron.spike_cost,
+        "input_gain": cfg.neuron.input_gain,
+        "mem_size": cfg.neuron.mem_size,
+        "move_cost": cfg.network.move_cost,
+    }
+    neurons = [neuron_types[i % len(neuron_types)](**common_neuron_kwargs) for i in range(neuron_count)]
     network = Network(
         neurons={n.id: n for n in neurons},
+        reproduction_threshold=cfg.network.reproduction_threshold,
+        reproduction_share=cfg.network.reproduction_share,
+        mutation_scale=cfg.network.mutation_scale,
+        energy_decay=cfg.network.energy_decay,
         max_neurons=cfg.network.max_neurons,
         max_links=cfg.network.max_links,
-        reproduction_threshold=cfg.network.reproduction_threshold,
-        mutation_scale=cfg.network.mutation_scale,
+        corpse_ttl=cfg.network.corpse_ttl,
+        scavenger_radius=cfg.network.scavenger_radius,
+        input_current_scale=cfg.network.input_current_scale,
+        move_cost=cfg.network.move_cost,
+        fitness_weights=cfg.evolution.fitness_weights,
+        congestion_penalty=cfg.evolution.congestion_penalty,
+        min_neurons=cfg.evolution.min_neurons,
     )
     # 环形连接
     for i, neuron in enumerate(neurons):
@@ -89,11 +179,17 @@ def cmd_run(args: argparse.Namespace) -> None:
     # 注入信号
     encoder = Encoder()
     expr = getattr(args, "expr", "1+2=3") or "1+2=3"
+    input_weight = max(0.0, float(getattr(args, "input_weight", 40.0) or 40.0))
     tokens = encoder.encode_expr(expr)
     for tick_start in range(1, min(cfg.ticks, 20), 5):
         base_events = encoder.to_events(tokens, src_id=neurons[0].id)
         scheduled = [
-            Event(token_id=e.token_id, t=e.t + tick_start, src_id=e.src_id, meta=e.meta)
+            Event(
+                token_id=e.token_id,
+                t=e.t + tick_start,
+                src_id=e.src_id,
+                meta={**e.meta, "weight": input_weight},
+            )
             for e in base_events
         ]
         network.enqueue(scheduled)
@@ -124,6 +220,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(f"  存活: {summary['alive_neurons']}/{summary['total_neurons']}")
     print(f"  总放电: {summary['total_spikes']}, 总传播: {summary['total_propagations']}")
     print(f"  出生: {summary['birth_count']}, 死亡: {summary['death_count']}")
+    if summary["total_spikes"] <= 0 or summary["total_propagations"] <= 0:
+        print("  警告: 未观察到有效放电传播，可提高 --input-weight 或调整 [neuron]/[network] 参数")
 
 
 def cmd_benchmark(args: argparse.Namespace) -> None:
@@ -194,8 +292,15 @@ def main() -> None:
     run_parser = subparsers.add_parser("run", help="运行仿真实验")
     run_parser.add_argument("--ticks", type=int, default=None, help="仿真步数")
     run_parser.add_argument("--seed", type=int, default=None, help="随机种子")
+    run_parser.add_argument("--dt", type=float, default=None, help="时间步长")
     run_parser.add_argument("--neurons", type=int, default=8, help="初始神经元数")
     run_parser.add_argument("--expr", type=str, default="1+2=3", help="输入表达式")
+    run_parser.add_argument(
+        "--input-weight",
+        type=float,
+        default=40.0,
+        help="外部注入事件的默认权重（用于激活动力学）",
+    )
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
     run_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
     run_parser.add_argument("--debug", action="store_true", help="开启 debug 模式")

@@ -1,0 +1,112 @@
+"""单元测试 — CLI 配置映射"""
+import sys
+from argparse import Namespace
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "src") not in sys.path:
+    sys.path.append(str(ROOT / "src"))
+
+from neurogenesis_lab.__main__ import _build_sim_config
+
+
+def test_build_sim_config_maps_all_toml_sections(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "experiment.toml"
+    cfg_file.write_text(
+        """
+[simulation]
+ticks = 222
+seed = 99
+dt = 0.5
+
+[neuron]
+v_rest = -66.0
+v_reset = -64.0
+v_th = -54.0
+tau_m = 12.0
+r_m = 1.2
+spike_cost = 0.03
+input_gain = 0.08
+mem_size = 77
+
+[network]
+reproduction_threshold = 3.2
+reproduction_share = 0.33
+mutation_scale = 0.07
+energy_decay = 0.004
+max_neurons = 88
+max_links = 333
+corpse_ttl = 66
+scavenger_radius = 3.3
+input_current_scale = 2.2
+move_cost = 0.02
+
+[evolution]
+mutation_amplitude = 0.09
+energy_budget_per_tick = 1.5
+congestion_penalty = 0.21
+min_neurons = 0
+
+[evolution.fitness_weights]
+propagation = 1.1
+energy_efficiency = 0.7
+prediction_hit = 0.9
+""",
+        encoding="utf-8",
+    )
+
+    args = Namespace(config=str(cfg_file), ticks=None, seed=None, dt=None)
+    cfg = _build_sim_config(args)
+
+    assert cfg.ticks == 222
+    assert cfg.seed == 99
+    assert cfg.dt == 0.5
+
+    assert cfg.neuron.v_rest == -66.0
+    assert cfg.neuron.v_reset == -64.0
+    assert cfg.neuron.v_th == -54.0
+    assert cfg.neuron.tau_m == 12.0
+    assert cfg.neuron.r_m == 1.2
+    assert cfg.neuron.spike_cost == 0.03
+    assert cfg.neuron.input_gain == 0.08
+    assert cfg.neuron.mem_size == 77
+
+    assert cfg.network.reproduction_threshold == 3.2
+    assert cfg.network.reproduction_share == 0.33
+    assert cfg.network.mutation_scale == 0.07
+    assert cfg.network.energy_decay == 0.004
+    assert cfg.network.max_neurons == 88
+    assert cfg.network.max_links == 333
+    assert cfg.network.corpse_ttl == 66
+    assert cfg.network.scavenger_radius == 3.3
+    assert cfg.network.input_current_scale == 2.2
+    assert cfg.network.move_cost == 0.02
+
+    assert cfg.evolution.mutation_amplitude == 0.09
+    assert cfg.evolution.energy_budget_per_tick == 1.5
+    assert cfg.evolution.congestion_penalty == 0.21
+    assert cfg.evolution.min_neurons == 0
+    assert cfg.evolution.fitness_weights["propagation"] == 1.1
+    assert cfg.evolution.fitness_weights["energy_efficiency"] == 0.7
+    assert cfg.evolution.fitness_weights["prediction_hit"] == 0.9
+
+
+def test_build_sim_config_cli_overrides_toml(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "experiment.toml"
+    cfg_file.write_text(
+        """
+[simulation]
+ticks = 100
+seed = 7
+dt = 1.0
+""",
+        encoding="utf-8",
+    )
+
+    args = Namespace(config=str(cfg_file), ticks=300, seed=123, dt=0.25)
+    cfg = _build_sim_config(args)
+
+    assert cfg.ticks == 300
+    assert cfg.seed == 123
+    assert cfg.dt == 0.25
+

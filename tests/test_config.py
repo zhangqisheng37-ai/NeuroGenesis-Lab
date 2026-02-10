@@ -77,6 +77,11 @@ class TestEvolutionParams:
         errors = params.validate()
         assert any("mutation_amplitude" in e for e in errors)
 
+    def test_min_neurons_zero_is_valid(self) -> None:
+        params = EvolutionParams(min_neurons=0)
+        errors = params.validate()
+        assert errors == []
+
 
 class TestSimConfig:
     def test_default_sim_config(self) -> None:
