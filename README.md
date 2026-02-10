@@ -10,7 +10,7 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 - **演化系统**：内置自然选择机制，包括基于适应度的繁殖、突变、死亡与尸体回收（Scavenging）。
 - **混合学习引擎**：结合符号规则发现 (Rule Discovery) 与神经动力学预测，支持从脉冲序列中提取因果逻辑。
 - **高度可观测**：全链路数据记录（JSONL），支持 tick 级的时间序列分析与可视化。
-- **高性能架构**：支持基于 NumPy 的向量化计算加速，可扩展至数千神经元规模。
+- **高性能架构**：内置基于 NumPy 的向量化仿真内核 (`VectorizedNetwork`)，利用空间网格索引与矩阵运算，支持万级神经元规模的实时演化。
 
 ## 快速开始
 
@@ -48,8 +48,8 @@ python examples/experiment_contrast.py
 
 - [快速入门 (Quickstart)](docs/quickstart.md): 详细的安装与上手指南。
 - [参数说明 (Parameters)](docs/parameters.md): 仿真参数与配置文件详解。
-- [架构设计 (Architecture)](docs/architecture.md): 系统核心架构与设计原理（待补充）。
-- [常见问题 (FAQ)](docs/faq.md): 常见问题解答。
+- [架构设计 (Architecture)](docs/architecture.md): 系统核心架构与设计原理。
+- [观测指标 (Metrics)](docs/metrics.md): 数据采集字段与指标说明。
 
 ## 项目结构
 
@@ -58,6 +58,7 @@ src/neurogenesis_lab/
 ├── config.py          # 配置系统
 ├── neuron.py          # 神经元模型
 ├── network.py         # 网络演化引擎
+├── vectorized.py      # 向量化高性能引擎
 ├── learning.py        # 学习与规则发现
 ├── encoding.py        # 符号编码系统
 └── observability.py   # 数据采集与监控
