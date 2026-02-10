@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 def run_experiment():
-    print("Running evolution experiment...")
+    print("Running genesis experiment...")
     env = os.environ.copy()
     # Add src to PYTHONPATH
     src_path = os.path.abspath("src")
@@ -16,14 +16,14 @@ def run_experiment():
     else:
         env["PYTHONPATH"] = src_path
         
-    subprocess.check_call([sys.executable, "examples/experiment_evolution.py"], env=env)
+    subprocess.check_call([sys.executable, "examples/experiment_genesis.py"], env=env)
 
 def find_latest_output():
-    # Looking for outputs/evolution_*
-    search_path = os.path.join("outputs", "evolution_*")
+    # Looking for outputs/genesis_*
+    search_path = os.path.join("outputs", "genesis_*")
     dirs = glob.glob(search_path)
     if not dirs:
-        raise FileNotFoundError("No evolution output directories found.")
+        raise FileNotFoundError("No genesis output directories found.")
     # Sort by modification time
     latest_dir = max(dirs, key=os.path.getmtime)
     return latest_dir
