@@ -91,7 +91,7 @@ $$ E(t+1) = E(t) - E_{decay} - E_{spike} \cdot \mathbb{I}(spike) + E_{gain} \cdo
 3.  **Propagation Delay ($d$)**：信号传输的耗时。
 
 **时序约束**：
-- **输入事件**：外部输入事件的 $t_{event}$ 必须等于当前 tick $t$，否则会被丢弃或延迟处理（取决于配置）。
+- **输入事件**：外部输入事件可提前入队；当仿真时钟满足 `current_tick >= t_event` 时会被消费。
 - **传播机制**：
     - 源神经元在 $t$ 时刻放电。
     - 产生输出事件 $E$。
@@ -104,10 +104,10 @@ $$ E(t+1) = E(t) - E_{decay} - E_{spike} \cdot \mathbb{I}(spike) + E_{gain} \cdo
 ```python
 @dataclass
 class Event:
-    t: int          # 发生时间 (Tick)
-    src_id: str     # 源神经元 ID
     token_id: int   # 携带的信息 (Token)
-    payload: dict   # 额外负载 (如能量包)
+    t: int          # 发生时间 (Tick)
+    src_id: str     # 路由目标神经元 ID
+    meta: dict      # 附加信息（可包含来源 from / 权重 weight）
 ```
 
 支持 **延迟 (Delay)**：

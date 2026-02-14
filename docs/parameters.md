@@ -70,17 +70,20 @@
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
 | `propagation` | 1.0 | 传播次数权重 |
-| `energy_efficiency` | 0.5 | 能量效率权重（能量 / 放电数） |
+| `energy_efficiency` | 0.5 | 当前能量权重（能量越高得分越高） |
 | `prediction_hit` | 0.8 | 预测命中权重 |
 
 **适应度公式**：
 ```
 fitness = propagation_count * w_prop
-        + (energy / max(1, spike_count)) * w_eff
+        + energy * w_eff
         + prediction_hits * w_pred
 ```
 
 繁殖时按适应度排序，高适应度优先繁殖。
+
+> 注：`mutation_amplitude` 与 `energy_budget_per_tick` 已进入配置与日志输出，
+> 当前版本尚未直接参与 `Network.tick()` 的核心调度逻辑。
 
 **调参建议**：
 - 增大 `prediction_hit` → 奖励预测准确的神经元

@@ -2,11 +2,14 @@
  requires = ["hatchling"]
  build-backend = "hatchling.build"
  
- [project]
- name = "neurogenesis-lab"
- version = "0.2.0"
- requires-python = ">=3.10"
- dependencies = ["numpy>=1.24"]
+[project]
+name = "neurogenesis-lab"
+version = "0.2.0"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "tomli>=2.0.1; python_version < '3.11'",
+]
  
  [project.scripts]
  neurogenesis-lab = "neurogenesis_lab.__main__:main"

@@ -91,20 +91,25 @@ print(net.get_summary())
 ### 学习与规则发现
 
 ```python
-from neurogenesis_lab.learning import RuleDiscovery, QueryEngine, PatternMiner
+from neurogenesis_lab.learning import RuleComposer, RuleDiscovery, PatternMiner, QueryEngine
 
-discovery = RuleDiscovery()
-for token in [1, 2, 3, 1, 2, 3, 1, 2]:
-    discovery.feed_token(token)
+# 规则发现（基于 token 序列样本）
+samples = [
+    [ord("1"), ord("+"), ord("1"), ord("="), ord("2")],
+    [ord("1"), ord("+"), ord("2"), ord("="), ord("3")],
+    [ord("2"), ord("+"), ord("2"), ord("="), ord("4")],
+]
+store = RuleDiscovery(min_support=1).discover(samples)
+composer = RuleComposer(store)
+filled = composer.apply([ord("1"), ord("+"), ord("2"), ord("="), -1], missing_token=-1)
+print("".join(chr(token) for token in filled))
 
-# 查询规则
-print(discovery.store.top_candidates_next(top_k=5))
-
-# 模式挖掘
+# 表达式模式学习 + 查询
 miner = PatternMiner()
-miner.feed([1, 2, 3, 1, 2, 3])
-print(miner.top_patterns(k=3))
-print(f"confidence(1,2,3) = {miner.confidence((1, 2, 3))}")
+miner.fit(["1+1=2", "1+2=3", "2+2=4"])
+engine = QueryEngine(miner)
+print(engine.query("1+2=?"))
+print(engine.query_with_explanation("2+2=?"))
 ```
 
 ## 输出格式
@@ -124,7 +129,7 @@ print(f"confidence(1,2,3) = {miner.confidence((1, 2, 3))}")
 - 参阅 [参数说明 (Parameters)](parameters.md) 了解所有可配置参数
 - 参阅 [架构设计 (Architecture)](architecture.md) 理解系统内部工作原理
 - 参阅 [可观测性指标 (Metrics)](metrics.md) 查看数据字段说明
-- 参阅 [常见问题 (FAQ)](faq.md) 查看常见问题
+- 参阅 [风险清单 (Risk List)](risk_list.md) 了解当前已知风险
 
 ## 实验有效激活检查（推荐）
 
