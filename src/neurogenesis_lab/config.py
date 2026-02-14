@@ -83,8 +83,14 @@ class NetworkParams:
             errors.append(f"max_neurons 必须为正: {self.max_neurons}")
         if self.max_links <= 0:
             errors.append(f"max_links 必须为正: {self.max_links}")
+        if self.corpse_ttl <= 0:
+            errors.append(f"corpse_ttl 必须为正: {self.corpse_ttl}")
+        if self.scavenger_radius < 0:
+            errors.append(f"scavenger_radius 不能为负: {self.scavenger_radius}")
         if self.input_current_scale < 0:
             errors.append(f"input_current_scale 不能为负: {self.input_current_scale}")
+        if self.move_cost < 0:
+            errors.append(f"move_cost 不能为负: {self.move_cost}")
         return errors
 
 
@@ -158,6 +164,8 @@ class SimConfig:
                 "energy_decay": self.network.energy_decay,
                 "max_neurons": self.network.max_neurons,
                 "max_links": self.network.max_links,
+                "corpse_ttl": self.network.corpse_ttl,
+                "scavenger_radius": self.network.scavenger_radius,
                 "input_current_scale": self.network.input_current_scale,
                 "move_cost": self.network.move_cost,
             },

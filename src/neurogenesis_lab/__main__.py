@@ -271,6 +271,9 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     if compare_n == neuron_count and orig_time > 0:
         print(f"  加速比: {orig_time / vec_time:.1f}x")
     print(f"  向量化存活: {vec_summary['alive_neurons']}")
+    print("\n口径说明:")
+    print("  可比项: alive_neurons / total_spikes / mean_energy 的总体趋势")
+    print("  不可比项: 多模型动力学细节(Izh/AdEx)、逐事件路由轨迹")
 
 
 def cmd_info(args: argparse.Namespace) -> None:

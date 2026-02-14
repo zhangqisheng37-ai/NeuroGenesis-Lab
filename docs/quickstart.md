@@ -125,3 +125,23 @@ print(f"confidence(1,2,3) = {miner.confidence((1, 2, 3))}")
 - 参阅 [架构设计 (Architecture)](architecture.md) 理解系统内部工作原理
 - 参阅 [可观测性指标 (Metrics)](metrics.md) 查看数据字段说明
 - 参阅 [常见问题 (FAQ)](faq.md) 查看常见问题
+
+## 实验有效激活检查（推荐）
+
+运行：
+
+```bash
+python -m neurogenesis_lab run --ticks 100 --seed 42
+```
+
+至少确认以下三项：
+
+1. 控制台总结中 `总放电 > 0` 且 `总传播 > 0`
+2. 输出 JSONL 的 `metrics.alive_neurons` 在时间上有变化（不是全程恒定）
+3. 输出 JSONL 的 `learning.total_spikes` 随 tick 增长
+
+若未激活（例如放电/传播为 0），优先尝试：
+
+- 提高 `--input-weight`（如 60~120）
+- 降低 `[neuron].v_th`
+- 提高 `[network].input_current_scale`

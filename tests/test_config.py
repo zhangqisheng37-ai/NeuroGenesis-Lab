@@ -65,6 +65,16 @@ class TestNetworkParams:
         errors = params.validate()
         assert any("energy_decay" in e for e in errors)
 
+    def test_invalid_non_positive_corpse_ttl(self) -> None:
+        params = NetworkParams(corpse_ttl=0)
+        errors = params.validate()
+        assert any("corpse_ttl" in e for e in errors)
+
+    def test_invalid_negative_scavenger_radius(self) -> None:
+        params = NetworkParams(scavenger_radius=-1.0)
+        errors = params.validate()
+        assert any("scavenger_radius" in e for e in errors)
+
 
 class TestEvolutionParams:
     def test_valid(self) -> None:
@@ -113,6 +123,8 @@ class TestSimConfig:
         assert "neuron" in d
         assert "network" in d
         assert "evolution" in d
+        assert "corpse_ttl" in d["network"]
+        assert "scavenger_radius" in d["network"]
 
 
 class TestSeedAll:

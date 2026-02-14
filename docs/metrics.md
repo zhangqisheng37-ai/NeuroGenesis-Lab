@@ -78,3 +78,23 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 默认情况下，实验数据输出至 `outputs/<experiment_id>/run.jsonl`。
 
 可以使用 `examples/observe_jsonl.py` 或自定义脚本对 JSONL 文件进行解析与可视化。
+
+## 事件字段语义（Event）
+
+编码器和网络内部事件都使用 `Event(token_id, t, src_id, meta)` 结构。
+
+| 字段名 | 语义 |
+|--------|------|
+| `token_id` | 当前脉冲携带的符号 ID |
+| `t` | 事件计划投递的 tick |
+| `src_id` | **本次事件要投递到的目标神经元 ID** |
+| `meta.from` | 传播来源神经元 ID（仅网络传播事件有） |
+| `meta.weight` | 突触权重或外部注入权重 |
+
+> 注意：当前实现中 `src_id` 是“目标路由 ID”，不是“发送方 ID”。发送方通过 `meta.from` 记录。
+
+### 时序示例（delay=1）
+
+1. tick=5：神经元 A 放电，向 B 发出传播事件（`src_id=B`, `meta.from=A`, `t=6`）
+2. tick=6：网络队列投递该事件到 B
+3. tick=6：B 的 `receive()` 被触发，进入后续膜电位更新与可能放电
