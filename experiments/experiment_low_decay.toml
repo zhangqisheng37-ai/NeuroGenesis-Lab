@@ -1,0 +1,13 @@
+# 实验配置：低能量衰减（长寿命）
+[simulation]
+ticks = 100
+seed = 42
+
+[neuron]
+v_th = -55.0
+input_gain = 0.05
+
+[network]
+energy_decay = 0.001  # 降低能量衰减
+reproduction_threshold = 3.0  # 提高繁殖门槛
+max_neurons = 30

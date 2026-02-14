@@ -1,0 +1,12 @@
+# 实验配置：高输入驱动
+[simulation]
+ticks = 100
+seed = 42
+
+[neuron]
+v_th = -50.0  # 降低阈值，更容易放电
+input_gain = 0.1  # 增加输入增益
+
+[network]
+input_current_scale = 3.0  # 增加输入电流
+energy_decay = 0.003

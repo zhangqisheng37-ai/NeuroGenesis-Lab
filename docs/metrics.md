@@ -8,7 +8,7 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0.0",
   "type": "report",
   "tick": 123,
   "metrics": { ... },    // 网络级指标
