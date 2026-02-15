@@ -49,28 +49,6 @@ python examples/experiment_contrast.py
 python examples/decompress_outputs.py --path outputs --recursive
 ```
 
-## 文档索引
-
-更多详细文档请参考 `docs/` 目录：
-
-- [快速入门 (Quickstart)](docs/quickstart.md): 详细的安装与上手指南。
-- [参数说明 (Parameters)](docs/parameters.md): 仿真参数与配置文件详解。
-- [架构设计 (Architecture)](docs/architecture.md): 系统核心架构与设计原理。
-- [观测指标 (Metrics)](docs/metrics.md): 数据采集字段与指标说明。
-
-## 项目结构
-
-```
-src/neurogenesis_lab/
-├── config.py          # 配置系统
-├── neuron.py          # 神经元模型
-├── network.py         # 网络演化引擎
-├── vectorized.py      # 向量化高性能引擎
-├── learning.py        # 学习与规则发现
-├── encoding.py        # 符号编码系统
-└── observability.py   # 数据采集与监控
-```
-
 ## 开发
 
 运行测试：
