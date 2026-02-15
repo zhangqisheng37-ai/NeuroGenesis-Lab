@@ -1,5 +1,6 @@
 """单元测试 — observability 模块"""
 import sys
+import gzip
 import json
 import random
 from pathlib import Path
@@ -147,6 +148,58 @@ class TestObservabilityLogger:
         )
         assert "exp_001" in str(logger.get_output_path())
 
+    def test_log_interval_sampling(self, tmp_path: Path) -> None:
+        path = tmp_path / "sampled.jsonl"
+        neurons = [LIFNeuron()]
+        net = Network(neurons={n.id: n for n in neurons})
+        observer = NetworkObserver(net)
+        logger = ObservabilityLogger(path, log_interval=2)
+
+        for tick in range(1, 6):
+            snapshot = net.tick(tick)
+            logger.log_tick(observer, tick, snapshot)
+        logger.log_summary(5, observer.get_network_metrics(5))
+
+        lines = path.read_text(encoding="utf-8").strip().split("\n")
+        # 仅记录 tick=2,4 + summary
+        assert len(lines) == 3
+        assert json.loads(lines[0])["metrics"]["tick"] == 2
+        assert json.loads(lines[1])["metrics"]["tick"] == 4
+        assert json.loads(lines[2])["type"] == "summary"
+
+    def test_gzip_output(self, tmp_path: Path) -> None:
+        path = tmp_path / "run.jsonl.gz"
+        neurons = [LIFNeuron()]
+        net = Network(neurons={n.id: n for n in neurons})
+        observer = NetworkObserver(net)
+        logger = ObservabilityLogger(path)
+
+        snapshot = net.tick(1)
+        logger.log_tick(observer, 1, snapshot)
+        logger.log_summary(1, observer.get_network_metrics(1))
+
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            lines = [line.strip() for line in handle.readlines() if line.strip()]
+        assert len(lines) == 2
+        assert "metrics" in json.loads(lines[0])
+        assert json.loads(lines[1])["type"] == "summary"
+
+    def test_output_rotation_by_max_file_size(self, tmp_path: Path) -> None:
+        path = tmp_path / "run.jsonl"
+        neurons = [LIFNeuron() for _ in range(2)]
+        net = Network(neurons={n.id: n for n in neurons})
+        observer = NetworkObserver(net)
+        logger = ObservabilityLogger(path, max_file_size=200)
+
+        logger.log_config({"seed": 42, "ticks": 12})
+        for tick in range(1, 13):
+            snapshot = net.tick(tick)
+            logger.log_tick(observer, tick, snapshot)
+        logger.log_summary(12, observer.get_network_metrics(12))
+
+        rotated = sorted(tmp_path.glob("run*.jsonl"))
+        assert len(rotated) >= 2, "启用 max_file_size 后应产生轮转文件"
+
 
 class TestCreateExperimentLogger:
     def test_creates_timestamped_dir(self, tmp_path: Path) -> None:
@@ -154,6 +207,10 @@ class TestCreateExperimentLogger:
         path = logger.get_output_path()
         assert "test_exp" in str(path)
         assert path.name == "run.jsonl"
+
+    def test_create_experiment_logger_gzip(self, tmp_path: Path) -> None:
+        logger = create_experiment_logger(tmp_path, "test_exp", gzip_output=True)
+        assert logger.get_output_path().name == "run.jsonl.gz"
 
 
 class TestRegressionRun:

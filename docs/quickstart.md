@@ -21,6 +21,9 @@ python -m neurogenesis_lab run --ticks 200 --seed 123 --neurons 12
 # 使用 TOML 配置文件
 python -m neurogenesis_lab run --config config.toml
 
+# 输出治理（每10 tick采样 + gzip + 轮转）
+python -m neurogenesis_lab run --log-interval 10 --gzip-output --max-file-size 5000000
+
 # 性能基准测试
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 ```
@@ -114,7 +117,7 @@ print(engine.query_with_explanation("2+2=?"))
 
 ## 输出格式
 
-所有输出均为 JSONL 格式，每行一个 JSON 对象：
+所有输出均为 JSONL 格式，每行一个 JSON 对象（启用 `--gzip-output` 时为 `.jsonl.gz` 压缩文件）：
 
 ```json
 {"type": "config", "schema_version": "2.0.0", "ticks": 100, ...}
@@ -123,6 +126,18 @@ print(engine.query_with_explanation("2+2=?"))
 ```
 
 输出文件自动按实验名和时间戳分目录存放在 `outputs/` 下。
+
+### 查看 `.jsonl.gz` 内容
+
+如果开启了 `--gzip-output`，可用批量解压脚本生成可直接打开的 `.jsonl`：
+
+```bash
+# 解压单次实验目录
+python examples/decompress_outputs.py --path outputs/<run_id>
+
+# 递归解压整个 outputs
+python examples/decompress_outputs.py --path outputs --recursive
+```
 
 ## 下一步
 

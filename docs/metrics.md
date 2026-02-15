@@ -77,7 +77,21 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 
 默认情况下，实验数据输出至 `outputs/<experiment_id>/run.jsonl`。
 
+当启用输出治理参数时：
+
+- `--gzip-output`：输出为 `run.jsonl.gz`
+- `--max-file-size N`（N>0）：超过阈值后自动轮转为 `run_0001.jsonl(.gz)`, `run_0002.jsonl(.gz)` ...
+- `--log-interval N`：每 N tick 记录一次 tick 报告（`config` 与 `summary` 仍会记录）
+
 可以使用 `examples/observe_jsonl.py` 或自定义脚本对 JSONL 文件进行解析与可视化。
+
+若文件为 `.jsonl.gz`，可使用：
+
+```bash
+python examples/decompress_outputs.py --path outputs --recursive
+```
+
+将压缩结果批量解压为同目录下的 `.jsonl` 文本文件。
 
 ## 事件字段语义（Event）
 

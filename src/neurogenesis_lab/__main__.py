@@ -198,7 +198,14 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     # 输出设置
     output_dir = Path(getattr(args, "output", "outputs") or "outputs")
-    logger = create_experiment_logger(output_dir, "run", debug_mode=bool(getattr(args, "debug", False)))
+    logger = create_experiment_logger(
+        output_dir,
+        "run",
+        debug_mode=bool(getattr(args, "debug", False)),
+        log_interval=max(1, int(getattr(args, "log_interval", 1) or 1)),
+        max_file_size=max(0, int(getattr(args, "max_file_size", 0) or 0)),
+        gzip_output=bool(getattr(args, "gzip_output", False)),
+    )
     observer = NetworkObserver(network, debug_neuron_ids=[neurons[0].id])
     logger.log_config(cfg.to_dict())
 
@@ -315,6 +322,23 @@ def main() -> None:
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
     run_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
     run_parser.add_argument("--debug", action="store_true", help="开启 debug 模式")
+    run_parser.add_argument(
+        "--log-interval",
+        type=int,
+        default=1,
+        help="日志采样间隔（每 N tick 记录一次）",
+    )
+    run_parser.add_argument(
+        "--gzip-output",
+        action="store_true",
+        help="将输出文件写为 .jsonl.gz",
+    )
+    run_parser.add_argument(
+        "--max-file-size",
+        type=int,
+        default=0,
+        help="单个输出文件最大字节数，>0 时启用轮转",
+    )
 
     # benchmark
     bench_parser = subparsers.add_parser("benchmark", help="性能基准测试")

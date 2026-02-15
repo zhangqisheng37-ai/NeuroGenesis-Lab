@@ -1,4 +1,5 @@
 import json
+import gzip
 import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -14,14 +15,19 @@ class JsonlWriter:
 
     def write(self, records: Iterable[dict]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("w", encoding="utf-8") as handle:
+        with self._open("w") as handle:
             for record in records:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def append(self, record: dict) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._path.open("a", encoding="utf-8") as handle:
+        with self._open("a") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def _open(self, mode: str):
+        if self._path.suffix == ".gz":
+            return gzip.open(self._path, mode + "t", encoding="utf-8")
+        return self._path.open(mode, encoding="utf-8")
 
 
 class NetworkObserver:
@@ -176,26 +182,60 @@ class ObservabilityLogger:
         output_path: Path,
         debug_mode: bool = False,
         experiment_id: str | None = None,
+        log_interval: int = 1,
+        max_file_size: int = 0,
     ) -> None:
         if experiment_id:
             # 按实验编号自动分目录
             output_path = output_path.parent / experiment_id / output_path.name
-        self._writer = JsonlWriter(output_path)
-        self._debug_mode = debug_mode
+        self._base_output_path = output_path
         self._output_path = output_path
+        self._segment_index = 0
+        self._writer = JsonlWriter(self._output_path)
+        self._debug_mode = debug_mode
+        self._log_interval = max(1, int(log_interval))
+        self._max_file_size = max(0, int(max_file_size))
+
+    def _segment_path(self, segment_index: int) -> Path:
+        if segment_index <= 0:
+            return self._base_output_path
+        name = self._base_output_path.name
+        if name.endswith(".jsonl.gz"):
+            stem = name[:-9]
+            return self._base_output_path.with_name(f"{stem}_{segment_index:04d}.jsonl.gz")
+        if name.endswith(".jsonl"):
+            stem = name[:-6]
+            return self._base_output_path.with_name(f"{stem}_{segment_index:04d}.jsonl")
+        return self._base_output_path.with_name(f"{name}_{segment_index:04d}")
+
+    def _rotate_if_needed(self) -> None:
+        if self._max_file_size <= 0:
+            return
+        if not self._output_path.exists():
+            return
+        if self._output_path.stat().st_size < self._max_file_size:
+            return
+        self._segment_index += 1
+        self._output_path = self._segment_path(self._segment_index)
+        self._writer = JsonlWriter(self._output_path)
 
     def log_config(self, config_dict: dict) -> None:
         """记录实验配置"""
+        self._rotate_if_needed()
         record = {"type": "config", "schema_version": SCHEMA_VERSION, **config_dict}
         self._writer.append(record)
 
     def log_tick(self, observer: NetworkObserver, tick: int, snapshot: dict | None = None) -> None:
         """记录单个tick的信息"""
+        if tick % self._log_interval != 0:
+            return
+        self._rotate_if_needed()
         report = observer.generate_report(tick, include_debug=self._debug_mode, snapshot=snapshot)
         self._writer.append(report)
 
     def log_summary(self, total_ticks: int, final_metrics: dict) -> None:
         """记录总结信息"""
+        self._rotate_if_needed()
         summary = {
             "type": "summary",
             "schema_version": SCHEMA_VERSION,
@@ -212,9 +252,18 @@ def create_experiment_logger(
     base_dir: Path,
     experiment_name: str,
     debug_mode: bool = False,
+    log_interval: int = 1,
+    max_file_size: int = 0,
+    gzip_output: bool = False,
 ) -> ObservabilityLogger:
     """创建实验日志记录器 — 自动分目录防覆盖"""
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     exp_id = f"{experiment_name}_{timestamp}"
-    output_path = base_dir / exp_id / "run.jsonl"
-    return ObservabilityLogger(output_path, debug_mode=debug_mode)
+    filename = "run.jsonl.gz" if gzip_output else "run.jsonl"
+    output_path = base_dir / exp_id / filename
+    return ObservabilityLogger(
+        output_path,
+        debug_mode=debug_mode,
+        log_interval=log_interval,
+        max_file_size=max_file_size,
+    )

@@ -126,3 +126,21 @@ python -m neurogenesis_lab run --config config.toml --ticks 500 --seed 99
 ```
 
 上例中 `ticks=500` 和 `seed=99` 会覆盖 TOML 中的值。
+
+---
+
+## 输出治理参数（CLI）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--log-interval` | int | 1 | 日志采样间隔（每 N tick 记录一次） |
+| `--gzip-output` | flag | 关闭 | 输出为 `.jsonl.gz` 压缩文件 |
+| `--max-file-size` | int | 0 | 单文件最大字节数，`>0` 时启用自动轮转 |
+
+示例：
+
+```bash
+python -m neurogenesis_lab run --ticks 500 --log-interval 10 --gzip-output --max-file-size 5000000
+```
+
+该命令会每 10 tick 采样一次日志，输出为压缩 JSONL，并在单文件超过 5MB 时自动轮转为分段文件。

@@ -98,6 +98,9 @@ def test_cmd_run_smoke_creates_output(tmp_path: Path, capsys) -> None:
         output=str(tmp_path),
         config=None,
         debug=False,
+        log_interval=1,
+        gzip_output=False,
+        max_file_size=0,
     )
 
     cli.cmd_run(args)
