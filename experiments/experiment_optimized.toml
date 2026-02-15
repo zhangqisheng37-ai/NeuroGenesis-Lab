@@ -1,0 +1,42 @@
+# NeuroGenesis Lab — 优化配置
+# 目标: 解决种群崩溃、提高脉冲频率、更早繁殖
+# 运行: python -m neurogenesis_lab run --config experiments/experiment_optimized.toml
+
+[simulation]
+ticks = 100
+seed = 42
+dt = 1.0
+
+[neuron]
+v_rest = -65.0
+v_reset = -65.0
+v_th = -50.0          # 降低阈值 (原-55.0) → 更容易放电
+tau_m = 20.0
+r_m = 1.0
+spike_cost = 0.04     # 降低放电成本 (原0.05) → 节省能量
+input_gain = 0.08     # 提高输入增益 (原0.05) → 更多能量补充
+mem_size = 64
+
+[network]
+reproduction_threshold = 1.8   # 降低繁殖门槛 (原2.5) → 更早繁殖
+reproduction_share = 0.35      # 减少能量分享 (原0.4) → 保护母体
+mutation_scale = 0.05
+energy_decay = 0.0015          # 减半衰减速度 (原0.003) → 延缓能量流失
+max_neurons = 60               # 提高容量 (原50) → 缓冲种群波动
+max_links = 240                # 相应提高连接数
+corpse_ttl = 50
+scavenger_radius = 2.5
+input_current_scale = 2.0      # 增强输入电流 (原1.5) → 促进放电
+move_cost = 0.008              # 降低移动成本 (原0.01) → 节省能量
+
+[evolution]
+mutation_amplitude = 0.05
+energy_budget_per_tick = 0.0
+congestion_penalty = 0.1
+min_neurons = 5                # 提高保护下限 (原2) → 防止灭绝
+
+[evolution.fitness_weights]
+propagation = 1.0
+energy_efficiency = 0.5
+prediction_hit = 0.8
+
