@@ -49,7 +49,7 @@ class Corpse:
 class Network:
     neurons: dict[str, Neuron]
     queue: EventQueue = field(default_factory=EventQueue)
-    replay: list[dict[str, float | int]] = field(default_factory=list)
+    replay: list[dict[str, object]] = field(default_factory=list)
     expected_state: dict[str, float] | None = None
     corpses: list[Corpse] = field(default_factory=list)
     reproduction_threshold: float = 2.5
@@ -88,7 +88,7 @@ class Network:
     def enqueue(self, events: Iterable[Event]) -> None:
         self.queue.push_many(events)
 
-    def tick(self, tick: int, dt: float = 1.0) -> dict[str, float]:
+    def tick(self, tick: int, dt: float = 1.0) -> dict[str, object]:
         ready = self.queue.pop_ready(tick)
         inputs: dict[str, list[Event]] = defaultdict(list)
         for event in ready:
@@ -241,25 +241,25 @@ class Network:
             dead_ids = [nid for nid in dead_ids if nid not in saved]
 
         for neuron_id in dead_ids:
-            neuron = self.neurons.get(neuron_id)
-            if neuron is None:
+            neuron_obj: Neuron | None = self.neurons.get(neuron_id)
+            if neuron_obj is None:
                 continue
             params = {
-                "tau_m": neuron.tau_m,
-                "r_m": neuron.r_m,
-                "v_th": neuron.v_th,
-                "v_rest": neuron.v_rest,
-                "v_reset": neuron.v_reset,
-                "spike_cost": neuron.spike_cost,
-                "input_gain": neuron.input_gain,
+                "tau_m": neuron_obj.tau_m,
+                "r_m": neuron_obj.r_m,
+                "v_th": neuron_obj.v_th,
+                "v_rest": neuron_obj.v_rest,
+                "v_reset": neuron_obj.v_reset,
+                "spike_cost": neuron_obj.spike_cost,
+                "input_gain": neuron_obj.input_gain,
             }
             for attr in ["a", "b", "c", "d", "v_peak", "delta_t", "tau_w"]:
-                if hasattr(neuron, attr):
-                    value = getattr(neuron, attr)
+                if hasattr(neuron_obj, attr):
+                    value = getattr(neuron_obj, attr)
                     if isinstance(value, (int, float)):
                         params[attr] = float(value)
             self.corpses.append(Corpse(
-                pos=neuron.pos, energy=neuron.energy, params=params,
+                pos=neuron_obj.pos, energy=neuron_obj.energy, params=params,
                 ttl=self.corpse_ttl,
             ))
             self.neurons.pop(neuron_id, None)

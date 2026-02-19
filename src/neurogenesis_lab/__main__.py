@@ -56,7 +56,7 @@ def _build_sim_config(args: argparse.Namespace) -> SimConfig:
     def _float_map(values: dict[str, object], allowed: set[str]) -> dict[str, float]:
         mapped: dict[str, float] = {}
         for key, val in values.items():
-            if key in allowed:
+            if key in allowed and isinstance(val, (int, float)):
                 mapped[key] = float(val)
         return mapped
 

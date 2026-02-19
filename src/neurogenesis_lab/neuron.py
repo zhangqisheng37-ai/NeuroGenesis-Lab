@@ -4,7 +4,7 @@ import math
 import random
 from collections import Counter, deque
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Any, Iterable
 from uuid import uuid4
 
 from neurogenesis_lab.encoding import Event
@@ -150,7 +150,7 @@ class Neuron:
         max_entropy = math.log(len(counts)) if len(counts) > 1 else 1.0
         self.states["entropy"] = entropy / max_entropy if max_entropy > 0 else 0.0
 
-    def observe(self) -> dict[str, Iterable[dict[str, int]]]:
+    def observe(self) -> dict[str, Any]:
         top = self.transitions.most_common()
         return {
             "transition_counts": [
