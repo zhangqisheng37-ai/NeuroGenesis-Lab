@@ -5,11 +5,40 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Iterable
+from typing import Iterable, TypedDict
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import Neuron, calculate_reward, safe_float
+
+
+class SnapshotDict(TypedDict):
+    """tick() 方法返回的快照类型"""
+    schema_version: int
+    tick: int
+    ready_events: int
+    emitted_events: int
+    alive_neurons: int
+    total_neurons: int
+    prediction_error: float
+    tick_spikes: int
+    births: int
+    deaths: int
+
+
+class NetworkSummaryDict(TypedDict):
+    """get_summary() 方法返回的类型"""
+    schema_version: int
+    total_neurons: int
+    alive_neurons: int
+    total_spikes: int
+    total_propagations: int
+    birth_count: int
+    death_count: int
+    corpses: int
+    pe_moving_avg: float
+    active_ratio: float
+    avg_energy: float
 
 
 @dataclass
@@ -88,7 +117,7 @@ class Network:
     def enqueue(self, events: Iterable[Event]) -> None:
         self.queue.push_many(events)
 
-    def tick(self, tick: int, dt: float = 1.0) -> dict[str, object]:
+    def tick(self, tick: int, dt: float = 1.0, run_evolution: bool = True) -> SnapshotDict:
         ready = self.queue.pop_ready(tick)
         inputs: dict[str, list[Event]] = defaultdict(list)
         for event in ready:
@@ -141,18 +170,19 @@ class Network:
         }
         self.replay.append(snapshot)
 
-        self._update_corpses()
-        births_before = len(self.neurons)
-        self.check_reproduction()
-        births = len(self.neurons) - births_before
-        self.birth_count += births
-        snapshot["births"] = births
+        if run_evolution:
+            self._update_corpses()
+            births_before = len(self.neurons)
+            self.check_reproduction()
+            births = len(self.neurons) - births_before
+            self.birth_count += births
+            snapshot["births"] = births
 
-        deaths_before = len(self.neurons)
-        self.check_death()
-        deaths = deaths_before - len(self.neurons)
-        self.death_count += deaths
-        snapshot["deaths"] = deaths
+            deaths_before = len(self.neurons)
+            self.check_death()
+            deaths = deaths_before - len(self.neurons)
+            self.death_count += deaths
+            snapshot["deaths"] = deaths
 
         return snapshot
 
@@ -304,7 +334,7 @@ class Network:
             if source_id in self.neurons:
                 self.neurons[source_id].links.pop(target_id, None)
 
-    def get_summary(self) -> dict:
+    def get_summary(self) -> NetworkSummaryDict:
         """生成网络摘要（含 schema_version）"""
         alive = [n for n in self.neurons.values() if n.alive]
         return {

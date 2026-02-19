@@ -9,9 +9,21 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
 
 import numpy as np
+
+
+class VectorizedSummaryDict(TypedDict):
+    """VectorizedNetwork.get_summary() 返回类型"""
+    schema_version: int
+    total_neurons: int
+    alive_neurons: int
+    total_spikes: int
+    birth_count: int
+    death_count: int
+    mean_energy: float
+    pe_moving_avg: float
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 from neurogenesis_lab.encoding import Event
@@ -304,7 +316,7 @@ class VectorizedNetwork:
             currents[targets] += self.weight_matrix[i, targets]
         return currents
 
-    def get_summary(self) -> dict[str, Any]:
+    def get_summary(self) -> VectorizedSummaryDict:
         alive_mask = self.alive
         alive_count = int(np.sum(alive_mask))
         return {

@@ -202,62 +202,34 @@ class RuleComposer:
             return token - 48
         return None
 
-    def _apply_simple_addition(self, sequence: list[int], missing_token: int) -> list[int] | None:
+    def _apply_arithmetic(self, sequence: list[int], missing_token: int, op: str, op_char: int, calc: callable) -> list[int] | None:
+        """通用算术运算填充方法"""
         missing_indices = [index for index, token in enumerate(sequence) if token == missing_token]
         if missing_indices != [len(sequence) - 1]:
             return None
         if len(sequence) < 5:
             return None
-        if sequence[1] != ord("+") or sequence[3] != ord("="):
+        if sequence[1] != op_char or sequence[3] != ord("="):
             return None
         left = self._digit_value(sequence[0])
         right = self._digit_value(sequence[2])
         if left is None or right is None:
             return None
-        result = left + right
-        if result >= 10:
-            return None
-        filled = list(sequence)
-        filled[-1] = ord(str(result))
-        return filled
-
-    def _apply_simple_subtraction(self, sequence: list[int], missing_token: int) -> list[int] | None:
-        missing_indices = [index for index, token in enumerate(sequence) if token == missing_token]
-        if missing_indices != [len(sequence) - 1]:
-            return None
-        if len(sequence) < 5:
-            return None
-        if sequence[1] != ord("-") or sequence[3] != ord("="):
-            return None
-        left = self._digit_value(sequence[0])
-        right = self._digit_value(sequence[2])
-        if left is None or right is None:
-            return None
-        result = left - right
+        result = calc(left, right)
         if result < 0 or result >= 10:
             return None
         filled = list(sequence)
         filled[-1] = ord(str(result))
         return filled
 
+    def _apply_simple_addition(self, sequence: list[int], missing_token: int) -> list[int] | None:
+        return self._apply_arithmetic(sequence, missing_token, "+", ord("+"), lambda a, b: a + b)
+
+    def _apply_simple_subtraction(self, sequence: list[int], missing_token: int) -> list[int] | None:
+        return self._apply_arithmetic(sequence, missing_token, "-", ord("-"), lambda a, b: a - b)
+
     def _apply_simple_multiply(self, sequence: list[int], missing_token: int) -> list[int] | None:
-        missing_indices = [index for index, token in enumerate(sequence) if token == missing_token]
-        if missing_indices != [len(sequence) - 1]:
-            return None
-        if len(sequence) < 5:
-            return None
-        if sequence[1] != ord("*") or sequence[3] != ord("="):
-            return None
-        left = self._digit_value(sequence[0])
-        right = self._digit_value(sequence[2])
-        if left is None or right is None:
-            return None
-        result = left * right
-        if result >= 10:
-            return None
-        filled = list(sequence)
-        filled[-1] = ord(str(result))
-        return filled
+        return self._apply_arithmetic(sequence, missing_token, "*", ord("*"), lambda a, b: a * b)
 
     def apply(self, sequence: list[int], missing_token: int = -1) -> list[int]:
         # 尝试直接运算

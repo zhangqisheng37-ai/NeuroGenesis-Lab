@@ -9,6 +9,12 @@ class Event:
     src_id: str
     meta: dict
 
+    def __lt__(self, other: "Event") -> bool:
+        """支持 heapq 比较，确保 EventQueue 稳定性"""
+        if not isinstance(other, Event):
+            return NotImplemented
+        return (self.t, id(self)) < (other.t, id(other))
+
 
 @dataclass(frozen=True)
 class Sequence:
