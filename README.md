@@ -56,3 +56,16 @@ python examples/decompress_outputs.py --path outputs --recursive
 ```bash
 pytest
 ```
+
+## 文档
+
+项目文档位于 `docs/` 目录：
+
+| 文档 | 说明 |
+|------|------|
+| [快速开始](docs/quickstart.md) | 安装、基本使用、代码示例 |
+| [参数说明](docs/parameters.md) | 所有配置参数详解 |
+| [架构设计](docs/architecture.md) | 系统架构与核心概念 |
+| [可观测性指标](docs/metrics.md) | 输出数据字段说明 |
+| [风险清单](docs/risk_list.md) | 当前已知风险与待办事项 |
+| [更新日志](docs/CHANGELOG.md) | 版本变更历史 |

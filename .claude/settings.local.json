@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(python -m pytest:*)",
-      "Bash(python -m mypy:*)"
+      "Bash(python -m mypy:*)",
+      "Bash(python -m neurogenesis_lab info:*)",
+      "Bash(python -m neurogenesis_lab:*)"
     ]
   }
 }
