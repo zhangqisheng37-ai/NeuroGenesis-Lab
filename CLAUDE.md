@@ -51,10 +51,11 @@ The project uses a modular architecture under `src/neurogenesis_lab/`:
 - **`encoding.py`**: Token and Event encoding system for spike representation
 - **`learning.py`**: Learning engine with `RuleDiscovery`, `PatternMiner`, `QueryEngine` for symbolic rule extraction
 - **`observability.py`**: Metrics, logging, and experiment management
-- **`vectorized.py`**: High-performance NumPy-based vectorized simulation kernel for large-scale networks (10k+ neurons)
+- **`vectorized.py`**: High-performance vectorized simulation kernel using NumPy + scipy.sparse for large-scale networks (10k+ neurons)
+- **`protocols.py`**: Unified engine interface — `TickSnapshot`, `EngineSummary`, `SimEngine` Protocol
 - **`logger.py`**: Logging utilities
 
-Two network implementations exist: the standard `Network` class and `VectorizedNetwork` for performance-critical simulations.
+Two network implementations exist: the standard `Network` class and `VectorizedNetwork` for performance-critical simulations. Both conform to the `SimEngine` protocol defined in `protocols.py`, returning unified `TickSnapshot` and `EngineSummary` types.
 
 ## Configuration
 

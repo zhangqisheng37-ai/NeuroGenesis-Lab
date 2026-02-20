@@ -5,40 +5,12 @@ import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Iterable, TypedDict
+from typing import Iterable
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import Neuron, calculate_reward, safe_float
-
-
-class SnapshotDict(TypedDict):
-    """tick() 方法返回的快照类型"""
-    schema_version: int
-    tick: int
-    ready_events: int
-    emitted_events: int
-    alive_neurons: int
-    total_neurons: int
-    prediction_error: float
-    tick_spikes: int
-    births: int
-    deaths: int
-
-
-class NetworkSummaryDict(TypedDict):
-    """get_summary() 方法返回的类型"""
-    schema_version: int
-    total_neurons: int
-    alive_neurons: int
-    total_spikes: int
-    total_propagations: int
-    birth_count: int
-    death_count: int
-    corpses: int
-    pe_moving_avg: float
-    active_ratio: float
-    avg_energy: float
+from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
 
 
 @dataclass
@@ -117,7 +89,7 @@ class Network:
     def enqueue(self, events: Iterable[Event]) -> None:
         self.queue.push_many(events)
 
-    def tick(self, tick: int, dt: float = 1.0, run_evolution: bool = True) -> SnapshotDict:
+    def tick(self, tick: int, dt: float = 1.0, run_evolution: bool = True) -> TickSnapshot:
         ready = self.queue.pop_ready(tick)
         inputs: dict[str, list[Event]] = defaultdict(list)
         for event in ready:
@@ -155,18 +127,21 @@ class Network:
         prediction_error = self._update_prediction_error(actual_state)
         self._pe_history.append(prediction_error)
 
-        alive_count = sum(1 for neuron in self.neurons.values() if neuron.alive)
+        alive_neurons = [neuron for neuron in self.neurons.values() if neuron.alive]
+        alive_count = len(alive_neurons)
+        mean_energy = sum(n.energy for n in alive_neurons) / alive_count if alive_count > 0 else 0.0
         snapshot = {
             "schema_version": self.schema_version,
             "tick": tick,
             "ready_events": len(ready),
-            "emitted_events": len(emitted),
+            "propagation_count": len(emitted),
             "alive_neurons": alive_count,
             "total_neurons": len(self.neurons),
             "prediction_error": prediction_error,
             "tick_spikes": tick_spikes,
             "births": 0,
             "deaths": 0,
+            "mean_energy": mean_energy,
         }
         self.replay.append(snapshot)
 
@@ -299,20 +274,30 @@ class Network:
             return
         alive = [neuron for neuron in self.neurons.values() if neuron.alive]
         updated: list[Corpse] = []
+
+        # 构建简单网格索引加速近邻搜索
+        cell_size = self.scavenger_radius if self.scavenger_radius > 0 else 1.0
+        grid: dict[tuple[int, int], list[Neuron]] = {}
+        for n in alive:
+            key = (int(n.pos[0] // cell_size), int(n.pos[1] // cell_size))
+            grid.setdefault(key, []).append(n)
+
         for corpse in self.corpses:
             corpse.ttl -= 1
             # 能量衰减
             corpse.energy = max(0.0, corpse.energy - corpse.decay_rate)
             if corpse.energy > 0 and alive:
+                cx, cy = int(corpse.pos[0] // cell_size), int(corpse.pos[1] // cell_size)
                 nearest = None
                 nearest_dist = None
-                for neuron in alive:
-                    dx = neuron.pos[0] - corpse.pos[0]
-                    dy = neuron.pos[1] - corpse.pos[1]
-                    dist = math.sqrt(dx * dx + dy * dy)
-                    if dist <= self.scavenger_radius and (nearest_dist is None or dist < nearest_dist):
-                        nearest = neuron
-                        nearest_dist = dist
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        for n in grid.get((cx + dx, cy + dy), []):
+                            ddx = n.pos[0] - corpse.pos[0]
+                            ddy = n.pos[1] - corpse.pos[1]
+                            dist = math.sqrt(ddx * ddx + ddy * ddy)
+                            if dist <= self.scavenger_radius and (nearest_dist is None or dist < nearest_dist):
+                                nearest, nearest_dist = n, dist
                 if nearest is not None:
                     nearest.energy += corpse.energy
                     corpse.energy = 0.0
@@ -334,7 +319,7 @@ class Network:
             if source_id in self.neurons:
                 self.neurons[source_id].links.pop(target_id, None)
 
-    def get_summary(self) -> NetworkSummaryDict:
+    def get_summary(self) -> EngineSummary:
         """生成网络摘要（含 schema_version）"""
         alive = [n for n in self.neurons.values() if n.alive]
         return {
@@ -345,8 +330,7 @@ class Network:
             "total_propagations": self.total_propagations,
             "birth_count": self.birth_count,
             "death_count": self.death_count,
-            "corpses": len(self.corpses),
             "pe_moving_avg": self.pe_moving_average(),
             "active_ratio": self.active_neuron_ratio(),
-            "avg_energy": sum(n.energy for n in alive) / len(alive) if alive else 0.0,
+            "mean_energy": sum(n.energy for n in alive) / len(alive) if alive else 0.0,
         }

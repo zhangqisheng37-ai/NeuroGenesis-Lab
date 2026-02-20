@@ -18,6 +18,42 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 }
 ```
 
+## 0. Tick 快照 (TickSnapshot)
+
+`tick()` 方法返回的统一快照类型（`Network` 和 `VectorizedNetwork` 共用），定义于 `protocols.py`：
+
+| 字段名 | 说明 |
+|--------|------|
+| `schema_version` | 数据格式版本 |
+| `tick` | 当前 tick 编号 |
+| `alive_neurons` | 存活神经元数 |
+| `total_neurons` | 总神经元数 |
+| `tick_spikes` | 本 tick 放电次数 |
+| `propagation_count` | 本 tick 传播事件数 |
+| `births` | 本 tick 出生数 |
+| `deaths` | 本 tick 死亡数 |
+| `prediction_error` | 本 tick 预测误差 |
+| `mean_energy` | 存活神经元平均能量 |
+
+> 注：`Network` 引擎额外返回 `ready_events` 字段（就绪事件数），不在统一协议中但可直接访问。
+
+## 0.1 引擎摘要 (EngineSummary)
+
+`get_summary()` 方法返回的统一摘要类型：
+
+| 字段名 | 说明 |
+|--------|------|
+| `schema_version` | 数据格式版本 |
+| `total_neurons` | 总神经元数 |
+| `alive_neurons` | 存活神经元数 |
+| `total_spikes` | 累计放电次数 |
+| `total_propagations` | 累计传播事件数 |
+| `birth_count` | 累计出生数 |
+| `death_count` | 累计死亡数 |
+| `pe_moving_avg` | 预测误差滑动均值 |
+| `active_ratio` | 活跃比例 (Alive / Total) |
+| `mean_energy` | 存活神经元平均能量 |
+
 ## 1. 网络指标 (Network Metrics)
 
 位于 `metrics` 字段，反映种群的宏观状态：
@@ -29,7 +65,7 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 | `dead_neurons` | 死亡神经元数（不含已清理尸体） |
 | `total_connections` | 全网突触连接总数 |
 | `avg_connections` | 平均每个神经元的连接数 |
-| `avg_energy` | 存活神经元的平均能量 |
+| `mean_energy` | 存活神经元的平均能量 |
 | `avg_novelty` | 平均新颖性 (0.0~1.0)，反映输入的多样性 |
 | `avg_entropy` | 平均信息熵，反映状态复杂度 |
 | `avg_emotion` | 平均情感值 (保留字段) |

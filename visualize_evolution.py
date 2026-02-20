@@ -57,7 +57,7 @@ def visualize(output_dir):
     corpses = [d["corpse_count"] for d in data]
     
     # 2. Energy & Emotion
-    energy = [d["avg_energy"] for d in data]
+    energy = [d["mean_energy"] for d in data]
     emotion = [d.get("avg_emotion", 0) for d in data]
     
     # 3. Connectivity

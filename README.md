@@ -11,7 +11,8 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 - **混合学习引擎**：结合符号规则发现 (Rule Discovery) 与神经动力学预测，支持从脉冲序列中提取因果逻辑。
 - **高度可观测**：全链路数据记录（JSONL），支持 tick 级的时间序列分析与可视化。
 - **输出治理**：支持日志采样（`--log-interval`）、压缩输出（`--gzip-output`）与按大小轮转（`--max-file-size`）。
-- **高性能架构**：内置基于 NumPy 的向量化仿真内核 (`VectorizedNetwork`)，利用空间网格索引与矩阵运算，支持万级神经元规模的实时演化。
+- **高性能架构**：内置基于 NumPy + scipy.sparse 的向量化仿真内核 (`VectorizedNetwork`)，利用稀疏矩阵存储连接权重、向量化放电传播与空间网格索引，支持万级神经元规模的实时演化。
+- **统一引擎接口**：`Network` 与 `VectorizedNetwork` 遵循 `SimEngine` 协议，返回统一的 `TickSnapshot` 和 `EngineSummary` 类型，上层代码可无缝切换引擎。
 
 ## 快速开始
 

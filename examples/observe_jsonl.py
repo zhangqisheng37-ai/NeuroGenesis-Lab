@@ -37,7 +37,7 @@ def main() -> None:
         record = {
             **snapshot,
             "queue_size": len(network.queue),
-            "avg_energy": round(avg_energy, 4),
+            "mean_energy": round(avg_energy, 4),
             "avg_novelty": round(avg_novelty, 4),
             "avg_emotion": round(avg_emotion, 4),
         }

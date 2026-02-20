@@ -45,11 +45,12 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 src/neurogenesis_lab/
 ├── config.py          # 集中配置系统 (SimConfig)
 ├── neuron.py          # 神经元模型 (LIF, Izhikevich, AdEx)
-├── network.py         # 网络引擎 (事件队列, 演化)
+├── network.py         # 网络引擎 (事件队列, 演化, 网格索引近邻搜索)
 ├── encoding.py        # 编码系统 (Token, Event)
 ├── learning.py        # 学习引擎 (规则发现, 查询)
 ├── observability.py   # 可观察性 (指标, 日志, 实验管理)
-├── vectorized.py      # 向量化引擎 (NumPy 加速)
+├── vectorized.py      # 向量化引擎 (NumPy + scipy.sparse 加速)
+├── protocols.py       # 双引擎统一接口 (TickSnapshot, EngineSummary, SimEngine)
 ├── logger.py          # 基础日志
 └── __main__.py        # CLI 入口
 ```

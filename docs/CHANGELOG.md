@@ -4,6 +4,37 @@
 
 ---
 
+## v0.3.1 (2026-02-20)
+
+### 双引擎接口统一
+
+- 新增 `protocols.py`，定义 `TickSnapshot`、`EngineSummary`、`SimEngine` 协议
+- `Network.tick()` 返回字段变更：`emitted_events` → `propagation_count`，新增 `mean_energy`
+- `Network.get_summary()` 返回字段变更：`avg_energy` → `mean_energy`，移除 `corpses` 字段
+- `VectorizedNetwork.get_summary()` 新增 `total_propagations`、`active_ratio` 字段
+- 删除旧的 `SnapshotDict`、`NetworkSummaryDict`、`VectorizedSummaryDict` 类型定义
+- 上层代码（observability、visualize_evolution、examples）全部适配新字段名
+
+### 性能优化
+
+- `VectorizedNetwork` 连接矩阵从 N×N 密集 ndarray 替换为 `scipy.sparse.csr_matrix`，万级神经元内存占用从 ~800MB 降至数 MB
+- `connect_radius` 使用 `scipy.spatial.distance.cdist` 向量化距离计算
+- 放电传播使用稀疏矩阵行切片 `nnz` 替代 Python for 循环
+- `get_spike_input_currents` 使用稀疏矩阵 `sum(axis=0)` 向量化
+- 繁殖时通过 `lil_matrix` 局部修改再转回 `csr_matrix`，避免频繁格式转换
+- `Network._update_corpses` 引入网格索引优化近邻搜索，从 O(corpses × alive) 降至 O(corpses × 9 cells)
+
+### 依赖
+
+- 新增 `scipy>=1.10` 依赖
+
+### 测试
+
+- 新增 175 个测试用例（+1）
+- 测试覆盖率 92.72%
+
+---
+
 ## v0.3.0 (2026-02-15)
 
 ### 新增功能

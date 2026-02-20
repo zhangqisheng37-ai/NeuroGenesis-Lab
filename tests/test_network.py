@@ -99,7 +99,7 @@ class TestSpikeAndPropagation:
         net.enqueue([Event(token_id=1, t=1, src_id=a.id, meta={"weight": 1.0})])
 
         s1 = net.tick(1)
-        assert s1["emitted_events"] > 0, "放电应产生传播事件"
+        assert s1["propagation_count"] > 0, "放电应产生传播事件"
         assert s1["tick_spikes"] > 0, "应记录 spike 计数"
 
     def test_propagation_with_delay(self) -> None:
@@ -251,7 +251,7 @@ class TestReproducibility:
         r2 = run_simulation(42)
         for s1, s2 in zip(r1, r2):
             assert s1["tick"] == s2["tick"]
-            assert s1["emitted_events"] == s2["emitted_events"]
+            assert s1["propagation_count"] == s2["propagation_count"]
             assert abs(s1["prediction_error"] - s2["prediction_error"]) < 1e-10, (
                 f"相同 seed 应产生相同 PE: {s1['prediction_error']} vs {s2['prediction_error']}"
             )

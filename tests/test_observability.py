@@ -59,7 +59,7 @@ class TestNetworkObserver:
         assert metrics["tick"] == 1
         assert metrics["total_neurons"] == 3
         assert metrics["alive_neurons"] == 3
-        assert "avg_energy" in metrics
+        assert "mean_energy" in metrics
         assert "avg_entropy" in metrics
         assert "active_ratio" in metrics
 

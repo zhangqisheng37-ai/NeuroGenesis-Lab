@@ -143,13 +143,26 @@ NeuroGenesis Lab 探索“从脉冲到符号”的涌现：
 
 ## 6. 向量化引擎 (Vectorized Engine)
 
-为了支持大规模实验与性能基准测试，系统引入了基于 NumPy 的向量化引擎：
+为了支持大规模实验与性能基准测试，系统引入了基于 NumPy + scipy.sparse 的向量化引擎：
 
 - **VectorizedNetwork**：使用矩阵运算替代面向对象的逐个更新。
+- **稀疏矩阵**：连接权重使用 `scipy.sparse.csr_matrix` 存储，万级神经元时内存占用从 ~800MB (N×N 密集) 降至数 MB 级别。
+- **向量化传播**：放电传播通过稀疏矩阵行切片 (`nnz`) 一次性计算，消除 Python for 循环。
+- **向量化连接构建**：`connect_radius` 使用 `scipy.spatial.distance.cdist` 批量计算距离矩阵，通过 `lil_matrix` 构建后转 `csr_matrix`。
 - **性能优势**：在纯计算场景下比原始引擎快 10-50 倍。
 - **用途**：用于快速验证动力学参数、大规模统计特性分析以及作为原始引擎的对照组。
 - **限制**：目前仅支持核心动力学，不支持复杂的事件路由与规则发现。
 
+## 7. 统一引擎接口 (Unified Engine Protocol)
+
+两个引擎通过 `protocols.py` 中定义的 `SimEngine` 协议实现接口统一：
+
+- **`TickSnapshot`**：`tick()` 方法返回的统一快照类型，包含 `propagation_count`、`mean_energy` 等字段。
+- **`EngineSummary`**：`get_summary()` 方法返回的统一摘要类型，包含 `total_propagations`、`active_ratio`、`mean_energy` 等字段。
+- **`SimEngine`**：`runtime_checkable` 协议，约束两个引擎必须实现 `tick()` 和 `get_summary()` 方法。
+
+上层代码（CLI、可观测性、可视化）可通过统一类型处理两个引擎的输出，无需区分具体实现。
+
 ---
 
-*设计文档版本：v1.1 (对应代码 v0.3.0)*
+*设计文档版本：v1.2 (对应代码 v0.3.0)*

@@ -24,12 +24,13 @@
 2. 评估按比例衰减模型与线性衰减模型的可控性
 3. 为常用实验提供建议参数区间
 
-### R3: 向量化与原始引擎仍为“统计一致”而非“机制一致”
+### R3: 向量化与原始引擎仍为”统计一致”而非”机制一致”
 **现象**: 已建立统计可比测试，但模型细节尚未完全对齐。
+**进展**: v0.3.1 已统一双引擎接口（`TickSnapshot` / `EngineSummary` / `SimEngine` 协议），返回字段完全一致。
 **影响**: 机制级结论需谨慎外推。
 **建议**:
 1. 分阶段引入 Izh/AdEx 向量化实现
-2. 在 benchmark 中持续标注“可比项/不可比项”
+2. 在 benchmark 中持续标注”可比项/不可比项”
 3. 增加更多趋势对照（PE、活跃率、能量分布）
 
 ---
@@ -67,9 +68,9 @@
 ## 🟢 低优先级风险
 
 ### R8: 类型注解不完整 ✅ 已修复
-**状态**: 2026-02-19 已修复 mypy 报错 6 处，类型检查通过。
-**现象**: 部分方法返回 `dict` 而非具体 TypedDict。
-**建议**: 定义 `SnapshotDict`, `MetricsDict` 等 TypedDict（可选）。
+**状态**: v0.3.1 已通过 `protocols.py` 定义统一 `TickSnapshot`、`EngineSummary` TypedDict 和 `SimEngine` Protocol，双引擎返回类型完全收敛。
+**现象**: ~~部分方法返回 `dict` 而非具体 TypedDict。~~
+**建议**: ~~定义 `SnapshotDict`, `MetricsDict` 等 TypedDict（可选）。~~ 已完成。
 
 ### R9: 无持久化/恢复功能
 **建议**: 添加 checkpoint/restore — 将网络状态序列化为 JSON/pickle。

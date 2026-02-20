@@ -22,7 +22,7 @@ def test_spike_emits_events_and_uses_current_tick_for_delay() -> None:
     network.enqueue([Event(token_id=ord("1"), t=1, src_id=neuron_a.id, meta={"weight": 1.0})])
 
     tick_1 = network.tick(1)
-    assert tick_1["emitted_events"] > 0
+    assert tick_1["propagation_count"] > 0
     assert tick_1["prediction_error"] == 0.0
     assert len(network.queue._heap) > 0
     assert network.queue._heap[0][0] == 3

@@ -2,6 +2,7 @@
 
 接口兼容原有 Network，但内部状态用 NumPy 数组存储，
 批量计算 LIF 动力学、空间索引、能量衰减等。
+稀疏矩阵 (scipy.sparse) 存储连接权重，向量化放电传播。
 """
 
 from __future__ import annotations
@@ -9,25 +10,16 @@ from __future__ import annotations
 import math
 import random
 from dataclasses import dataclass, field
-from typing import Any, TypedDict
+from typing import Any
 
 import numpy as np
-
-
-class VectorizedSummaryDict(TypedDict):
-    """VectorizedNetwork.get_summary() 返回类型"""
-    schema_version: int
-    total_neurons: int
-    alive_neurons: int
-    total_spikes: int
-    birth_count: int
-    death_count: int
-    mean_energy: float
-    pe_moving_avg: float
+from scipy.sparse import csr_matrix, lil_matrix
+from scipy.spatial.distance import cdist
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import safe_float
+from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
 
 
 @dataclass
@@ -92,9 +84,9 @@ class VectorizedNetwork:
     r_m: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
     spike_cost: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
 
-    # 连接矩阵 (稀疏表示)
-    weight_matrix: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
-    delay_matrix: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int32))
+    # 连接矩阵 (scipy 稀疏)
+    weight_matrix: csr_matrix | None = None
+    delay_matrix: csr_matrix | None = None
 
     # 配置
     energy_decay: float = 0.005
@@ -112,6 +104,7 @@ class VectorizedNetwork:
 
     # 统计
     total_spikes: int = 0
+    total_propagations: int = 0
     total_ticks: int = 0
     birth_count: int = 0
     death_count: int = 0
@@ -147,26 +140,27 @@ class VectorizedNetwork:
         self.r_m = np.full(count, r_m, dtype=np.float64)
         self.spike_cost = np.full(count, spike_cost_val, dtype=np.float64)
 
-        self.weight_matrix = np.zeros((count, count), dtype=np.float64)
-        self.delay_matrix = np.zeros((count, count), dtype=np.int32)
+        self.weight_matrix = csr_matrix((count, count), dtype=np.float64)
+        self.delay_matrix = csr_matrix((count, count), dtype=np.int32)
 
     def connect_radius(self, radius: float, weight: float = 1.0, delay: int = 1) -> None:
-        """基于距离自动连接"""
-        for i in range(self.n):
-            if not self.alive[i]:
-                continue
-            for j in range(self.n):
-                if i == j or not self.alive[j]:
-                    continue
-                dx = self.pos[i, 0] - self.pos[j, 0]
-                dy = self.pos[i, 1] - self.pos[j, 1]
-                if dx * dx + dy * dy <= radius * radius:
-                    self.weight_matrix[i, j] = weight
-                    self.delay_matrix[i, j] = delay
+        """基于距离自动连接（向量化 cdist）"""
+        dists = cdist(self.pos, self.pos)
+        mask = (dists <= radius) & (dists > 0) & np.outer(self.alive, self.alive)
+        lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
+        lil_d = lil_matrix((self.n, self.n), dtype=np.int32)
+        rows, cols = np.where(mask)
+        for r, c in zip(rows, cols):
+            lil_w[r, c] = weight
+            lil_d[r, c] = delay
+        self.weight_matrix = csr_matrix(lil_w)
+        self.delay_matrix = csr_matrix(lil_d)
 
     def connect_knn(self, k: int = 3, weight: float = 1.0, delay: int = 1) -> None:
         """k 近邻连接"""
         from numpy.linalg import norm
+        lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
+        lil_d = lil_matrix((self.n, self.n), dtype=np.int32)
         for i in range(self.n):
             if not self.alive[i]:
                 continue
@@ -175,11 +169,13 @@ class VectorizedNetwork:
             nearest = np.argsort(dists)[:k]
             for j in nearest:
                 if self.alive[j]:
-                    self.weight_matrix[i, j] = weight
-                    self.delay_matrix[i, j] = delay
+                    lil_w[i, j] = weight
+                    lil_d[i, j] = delay
+        self.weight_matrix = csr_matrix(lil_w)
+        self.delay_matrix = csr_matrix(lil_d)
 
-    def tick(self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None) -> dict[str, Any]:
-        """向量化 tick — 批量 LIF 更新"""
+    def tick(self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None) -> TickSnapshot:
+        """向量化 tick — 批量 LIF 更新 + 稀疏矩阵传播"""
         if input_currents is None:
             input_currents = np.zeros(self.n, dtype=np.float64)
 
@@ -207,12 +203,12 @@ class VectorizedNetwork:
         self.energy[spike_mask] = np.maximum(0.0, self.energy[spike_mask] - self.spike_cost[spike_mask])
         self.spike_count[spike_mask] += 1
 
-        # 传播: 放电神经元向连接目标注入电流 (下一 tick 生效)
+        # 向量化传播: 稀疏矩阵行切片计算 nnz
         propagation_count = 0
         if tick_spikes > 0:
-            for i in spike_indices:
-                targets = np.where(self.weight_matrix[i] > 0)[0]
-                propagation_count += len(targets)
+            spike_rows = self.weight_matrix[spike_indices]
+            propagation_count = spike_rows.nnz
+            self.total_propagations += propagation_count
 
         # 移动 (向量化)
         move_dx = np.random.uniform(-1.0, 1.0, self.n)
@@ -241,38 +237,42 @@ class VectorizedNetwork:
         self.alive[death_mask] = False
         self.death_count += deaths
 
-        # 简单繁殖 (向量化 fitness 排序)
+        # 简单繁殖 — 需要修改稀疏矩阵时转 lil 再转回 csr
         births = 0
         alive_count = int(np.sum(self.alive))
         if alive_count < self.max_neurons:
             repro_mask = self.alive & (self.energy >= self.reproduction_threshold)
             repro_indices = np.where(repro_mask)[0]
-            for i in repro_indices:
-                if alive_count + births >= self.max_neurons:
-                    break
-                # 找到空位或跳过
-                dead_slots = np.where(~self.alive)[0]
-                if len(dead_slots) == 0:
-                    break
-                slot = dead_slots[0]
-                child_energy = self.energy[i] * self.reproduction_share
-                self.energy[i] -= child_energy
+            if len(repro_indices) > 0:
+                lil_w = self.weight_matrix.tolil()
+                lil_d = self.delay_matrix.tolil()
+                for i in repro_indices:
+                    if alive_count + births >= self.max_neurons:
+                        break
+                    dead_slots = np.where(~self.alive)[0]
+                    if len(dead_slots) == 0:
+                        break
+                    slot = dead_slots[0]
+                    child_energy = self.energy[i] * self.reproduction_share
+                    self.energy[i] -= child_energy
 
-                self.v[slot] = self.v_rest[i]
-                self.u[slot] = 0.0
-                self.energy[slot] = child_energy
-                self.alive[slot] = True
-                self.pos[slot] = self.pos[i] + np.random.uniform(-0.5, 0.5, 2)
-                self.spike_count[slot] = 0
-                # 变异参数
-                self.tau_m[slot] = self.tau_m[i] * (1.0 + np.random.uniform(-self.mutation_scale, self.mutation_scale))
-                self.v_th[slot] = self.v_th[i] * (1.0 + np.random.uniform(-self.mutation_scale, self.mutation_scale))
-                # 建立连接
-                self.weight_matrix[i, slot] = 1.0
-                self.weight_matrix[slot, i] = 1.0
-                self.delay_matrix[i, slot] = 1
-                self.delay_matrix[slot, i] = 1
-                births += 1
+                    self.v[slot] = self.v_rest[i]
+                    self.u[slot] = 0.0
+                    self.energy[slot] = child_energy
+                    self.alive[slot] = True
+                    self.pos[slot] = self.pos[i] + np.random.uniform(-0.5, 0.5, 2)
+                    self.spike_count[slot] = 0
+                    # 变异参数
+                    self.tau_m[slot] = self.tau_m[i] * (1.0 + np.random.uniform(-self.mutation_scale, self.mutation_scale))
+                    self.v_th[slot] = self.v_th[i] * (1.0 + np.random.uniform(-self.mutation_scale, self.mutation_scale))
+                    # 建立连接 (lil 格式高效逐元素写入)
+                    lil_w[i, slot] = 1.0
+                    lil_w[slot, i] = 1.0
+                    lil_d[i, slot] = 1
+                    lil_d[slot, i] = 1
+                    births += 1
+                self.weight_matrix = csr_matrix(lil_w)
+                self.delay_matrix = csr_matrix(lil_d)
 
         self.birth_count += births
         self.total_spikes += tick_spikes
@@ -308,15 +308,14 @@ class VectorizedNetwork:
         }
 
     def get_spike_input_currents(self) -> np.ndarray:
-        """根据上一次放电计算传播电流"""
-        spike_mask = self.spike_count > 0  # 简化: 当前只用 spike_count > 0
-        currents = np.zeros(self.n, dtype=np.float64)
-        for i in np.where(spike_mask)[0]:
-            targets = np.where(self.weight_matrix[i] > 0)[0]
-            currents[targets] += self.weight_matrix[i, targets]
-        return currents
+        """根据上一次放电计算传播电流（向量化稀疏矩阵求和）"""
+        spike_mask = self.spike_count > 0
+        spike_indices = np.where(spike_mask)[0]
+        if len(spike_indices) == 0:
+            return np.zeros(self.n, dtype=np.float64)
+        return np.asarray(self.weight_matrix[spike_indices].sum(axis=0)).ravel()
 
-    def get_summary(self) -> VectorizedSummaryDict:
+    def get_summary(self) -> EngineSummary:
         alive_mask = self.alive
         alive_count = int(np.sum(alive_mask))
         return {
@@ -324,8 +323,10 @@ class VectorizedNetwork:
             "total_neurons": self.n,
             "alive_neurons": alive_count,
             "total_spikes": self.total_spikes,
+            "total_propagations": self.total_propagations,
             "birth_count": self.birth_count,
             "death_count": self.death_count,
             "mean_energy": float(np.mean(self.energy[alive_mask])) if alive_count > 0 else 0.0,
             "pe_moving_avg": float(np.mean(self._pe_history[-10:])) if self._pe_history else 0.0,
+            "active_ratio": alive_count / self.n if self.n > 0 else 0.0,
         }

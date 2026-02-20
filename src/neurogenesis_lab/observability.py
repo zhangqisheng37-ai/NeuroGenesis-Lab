@@ -70,7 +70,7 @@ class NetworkObserver:
             "dead_neurons": len(neurons) - len(alive_neurons),
             "total_connections": total_connections,
             "avg_connections": total_connections / len(neurons) if neurons else 0.0,
-            "avg_energy": avg_energy,
+            "mean_energy": avg_energy,
             "queue_size": len(self._network.queue),
             "avg_novelty": avg_novelty,
             "avg_emotion": avg_emotion,

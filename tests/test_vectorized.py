@@ -54,7 +54,7 @@ class TestVectorizedNetwork:
         net = VectorizedNetwork()
         net.init_neurons(10, spread=5.0)
         net.connect_knn(k=3)
-        connections = np.sum(net.weight_matrix > 0)
+        connections = net.weight_matrix.nnz
         assert connections > 0, "kNN 连接应产生连接"
 
     def test_connect_radius(self) -> None:
@@ -62,7 +62,7 @@ class TestVectorizedNetwork:
         net = VectorizedNetwork()
         net.init_neurons(20, spread=5.0)
         net.connect_radius(radius=8.0, weight=0.5)
-        connections = np.sum(net.weight_matrix > 0)
+        connections = net.weight_matrix.nnz
         assert connections > 0
 
     def test_energy_decays(self) -> None:
@@ -120,6 +120,20 @@ class TestVectorizedNetwork:
         assert "schema_version" in summary
         assert "total_neurons" in summary
         assert "pe_moving_avg" in summary
+        assert "total_propagations" in summary
+        assert "active_ratio" in summary
+        assert summary["total_propagations"] >= 0
+        assert 0.0 <= summary["active_ratio"] <= 1.0
+
+    def test_tick_snapshot_has_propagation_count(self) -> None:
+        np.random.seed(42)
+        net = VectorizedNetwork()
+        net.init_neurons(5, v_th=-64.0, r_m=30.0, tau_m=1.0)
+        net.connect_knn(k=2)
+        currents = np.full(5, 10.0)
+        snapshot = net.tick(1, input_currents=currents)
+        assert "propagation_count" in snapshot
+        assert snapshot["propagation_count"] >= 0
 
     def test_nan_protection(self) -> None:
         """NaN 输入不应导致崩溃"""
