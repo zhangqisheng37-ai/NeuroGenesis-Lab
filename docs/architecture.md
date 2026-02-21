@@ -27,10 +27,13 @@ graph TD
         
         Network --> |Evolution| Scavenger[尸体回收]
         Network --> |Evolution| Reproduction[繁殖系统]
+        Network --> |Spatial| Migration[空间迁移]
+        Network --> |Learning| AutoLearner[自动学习引擎]
     end
     
     Neurons --> |State| Observability[Observability System]
     Observability --> |JSONL| Storage[磁盘存储]
+    Observability --> |Live| Visualization[实时监控面板]
     
     subgraph "Neuron Internals"
         LIF[LIF 动力学]

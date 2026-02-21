@@ -34,6 +34,8 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 | `deaths` | 本 tick 死亡数 |
 | `prediction_error` | 本 tick 预测误差 |
 | `mean_energy` | 存活神经元平均能量 |
+| `rule_count` | (可选) 当前发现的规则数量 |
+| `prediction_accuracy` | (可选) 当前预测准确率 |
 
 > 注：`Network` 引擎额外返回 `ready_events` 字段（就绪事件数），不在统一协议中但可直接访问。
 
@@ -53,6 +55,8 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 | `pe_moving_avg` | 预测误差滑动均值 |
 | `active_ratio` | 活跃比例 (Alive / Total) |
 | `mean_energy` | 存活神经元平均能量 |
+| `rule_count` | (可选) 当前发现的规则数量 |
+| `prediction_accuracy` | (可选) 当前预测准确率 |
 
 ## 1. 网络指标 (Network Metrics)
 

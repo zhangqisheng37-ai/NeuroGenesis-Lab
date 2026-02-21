@@ -8,8 +8,10 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 
 - **生物启发模型**：基于能量约束的 LIF (Leaky Integrate-and-Fire) 神经元模型，支持动态突触与可塑性。
 - **演化系统**：内置自然选择机制，包括基于适应度的繁殖、突变、死亡与尸体回收（Scavenging）。
-- **混合学习引擎**：结合符号规则发现 (Rule Discovery) 与神经动力学预测，支持从脉冲序列中提取因果逻辑。
-- **高度可观测**：全链路数据记录（JSONL），支持 tick 级的时间序列分析与可视化。
+- **空间动力学**：神经元具有二维空间坐标，支持基于空间距离的连接策略（Proximity Connection）与消耗能量的迁移（Migration）行为。
+- **混合学习引擎**：结合符号规则发现 (Rule Discovery) 与神经动力学预测，支持从脉冲序列中提取因果逻辑，并与仿真流自动集成（AutoLearner）。
+- **高度可观测**：全链路数据记录（JSONL），支持 tick 级的时间序列分析，并提供**实时可视化监控面板**（种群、能量、学习指标、空间拓扑）。
+- **长程稳定性**：内置自适应能量衰减、能量上限与濒危保护机制，确保 500+ ticks 的长程演化稳定运行。
 - **输出治理**：支持日志采样（`--log-interval`）、压缩输出（`--gzip-output`）与按大小轮转（`--max-file-size`）。
 - **高性能架构**：内置基于 NumPy + scipy.sparse 的向量化仿真内核 (`VectorizedNetwork`)，利用稀疏矩阵存储连接权重、向量化放电传播与空间网格索引，支持万级神经元规模的实时演化。
 - **统一引擎接口**：`Network` 与 `VectorizedNetwork` 遵循 `SimEngine` 协议，返回统一的 `TickSnapshot` 和 `EngineSummary` 类型，上层代码可无缝切换引擎。
@@ -21,7 +23,11 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 环境要求：Python >= 3.10
 
 ```bash
+# 安装基础包
 pip install -e .
+
+# 安装包含可视化依赖的完整包
+pip install -e ".[viz]"
 ```
 
 ### 运行最小实验
@@ -29,6 +35,9 @@ pip install -e .
 ```bash
 # 运行默认实验（100 ticks）
 python -m neurogenesis_lab run
+
+# 运行并开启实时可视化监控面板
+python -m neurogenesis_lab run --visualize
 
 # 长程实验输出治理（采样 + gzip + 轮转）
 python -m neurogenesis_lab run --ticks 2000 --log-interval 10 --gzip-output --max-file-size 5000000

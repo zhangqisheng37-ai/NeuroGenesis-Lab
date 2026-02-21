@@ -3,7 +3,11 @@
 ## 安装
 
 ```bash
+# 安装基础包
 pip install -e .
+
+# 安装包含可视化依赖的完整包
+pip install -e ".[viz]"
 ```
 
 ## 30 秒上手
@@ -14,6 +18,9 @@ python -m neurogenesis_lab info
 
 # 运行最小实验（默认 100 ticks）
 python -m neurogenesis_lab run
+
+# 运行并开启实时可视化监控面板
+python -m neurogenesis_lab run --visualize
 
 # 指定参数
 python -m neurogenesis_lab run --ticks 200 --seed 123 --neurons 12
@@ -45,11 +52,12 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 src/neurogenesis_lab/
 ├── config.py          # 集中配置系统 (SimConfig)
 ├── neuron.py          # 神经元模型 (LIF, Izhikevich, AdEx)
-├── network.py         # 网络引擎 (事件队列, 演化, 网格索引近邻搜索)
+├── network.py         # 网络引擎 (事件队列, 演化, 空间连接)
 ├── encoding.py        # 编码系统 (Token, Event)
-├── learning.py        # 学习引擎 (规则发现, 查询)
+├── learning.py        # 学习引擎 (规则发现, 查询, AutoLearner)
 ├── observability.py   # 可观察性 (指标, 日志, 实验管理)
 ├── vectorized.py      # 向量化引擎 (NumPy + scipy.sparse 加速)
+├── visualization.py   # 可视化系统 (实时监控, 离线分析)
 ├── protocols.py       # 双引擎统一接口 (TickSnapshot, EngineSummary, SimEngine)
 ├── logger.py          # 基础日志
 └── __main__.py        # CLI 入口
