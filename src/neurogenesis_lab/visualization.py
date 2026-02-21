@@ -11,6 +11,10 @@ try:
     import matplotlib.animation as animation
     from matplotlib.figure import Figure
 
+    # 设置中文字体，解决乱码问题
+    plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "Arial Unicode MS"]
+    plt.rcParams["axes.unicode_minus"] = False
+
     MATPLOTLIB_AVAILABLE = True
 except ImportError:
     MATPLOTLIB_AVAILABLE = False
