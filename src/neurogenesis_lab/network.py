@@ -63,6 +63,11 @@ class Network:
     scavenger_radius: float = 2.5
     input_current_scale: float = 1.0
     move_cost: float = 0.01
+    # 长程稳定性参数
+    energy_cap: float = 5.0
+    adaptive_decay: bool = True
+    adaptive_reproduction: bool = True
+    endangered_threshold: int = 10
     # 演化参数
     fitness_weights: dict[str, float] = field(default_factory=lambda: {
         "propagation": 1.0, "energy_efficiency": 0.5, "prediction_hit": 0.8,
@@ -75,6 +80,7 @@ class Network:
     total_spikes: int = 0
     total_propagations: int = 0
     _pe_history: list[float] = field(default_factory=list)
+    _endangered_mode: bool = False
     schema_version: str = SCHEMA_VERSION
 
     def connect(self, source_id: str, target_id: str, weight: float = 1.0, delay: int = 0) -> None:
@@ -99,6 +105,17 @@ class Network:
 
         emitted: list[Event] = []
         tick_spikes = 0
+        
+        # 计算自适应衰减率
+        alive_count = sum(1 for n in self.neurons.values() if n.alive)
+        effective_decay = self._calculate_adaptive_decay(alive_count)
+        
+        # 检查濒危模式
+        if alive_count <= self.endangered_threshold and not self._endangered_mode:
+            self._endangered_mode = True
+        elif alive_count > self.endangered_threshold * 1.5:
+            self._endangered_mode = False
+        
         for neuron in list(self.neurons.values()):
             neuron.start_tick()
             events = inputs.get(neuron.id, [])
@@ -113,7 +130,15 @@ class Network:
                 if neuron.last_event is not None:
                     emitted.extend(neuron.emit(neuron.last_event, current_tick=tick))
             neuron.move()
-            neuron.energy = max(0.0, neuron.energy - self.energy_decay)
+            
+            # 应用自适应衰减（濒危模式下减半）
+            decay = effective_decay * (0.5 if self._endangered_mode else 1.0)
+            neuron.energy = max(0.0, neuron.energy - decay)
+            
+            # 应用能量上限
+            if neuron.energy > self.energy_cap:
+                neuron.energy = self.energy_cap
+            
             energy_loss = max(0.0, neuron.last_energy - neuron.energy)
             reward = calculate_reward(neuron.states["novelty"], energy_loss)
             neuron.apply_reward(reward)
@@ -208,6 +233,11 @@ class Network:
         candidates = [neuron for neuron in self.neurons.values() if neuron.alive]
         # 按 fitness 排序 — 高适应度优先繁殖
         candidates.sort(key=lambda n: n.fitness(self.fitness_weights), reverse=True)
+        
+        # 计算自适应繁殖成本
+        alive_count = len(candidates)
+        effective_share = self._calculate_adaptive_reproduction_share(alive_count)
+        
         for neuron in candidates:
             if len(self.neurons) >= self.max_neurons:
                 break
@@ -217,12 +247,48 @@ class Network:
             link_count = len(neuron.links)
             if link_count > 10 and random.random() < self.congestion_penalty:
                 continue
-            child = neuron.spawn(self.mutation_scale, self.reproduction_share)
+            child = neuron.spawn(self.mutation_scale, effective_share)
             neuron.energy = max(0.0, neuron.energy - child.energy)
             self.add_neuron(child)
             self.connect(neuron.id, child.id, weight=1.0, delay=1)
             self.connect(child.id, neuron.id, weight=1.0, delay=1)
         self._prune_links()
+
+    def _calculate_adaptive_decay(self, alive_count: int) -> float:
+        """根据种群密度计算自适应衰减率"""
+        if not self.adaptive_decay:
+            return self.energy_decay
+        
+        # 种群密度比例
+        density_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
+        
+        # 密度高时增加衰减，密度低时减少衰减
+        if density_ratio > 0.8:
+            # 过度拥挤，增加衰减 20%
+            return self.energy_decay * 1.2
+        elif density_ratio < 0.3:
+            # 种群稀少，减少衰减 30%
+            return self.energy_decay * 0.7
+        else:
+            return self.energy_decay
+    
+    def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
+        """根据种群规模计算自适应繁殖成本"""
+        if not self.adaptive_reproduction:
+            return self.reproduction_share
+        
+        # 种群规模比例
+        population_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
+        
+        # 接近上限时增加繁殖成本，远离上限时降低成本
+        if population_ratio > 0.8:
+            # 接近容量上限，增加成本（母体分享更多能量）
+            return min(0.6, self.reproduction_share * 1.3)
+        elif population_ratio < 0.3:
+            # 种群稀少，降低成本（鼓励繁殖）
+            return max(0.2, self.reproduction_share * 0.7)
+        else:
+            return self.reproduction_share
 
     def check_death(self) -> None:
         if len(self.neurons) > self.max_neurons:

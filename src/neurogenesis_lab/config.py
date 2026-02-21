@@ -68,6 +68,11 @@ class NetworkParams:
     scavenger_radius: float = 2.5
     input_current_scale: float = 1.5
     move_cost: float = 0.01
+    # 长程稳定性参数
+    energy_cap: float = 5.0  # 能量上限，防止无限积累
+    adaptive_decay: bool = True  # 是否启用自适应衰减
+    adaptive_reproduction: bool = True  # 是否启用自适应繁殖成本
+    endangered_threshold: int = 10  # 濒危告警阈值
 
     def validate(self) -> list[str]:
         errors: list[str] = []
@@ -91,6 +96,10 @@ class NetworkParams:
             errors.append(f"input_current_scale 不能为负: {self.input_current_scale}")
         if self.move_cost < 0:
             errors.append(f"move_cost 不能为负: {self.move_cost}")
+        if self.energy_cap <= 0:
+            errors.append(f"energy_cap 必须为正: {self.energy_cap}")
+        if self.endangered_threshold < 0:
+            errors.append(f"endangered_threshold 不能为负: {self.endangered_threshold}")
         return errors
 
 
@@ -168,6 +177,10 @@ class SimConfig:
                 "scavenger_radius": self.network.scavenger_radius,
                 "input_current_scale": self.network.input_current_scale,
                 "move_cost": self.network.move_cost,
+                "energy_cap": self.network.energy_cap,
+                "adaptive_decay": self.network.adaptive_decay,
+                "adaptive_reproduction": self.network.adaptive_reproduction,
+                "endangered_threshold": self.network.endangered_threshold,
             },
             "evolution": {
                 "fitness_weights": self.evolution.fitness_weights,

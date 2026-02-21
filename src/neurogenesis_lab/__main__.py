@@ -26,6 +26,7 @@ from neurogenesis_lab.config import (
     seed_all,
 )
 from neurogenesis_lab.encoding import Encoder, Event
+from neurogenesis_lab.learning import AutoLearner, RuleDiscovery
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron, IzhikevichNeuron, AdExNeuron
 from neurogenesis_lab.observability import (
@@ -84,19 +85,43 @@ def _build_sim_config(args: argparse.Namespace) -> SimConfig:
             ),
             network=NetworkParams(
                 reproduction_threshold=float(
-                    network.get("reproduction_threshold", cfg.network.reproduction_threshold)
+                    network.get(
+                        "reproduction_threshold", cfg.network.reproduction_threshold
+                    )
                 ),
-                reproduction_share=float(network.get("reproduction_share", cfg.network.reproduction_share)),
-                mutation_scale=float(network.get("mutation_scale", cfg.network.mutation_scale)),
-                energy_decay=float(network.get("energy_decay", cfg.network.energy_decay)),
+                reproduction_share=float(
+                    network.get("reproduction_share", cfg.network.reproduction_share)
+                ),
+                mutation_scale=float(
+                    network.get("mutation_scale", cfg.network.mutation_scale)
+                ),
+                energy_decay=float(
+                    network.get("energy_decay", cfg.network.energy_decay)
+                ),
                 max_neurons=int(network.get("max_neurons", cfg.network.max_neurons)),
                 max_links=int(network.get("max_links", cfg.network.max_links)),
                 corpse_ttl=int(network.get("corpse_ttl", cfg.network.corpse_ttl)),
-                scavenger_radius=float(network.get("scavenger_radius", cfg.network.scavenger_radius)),
+                scavenger_radius=float(
+                    network.get("scavenger_radius", cfg.network.scavenger_radius)
+                ),
                 input_current_scale=float(
                     network.get("input_current_scale", cfg.network.input_current_scale)
                 ),
                 move_cost=float(network.get("move_cost", cfg.network.move_cost)),
+                energy_cap=float(network.get("energy_cap", cfg.network.energy_cap)),
+                adaptive_decay=bool(
+                    network.get("adaptive_decay", cfg.network.adaptive_decay)
+                ),
+                adaptive_reproduction=bool(
+                    network.get(
+                        "adaptive_reproduction", cfg.network.adaptive_reproduction
+                    )
+                ),
+                endangered_threshold=int(
+                    network.get(
+                        "endangered_threshold", cfg.network.endangered_threshold
+                    )
+                ),
             ),
             evolution=EvolutionParams(
                 fitness_weights={
@@ -107,13 +132,23 @@ def _build_sim_config(args: argparse.Namespace) -> SimConfig:
                     ),
                 },
                 mutation_amplitude=float(
-                    evolution.get("mutation_amplitude", cfg.evolution.mutation_amplitude)
+                    evolution.get(
+                        "mutation_amplitude", cfg.evolution.mutation_amplitude
+                    )
                 ),
                 energy_budget_per_tick=float(
-                    evolution.get("energy_budget_per_tick", cfg.evolution.energy_budget_per_tick)
+                    evolution.get(
+                        "energy_budget_per_tick", cfg.evolution.energy_budget_per_tick
+                    )
                 ),
-                congestion_penalty=float(evolution.get("congestion_penalty", cfg.evolution.congestion_penalty)),
-                min_neurons=int(evolution.get("min_neurons", cfg.evolution.min_neurons)),
+                congestion_penalty=float(
+                    evolution.get(
+                        "congestion_penalty", cfg.evolution.congestion_penalty
+                    )
+                ),
+                min_neurons=int(
+                    evolution.get("min_neurons", cfg.evolution.min_neurons)
+                ),
             ),
         )
     # 命令行覆盖
@@ -154,7 +189,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         "mem_size": cfg.neuron.mem_size,
         "move_cost": cfg.network.move_cost,
     }
-    neurons = [neuron_types[i % len(neuron_types)](**common_neuron_kwargs) for i in range(neuron_count)]
+    neurons = [
+        neuron_types[i % len(neuron_types)](**common_neuron_kwargs)
+        for i in range(neuron_count)
+    ]
     network = Network(
         neurons={n.id: n for n in neurons},
         reproduction_threshold=cfg.network.reproduction_threshold,
@@ -167,6 +205,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         scavenger_radius=cfg.network.scavenger_radius,
         input_current_scale=cfg.network.input_current_scale,
         move_cost=cfg.network.move_cost,
+        energy_cap=cfg.network.energy_cap,
+        adaptive_decay=cfg.network.adaptive_decay,
+        adaptive_reproduction=cfg.network.adaptive_reproduction,
+        endangered_threshold=cfg.network.endangered_threshold,
         fitness_weights=cfg.evolution.fitness_weights,
         congestion_penalty=cfg.evolution.congestion_penalty,
         min_neurons=cfg.evolution.min_neurons,
@@ -209,17 +251,44 @@ def cmd_run(args: argparse.Namespace) -> None:
     observer = NetworkObserver(network, debug_neuron_ids=[neurons[0].id])
     logger.log_config(cfg.to_dict())
 
+    # 自动学习引擎
+    auto_learner = AutoLearner(discovery=RuleDiscovery(min_support=2))
+
+    # 实时可视化监控
+    live_monitor = None
+    if getattr(args, "visualize", False):
+        try:
+            from neurogenesis_lab.visualization import LiveMonitor
+
+            plot_interval = max(1, int(getattr(args, "plot_interval", 5) or 5))
+            live_monitor = LiveMonitor(plot_interval=plot_interval)
+            print(f"  实时监控已启用 (更新间隔: {plot_interval} ticks)")
+        except Exception as exc:
+            print(f"  警告: 无法启动实时监控 ({exc})")
+
     # 运行
     t0 = time.time()
     for t in range(1, cfg.ticks + 1):
         snapshot = network.tick(t, dt=cfg.dt)
+        # 自动学习 — 采样、规则发现、预测奖励
+        learn_report = auto_learner.on_tick(t, snapshot, network)
+        snapshot["rule_count"] = learn_report["rule_count"]
+        snapshot["prediction_accuracy"] = learn_report["prediction_accuracy"]
         logger.log_tick(observer, t, snapshot)
+        if live_monitor is not None:
+            live_monitor.on_tick(t, snapshot)
         if t % max(1, cfg.ticks // 5) == 0:
             alive = snapshot["alive_neurons"]
             pe = snapshot["prediction_error"]
-            print(f"  tick {t}/{cfg.ticks}: alive={alive}, PE={pe:.4f}")
+            acc = learn_report["prediction_accuracy"]
+            rules = learn_report["rule_count"]
+            print(
+                f"  tick {t}/{cfg.ticks}: alive={alive}, PE={pe:.4f}, rules={rules}, acc={acc:.3f}"
+            )
 
     elapsed = time.time() - t0
+    if live_monitor is not None:
+        live_monitor.finalize()
     final = observer.get_network_metrics(cfg.ticks)
     summary = network.get_summary()
     logger.log_summary(cfg.ticks, final)
@@ -227,10 +296,21 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(f"\n完成! 用时 {elapsed:.2f}s")
     print(f"  输出: {logger.get_output_path()}")
     print(f"  存活: {summary['alive_neurons']}/{summary['total_neurons']}")
-    print(f"  总放电: {summary['total_spikes']}, 总传播: {summary['total_propagations']}")
+    print(
+        f"  总放电: {summary['total_spikes']}, 总传播: {summary['total_propagations']}"
+    )
     print(f"  出生: {summary['birth_count']}, 死亡: {summary['death_count']}")
+    learn_summary = auto_learner.get_summary()
+    print(
+        f"  规则数: {learn_summary['rule_count']}, 预测准确率: {learn_summary['prediction_accuracy']:.3f}"
+    )
+    print(
+        f"  预测次数: {learn_summary['total_predictions']}, 正确: {learn_summary['correct_predictions']}"
+    )
     if summary["total_spikes"] <= 0 or summary["total_propagations"] <= 0:
-        print("  警告: 未观察到有效放电传播，可提高 --input-weight 或调整 [neuron]/[network] 参数")
+        print(
+            "  警告: 未观察到有效放电传播，可提高 --input-weight 或调整 [neuron]/[network] 参数"
+        )
 
 
 def cmd_benchmark(args: argparse.Namespace) -> None:
@@ -273,8 +353,12 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     orig_time = time.time() - t0
 
     print(f"\n结果:")
-    print(f"  向量化引擎 ({neuron_count} neurons): {vec_time:.3f}s ({tick_count / vec_time:.0f} ticks/s)")
-    print(f"  原始引擎 ({compare_n} neurons): {orig_time:.3f}s ({tick_count / orig_time:.0f} ticks/s)")
+    print(
+        f"  向量化引擎 ({neuron_count} neurons): {vec_time:.3f}s ({tick_count / vec_time:.0f} ticks/s)"
+    )
+    print(
+        f"  原始引擎 ({compare_n} neurons): {orig_time:.3f}s ({tick_count / orig_time:.0f} ticks/s)"
+    )
     if compare_n == neuron_count and orig_time > 0:
         print(f"  加速比: {orig_time / vec_time:.1f}x")
     print(f"  向量化存活: {vec_summary['alive_neurons']}")
@@ -297,7 +381,9 @@ def main() -> None:
         prog="neurogenesis-lab",
         description="NeuroGenesis Lab — 数字生命仿真平台",
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
 
     # run
@@ -320,7 +406,9 @@ def main() -> None:
         help="外部刺激注入间隔（tick）",
     )
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
-    run_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
+    run_parser.add_argument(
+        "--config", type=str, default=None, help="TOML 配置文件路径"
+    )
     run_parser.add_argument("--debug", action="store_true", help="开启 debug 模式")
     run_parser.add_argument(
         "--log-interval",
@@ -338,6 +426,17 @@ def main() -> None:
         type=int,
         default=0,
         help="单个输出文件最大字节数，>0 时启用轮转",
+    )
+    run_parser.add_argument(
+        "--visualize",
+        action="store_true",
+        help="启动实时可视化监控面板",
+    )
+    run_parser.add_argument(
+        "--plot-interval",
+        type=int,
+        default=5,
+        help="实时图表更新间隔（每 N tick 更新一次）",
     )
 
     # benchmark

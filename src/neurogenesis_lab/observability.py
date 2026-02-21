@@ -256,9 +256,11 @@ def create_experiment_logger(
     max_file_size: int = 0,
     gzip_output: bool = False,
 ) -> ObservabilityLogger:
-    """创建实验日志记录器 — 自动分目录防覆盖"""
+    """创建实验日志记录器 — 自动分目录防覆盖（带毫秒精度）"""
+    # 使用毫秒精度时间戳，避免快速连续创建时冲突
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    exp_id = f"{experiment_name}_{timestamp}"
+    milliseconds = int((time.time() % 1) * 1000)
+    exp_id = f"{experiment_name}_{timestamp}_{milliseconds:03d}"
     filename = "run.jsonl.gz" if gzip_output else "run.jsonl"
     output_path = base_dir / exp_id / filename
     return ObservabilityLogger(

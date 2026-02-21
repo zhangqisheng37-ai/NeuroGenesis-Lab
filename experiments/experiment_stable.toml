@@ -1,0 +1,46 @@
+# NeuroGenesis Lab — 长程稳定配置
+# 用于 500+ ticks 长程实验，启用自适应机制
+
+[simulation]
+ticks = 500
+seed = 42
+dt = 1.0
+
+[neuron]
+v_rest = -65.0
+v_reset = -65.0
+v_th = -50.0
+tau_m = 20.0
+r_m = 1.0
+spike_cost = 0.04
+input_gain = 0.08
+mem_size = 64
+
+[network]
+reproduction_threshold = 1.8
+reproduction_share = 0.35
+mutation_scale = 0.05
+energy_decay = 0.0015
+max_neurons = 60
+max_links = 240
+corpse_ttl = 50
+scavenger_radius = 2.5
+input_current_scale = 2.0
+move_cost = 0.008
+# 长程稳定性参数
+energy_cap = 5.0
+adaptive_decay = true
+adaptive_reproduction = true
+endangered_threshold = 10
+
+[evolution]
+mutation_amplitude = 0.05
+energy_budget_per_tick = 0.0
+congestion_penalty = 0.1
+min_neurons = 5
+
+[evolution.fitness_weights]
+propagation = 1.0
+energy_efficiency = 0.5
+prediction_hit = 0.8
+
