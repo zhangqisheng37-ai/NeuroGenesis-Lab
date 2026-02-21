@@ -388,29 +388,26 @@ class LiveMonitor:
         ax.set_ylabel("PE")
         ax.grid(True, alpha=0.3)
 
-        # 子图4: 生死率
+        # 子图4: 空间拓扑
         ax = self._axes[3]
-        (self._lines["births"],) = ax.plot(
-            [], [], label="出生", color="#27ae60", linewidth=2
-        )
-        (self._lines["deaths"],) = ax.plot(
-            [], [], label="死亡", color="#c0392b", linewidth=2
-        )
-        ax.set_title("生死动态")
-        ax.set_xlabel("Tick")
-        ax.set_ylabel("数量")
-        ax.legend(loc="upper left", fontsize=8)
+        ax.set_title("空间拓扑")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
         ax.grid(True, alpha=0.3)
+        ax.set_aspect("equal")
+        self._scatter = None
+        self._lines_topology = []
 
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         self._initialized = True
 
-    def on_tick(self, tick: int, snapshot: dict[str, Any]) -> None:
+    def on_tick(self, tick: int, snapshot: dict[str, Any], network: Any = None) -> None:
         """每个 tick 后调用，按间隔更新图表
 
         Args:
             tick: 当前 tick
             snapshot: Network.tick() 返回的 TickSnapshot
+            network: Network 实例，用于获取空间信息
         """
         if tick % self.plot_interval != 0:
             return
@@ -421,9 +418,10 @@ class LiveMonitor:
         self._total.append(snapshot.get("total_neurons", 0))
         self._mean_energy.append(snapshot.get("mean_energy", 0.0))
         self._pe.append(snapshot.get("prediction_error", 0.0))
-        self._births.append(snapshot.get("births", 0))
-        self._deaths.append(snapshot.get("deaths", 0))
         self._rule_count.append(snapshot.get("rule_count", 0))
+
+        # 保存网络状态用于拓扑图
+        self._current_network = network
 
         # 截断过长的历史
         if len(self._ticks) > self.max_points:
@@ -433,8 +431,6 @@ class LiveMonitor:
             self._total = self._total[trim:]
             self._mean_energy = self._mean_energy[trim:]
             self._pe = self._pe[trim:]
-            self._births = self._births[trim:]
-            self._deaths = self._deaths[trim:]
             self._rule_count = self._rule_count[trim:]
 
         # 延迟初始化（确保有数据后再创建图表）
@@ -469,12 +465,57 @@ class LiveMonitor:
         ax.relim()
         ax.autoscale_view()
 
-        # 生死动态
-        self._lines["births"].set_data(ticks, self._births)
-        self._lines["deaths"].set_data(ticks, self._deaths)
+        # 空间拓扑
         ax = self._axes[3]
-        ax.relim()
-        ax.autoscale_view()
+        if hasattr(self, "_current_network") and self._current_network is not None:
+            network = self._current_network
+            alive = [n for n in network.neurons.values() if n.alive]
+
+            if alive:
+                xs = [n.pos[0] for n in alive]
+                ys = [n.pos[1] for n in alive]
+                energies = [n.energy for n in alive]
+
+                # 清除旧的连接线
+                for line in self._lines_topology:
+                    line.remove()
+                self._lines_topology.clear()
+
+                # 绘制新的连接线
+                for n in alive:
+                    for target_id in n.links:
+                        if (
+                            target_id in network.neurons
+                            and network.neurons[target_id].alive
+                        ):
+                            target = network.neurons[target_id]
+                            (line,) = ax.plot(
+                                [n.pos[0], target.pos[0]],
+                                [n.pos[1], target.pos[1]],
+                                color="#bdc3c7",
+                                alpha=0.3,
+                                linewidth=0.5,
+                            )
+                            self._lines_topology.append(line)
+
+                # 更新散点图
+                if self._scatter is None:
+                    self._scatter = ax.scatter(
+                        xs,
+                        ys,
+                        c=energies,
+                        cmap="YlOrRd",
+                        s=50,
+                        alpha=0.8,
+                        edgecolors="black",
+                        linewidth=1,
+                    )
+                else:
+                    self._scatter.set_offsets(list(zip(xs, ys)))
+                    self._scatter.set_array(energies)
+
+                ax.relim()
+                ax.autoscale_view()
 
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()

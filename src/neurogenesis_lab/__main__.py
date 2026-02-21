@@ -218,6 +218,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         target = neurons[(i + 1) % len(neurons)]
         network.connect(neuron.id, target.id, weight=1.0, delay=1)
 
+    # 初始空间连接
+    network.connect_by_proximity(radius=5.0, max_links_per_neuron=3)
+
     # 注入信号
     encoder = Encoder()
     expr = getattr(args, "expr", "1+2=3") or "1+2=3"
@@ -276,7 +279,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         snapshot["prediction_accuracy"] = learn_report["prediction_accuracy"]
         logger.log_tick(observer, t, snapshot)
         if live_monitor is not None:
-            live_monitor.on_tick(t, snapshot)
+            live_monitor.on_tick(t, snapshot, network)
         if t % max(1, cfg.ticks // 5) == 0:
             alive = snapshot["alive_neurons"]
             pe = snapshot["prediction_error"]

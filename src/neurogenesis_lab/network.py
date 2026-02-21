@@ -69,9 +69,13 @@ class Network:
     adaptive_reproduction: bool = True
     endangered_threshold: int = 10
     # 演化参数
-    fitness_weights: dict[str, float] = field(default_factory=lambda: {
-        "propagation": 1.0, "energy_efficiency": 0.5, "prediction_hit": 0.8,
-    })
+    fitness_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "propagation": 1.0,
+            "energy_efficiency": 0.5,
+            "prediction_hit": 0.8,
+        }
+    )
     congestion_penalty: float = 0.1
     min_neurons: int = 2
     # 统计跟踪
@@ -83,11 +87,63 @@ class Network:
     _endangered_mode: bool = False
     schema_version: str = SCHEMA_VERSION
 
-    def connect(self, source_id: str, target_id: str, weight: float = 1.0, delay: int = 0) -> None:
+    def connect(
+        self, source_id: str, target_id: str, weight: float = 1.0, delay: int = 0
+    ) -> None:
         if delay < 0:
             delay = 0
         neuron = self.neurons[source_id]
         neuron.links[target_id] = {"weight": max(0.0, weight), "delay": delay}
+
+    def connect_by_proximity(
+        self, radius: float = 5.0, max_links_per_neuron: int = 5
+    ) -> None:
+        """基于空间距离建立连接"""
+        alive = [n for n in self.neurons.values() if n.alive]
+        if not alive:
+            return
+
+        # 构建空间网格加速查找
+        cell_size = radius if radius > 0 else 1.0
+        grid: dict[tuple[int, int], list[Neuron]] = {}
+        for n in alive:
+            key = (int(n.pos[0] // cell_size), int(n.pos[1] // cell_size))
+            grid.setdefault(key, []).append(n)
+
+        for source in alive:
+            cx, cy = int(source.pos[0] // cell_size), int(source.pos[1] // cell_size)
+            candidates: list[tuple[Neuron, float]] = []
+
+            # 搜索相邻网格
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    for target in grid.get((cx + dx, cy + dy), []):
+                        if source.id == target.id:
+                            continue
+
+                        # 计算欧氏距离
+                        ddx = target.pos[0] - source.pos[0]
+                        ddy = target.pos[1] - source.pos[1]
+                        dist = math.sqrt(ddx * ddx + ddy * ddy)
+
+                        if dist <= radius:
+                            candidates.append((target, dist))
+
+            # 按距离排序，取最近的 N 个
+            candidates.sort(key=lambda x: x[1])
+
+            # 建立连接，权重与距离成反比，延迟与距离成正比
+            links_added = 0
+            for target, dist in candidates:
+                if links_added >= max_links_per_neuron:
+                    break
+                if target.id not in source.links:
+                    # 距离越近，权重越大 (0.1 ~ 1.0)
+                    weight = max(0.1, 1.0 - (dist / radius))
+                    # 距离越远，延迟越大 (1 ~ 5)
+                    delay = max(1, int((dist / radius) * 5))
+                    self.connect(source.id, target.id, weight=weight, delay=delay)
+                    links_added += 1
 
     def add_neuron(self, neuron: Neuron) -> None:
         self.neurons[neuron.id] = neuron
@@ -95,7 +151,9 @@ class Network:
     def enqueue(self, events: Iterable[Event]) -> None:
         self.queue.push_many(events)
 
-    def tick(self, tick: int, dt: float = 1.0, run_evolution: bool = True) -> TickSnapshot:
+    def tick(
+        self, tick: int, dt: float = 1.0, run_evolution: bool = True
+    ) -> TickSnapshot:
         ready = self.queue.pop_ready(tick)
         inputs: dict[str, list[Event]] = defaultdict(list)
         for event in ready:
@@ -105,17 +163,17 @@ class Network:
 
         emitted: list[Event] = []
         tick_spikes = 0
-        
+
         # 计算自适应衰减率
         alive_count = sum(1 for n in self.neurons.values() if n.alive)
         effective_decay = self._calculate_adaptive_decay(alive_count)
-        
+
         # 检查濒危模式
         if alive_count <= self.endangered_threshold and not self._endangered_mode:
             self._endangered_mode = True
         elif alive_count > self.endangered_threshold * 1.5:
             self._endangered_mode = False
-        
+
         for neuron in list(self.neurons.values()):
             neuron.start_tick()
             events = inputs.get(neuron.id, [])
@@ -130,15 +188,15 @@ class Network:
                 if neuron.last_event is not None:
                     emitted.extend(neuron.emit(neuron.last_event, current_tick=tick))
             neuron.move()
-            
+
             # 应用自适应衰减（濒危模式下减半）
             decay = effective_decay * (0.5 if self._endangered_mode else 1.0)
             neuron.energy = max(0.0, neuron.energy - decay)
-            
+
             # 应用能量上限
             if neuron.energy > self.energy_cap:
                 neuron.energy = self.energy_cap
-            
+
             energy_loss = max(0.0, neuron.last_energy - neuron.energy)
             reward = calculate_reward(neuron.states["novelty"], energy_loss)
             neuron.apply_reward(reward)
@@ -154,7 +212,11 @@ class Network:
 
         alive_neurons = [neuron for neuron in self.neurons.values() if neuron.alive]
         alive_count = len(alive_neurons)
-        mean_energy = sum(n.energy for n in alive_neurons) / alive_count if alive_count > 0 else 0.0
+        mean_energy = (
+            sum(n.energy for n in alive_neurons) / alive_count
+            if alive_count > 0
+            else 0.0
+        )
         snapshot = {
             "schema_version": self.schema_version,
             "tick": tick,
@@ -217,12 +279,16 @@ class Network:
             self.expected_state = dict(actual_state)
             return 0.0
         prediction_error = math.sqrt(
-            sum((actual_state[key] - self.expected_state.get(key, 0.0)) ** 2 for key in actual_state)
+            sum(
+                (actual_state[key] - self.expected_state.get(key, 0.0)) ** 2
+                for key in actual_state
+            )
         )
         prediction_error = safe_float(prediction_error)
         alpha = 0.3
         self.expected_state = {
-            key: self.expected_state.get(key, 0.0) + alpha * (actual_state[key] - self.expected_state.get(key, 0.0))
+            key: self.expected_state.get(key, 0.0)
+            + alpha * (actual_state[key] - self.expected_state.get(key, 0.0))
             for key in actual_state
         }
         return prediction_error
@@ -233,11 +299,11 @@ class Network:
         candidates = [neuron for neuron in self.neurons.values() if neuron.alive]
         # 按 fitness 排序 — 高适应度优先繁殖
         candidates.sort(key=lambda n: n.fitness(self.fitness_weights), reverse=True)
-        
+
         # 计算自适应繁殖成本
         alive_count = len(candidates)
         effective_share = self._calculate_adaptive_reproduction_share(alive_count)
-        
+
         for neuron in candidates:
             if len(self.neurons) >= self.max_neurons:
                 break
@@ -258,10 +324,10 @@ class Network:
         """根据种群密度计算自适应衰减率"""
         if not self.adaptive_decay:
             return self.energy_decay
-        
+
         # 种群密度比例
         density_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
-        
+
         # 密度高时增加衰减，密度低时减少衰减
         if density_ratio > 0.8:
             # 过度拥挤，增加衰减 20%
@@ -271,15 +337,17 @@ class Network:
             return self.energy_decay * 0.7
         else:
             return self.energy_decay
-    
+
     def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
         """根据种群规模计算自适应繁殖成本"""
         if not self.adaptive_reproduction:
             return self.reproduction_share
-        
+
         # 种群规模比例
-        population_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
-        
+        population_ratio = (
+            alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
+        )
+
         # 接近上限时增加繁殖成本，远离上限时降低成本
         if population_ratio > 0.8:
             # 接近容量上限，增加成本（母体分享更多能量）
@@ -297,12 +365,20 @@ class Network:
             for neuron in ordered[:overflow]:
                 neuron.alive = False
 
-        dead_ids = [neuron.id for neuron in self.neurons.values() if not neuron.alive or neuron.energy <= 0.0]
+        dead_ids = [
+            neuron.id
+            for neuron in self.neurons.values()
+            if not neuron.alive or neuron.energy <= 0.0
+        ]
         # 保护 min_neurons 下限
         alive_count = len(self.neurons) - len(dead_ids)
         if alive_count < self.min_neurons:
             # 保留能量最高的死亡神经元
-            dead_neurons = [(nid, self.neurons[nid].energy) for nid in dead_ids if nid in self.neurons]
+            dead_neurons = [
+                (nid, self.neurons[nid].energy)
+                for nid in dead_ids
+                if nid in self.neurons
+            ]
             dead_neurons.sort(key=lambda x: x[1], reverse=True)
             save_count = self.min_neurons - alive_count
             saved = {nid for nid, _ in dead_neurons[:save_count]}
@@ -329,10 +405,14 @@ class Network:
                     value = getattr(neuron_obj, attr)
                     if isinstance(value, (int, float)):
                         params[attr] = float(value)
-            self.corpses.append(Corpse(
-                pos=neuron_obj.pos, energy=neuron_obj.energy, params=params,
-                ttl=self.corpse_ttl,
-            ))
+            self.corpses.append(
+                Corpse(
+                    pos=neuron_obj.pos,
+                    energy=neuron_obj.energy,
+                    params=params,
+                    ttl=self.corpse_ttl,
+                )
+            )
             self.neurons.pop(neuron_id, None)
 
     def _update_corpses(self) -> None:
@@ -353,7 +433,9 @@ class Network:
             # 能量衰减
             corpse.energy = max(0.0, corpse.energy - corpse.decay_rate)
             if corpse.energy > 0 and alive:
-                cx, cy = int(corpse.pos[0] // cell_size), int(corpse.pos[1] // cell_size)
+                cx, cy = int(corpse.pos[0] // cell_size), int(
+                    corpse.pos[1] // cell_size
+                )
                 nearest = None
                 nearest_dist = None
                 for dx in (-1, 0, 1):
@@ -362,7 +444,9 @@ class Network:
                             ddx = n.pos[0] - corpse.pos[0]
                             ddy = n.pos[1] - corpse.pos[1]
                             dist = math.sqrt(ddx * ddx + ddy * ddy)
-                            if dist <= self.scavenger_radius and (nearest_dist is None or dist < nearest_dist):
+                            if dist <= self.scavenger_radius and (
+                                nearest_dist is None or dist < nearest_dist
+                            ):
                                 nearest, nearest_dist = n, dist
                 if nearest is not None:
                     nearest.energy += corpse.energy

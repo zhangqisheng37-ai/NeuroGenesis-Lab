@@ -36,7 +36,12 @@ class Neuron:
     mem: deque[Event] = field(default_factory=lambda: deque(maxlen=64))
     transitions: Counter[tuple[int, int]] = field(default_factory=Counter)
     states: dict[str, float] = field(
-        default_factory=lambda: {"energy": 1.0, "entropy": 0.0, "emotion": 0.0, "novelty": 0.0}
+        default_factory=lambda: {
+            "energy": 1.0,
+            "entropy": 0.0,
+            "emotion": 0.0,
+            "novelty": 0.0,
+        }
     )
     last_energy: float = 1.0
     last_event: Event | None = None
@@ -121,10 +126,12 @@ class Neuron:
     def move(self) -> None:
         if not self.alive:
             return
-        dx = random.uniform(-1.0, 1.0)
-        dy = random.uniform(-1.0, 1.0)
-        self.pos = (self.pos[0] + dx, self.pos[1] + dy)
-        self.energy = max(0.0, self.energy - self.move_cost)
+        # 只有能量充足时才移动
+        if self.energy > self.move_cost * 2:
+            dx = random.uniform(-0.5, 0.5)
+            dy = random.uniform(-0.5, 0.5)
+            self.pos = (self.pos[0] + dx, self.pos[1] + dy)
+            self.energy = max(0.0, self.energy - self.move_cost)
         if self.energy <= 0.0:
             self.alive = False
 
@@ -166,7 +173,11 @@ class Neuron:
 
     def fitness(self, weights: dict[str, float] | None = None) -> float:
         """计算适应度得分"""
-        w = weights or {"propagation": 1.0, "energy_efficiency": 0.5, "prediction_hit": 0.8}
+        w = weights or {
+            "propagation": 1.0,
+            "energy_efficiency": 0.5,
+            "prediction_hit": 0.8,
+        }
         score = (
             w.get("propagation", 1.0) * self.propagation_count
             + w.get("energy_efficiency", 0.5) * self.energy
@@ -176,9 +187,17 @@ class Neuron:
 
     def spawn(self, mutation_scale: float, energy_share: float) -> "Neuron":
         child = type(self)()
-        child.pos = (self.pos[0] + random.uniform(-0.5, 0.5), self.pos[1] + random.uniform(-0.5, 0.5))
+        child.pos = (
+            self.pos[0] + random.uniform(-0.5, 0.5),
+            self.pos[1] + random.uniform(-0.5, 0.5),
+        )
         child.energy = max(0.0, self.energy * energy_share)
-        child.states = {"energy": child.energy, "entropy": 0.0, "emotion": 0.0, "novelty": 0.0}
+        child.states = {
+            "energy": child.energy,
+            "entropy": 0.0,
+            "emotion": 0.0,
+            "novelty": 0.0,
+        }
         for attr in [
             "tau_m",
             "r_m",
