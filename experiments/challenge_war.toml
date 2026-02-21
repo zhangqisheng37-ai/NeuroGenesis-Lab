@@ -1,0 +1,35 @@
+# 种群战争 (Population War)
+# 模拟两个种群的竞争（通过高拥挤惩罚和有限资源）
+# 观察是否存在 "领地" 划分或 "灭绝" 事件
+
+[simulation]
+ticks = 800
+seed = 777
+dt = 1.0
+
+[neuron]
+v_th = -50.0
+spike_cost = 0.05
+input_gain = 0.05
+mem_size = 64
+
+[network]
+max_neurons = 300                 # [战场] 超大规模
+max_links = 1500
+reproduction_threshold = 2.2
+reproduction_share = 0.5
+mutation_scale = 0.08
+energy_decay = 0.003
+corpse_ttl = 50
+scavenger_radius = 1.5            # [竞争] 必须贴身才能抢夺尸体能量
+move_cost = 0.01
+
+[evolution]
+mutation_amplitude = 0.08
+congestion_penalty = 2.0          # [核心] 极高的拥挤惩罚，迫使种群扩散
+min_neurons = 10
+
+[evolution.fitness_weights]
+propagation = 1.5                 # 鼓励扩张
+energy_efficiency = 1.0
+prediction_hit = 1.0

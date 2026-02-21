@@ -1,0 +1,34 @@
+# 复杂规则学习 (Complex Logic Learning)
+# 资源丰富，但只有 "高智商" 个体能获得奖励
+# 配合 CLI 参数: --expr "1+2*3=7" 使用
+
+[simulation]
+ticks = 1000
+seed = 2026
+dt = 0.5                          # [精度] 更高的时间分辨率
+
+[neuron]
+v_th = -55.0                      # 容易放电，鼓励思考
+spike_cost = 0.01                 # 思考成本低
+input_gain = 0.1                  # 能量充足
+mem_size = 256                    # [关键] 超大记忆体，用于长序列模式
+
+[network]
+max_neurons = 200                 # 大脑容量
+max_links = 2000                  # 密集连接
+reproduction_threshold = 1.5      # 容易繁殖
+reproduction_share = 0.3
+mutation_scale = 0.02             # [稳定] 微调突变
+energy_decay = 0.001
+corpse_ttl = 100
+move_cost = 0.001
+
+[evolution]
+mutation_amplitude = 0.02
+congestion_penalty = 0.05         # 允许密集连接
+min_neurons = 20
+
+[evolution.fitness_weights]
+propagation = 0.2
+energy_efficiency = 0.5
+prediction_hit = 5.0              # [核心] 预测准确率决定一切
