@@ -30,7 +30,7 @@ pip install -e .
 pip install -e ".[viz]"
 ```
 
-### 运行最小实验
+### 运行实验
 
 ```bash
 # 运行默认实验（100 ticks）
@@ -39,8 +39,17 @@ python -m neurogenesis_lab run
 # 运行并开启实时可视化监控面板
 python -m neurogenesis_lab run --visualize
 
+# 使用自定义配置文件运行（如硬核挑战模式）
+python -m neurogenesis_lab run --config experiments/challenge_hardcore.toml
+
 # 长程实验输出治理（采样 + gzip + 轮转）
 python -m neurogenesis_lab run --ticks 2000 --log-interval 10 --gzip-output --max-file-size 5000000
+
+# 性能基准测试（例如 5000 神经元）
+python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
+
+# 查看版本与默认配置
+python -m neurogenesis_lab info
 
 # 查看帮助
 python -m neurogenesis_lab --help
@@ -61,10 +70,17 @@ python examples/decompress_outputs.py --path outputs --recursive
 
 ## 开发
 
-运行测试：
+运行测试（要求最低 75% 的测试覆盖率）：
 
 ```bash
+# 运行所有测试
 pytest
+
+# 运行特定测试
+pytest tests/test_network.py
+
+# 代码格式化与静态检查
+ruff check src/
 ```
 
 ## 文档
@@ -79,3 +95,12 @@ pytest
 | [可观测性指标](docs/metrics.md) | 输出数据字段说明 |
 | [风险清单](docs/risk_list.md) | 当前已知风险与待办事项 |
 | [更新日志](docs/CHANGELOG.md) | 版本变更历史 |
+
+## 开发路线图
+
+项目的开发进度通过 `docs/` 目录下的开发清单进行管理：
+
+- [x] [阶段一：基础脉冲与网络拓扑](docs/开发清单01已完成.md)
+- [x] [阶段二：演化与空间动力学](docs/开发清单02 已完成.md)
+- [x] [阶段三：符号学习与规则发现](docs/开发清单03_已完成.md)
+- [ ] [阶段四：复杂环境与多模态感知](docs/开发清单04.md) (进行中)
