@@ -80,6 +80,8 @@ class Network:
     )
     congestion_penalty: float = 0.1
     min_neurons: int = 2
+    evolution_mutation_amplitude: float | None = None
+    energy_budget_per_tick: float = 0.0
     # 统计跟踪
     birth_count: int = 0
     death_count: int = 0
@@ -171,6 +173,11 @@ class Network:
         # 计算自适应衰减率
         alive_count = sum(1 for n in self.neurons.values() if n.alive)
         effective_decay = self._calculate_adaptive_decay(alive_count)
+        budget_share = (
+            self.energy_budget_per_tick / alive_count
+            if self.energy_budget_per_tick > 0 and alive_count > 0
+            else 0.0
+        )
 
         # 检查濒危模式
         if alive_count <= self.endangered_threshold and not self._endangered_mode:
@@ -196,6 +203,9 @@ class Network:
             # 应用自适应衰减（濒危模式下减半）
             decay = effective_decay * (0.5 if self._endangered_mode else 1.0)
             neuron.energy = max(0.0, neuron.energy - decay)
+
+            if budget_share > 0.0:
+                neuron.energy += budget_share
 
             # 应用能量上限
             if neuron.energy > self.energy_cap:
@@ -306,6 +316,11 @@ class Network:
         # 计算自适应繁殖成本
         alive_count = len(candidates)
         effective_share = self._calculate_adaptive_reproduction_share(alive_count)
+        effective_mutation_scale = (
+            self.evolution_mutation_amplitude
+            if self.evolution_mutation_amplitude is not None
+            else self.mutation_scale
+        )
         births = 0
 
         for neuron in candidates:
@@ -317,7 +332,7 @@ class Network:
             link_count = len(neuron.links)
             if link_count > 10 and random.random() < self.congestion_penalty:
                 continue
-            child = neuron.spawn(self.mutation_scale, effective_share)
+            child = neuron.spawn(max(0.0, effective_mutation_scale), effective_share)
             neuron.energy = max(0.0, neuron.energy - child.energy)
             self.add_neuron(child)
             self.connect(neuron.id, child.id, weight=1.0, delay=1)

@@ -1,4 +1,5 @@
 """单元测试 — vectorized 引擎"""
+
 import sys
 from pathlib import Path
 
@@ -8,6 +9,7 @@ if str(ROOT / "src") not in sys.path:
 
 import numpy as np
 import pytest
+from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.vectorized import SpatialGrid, VectorizedNetwork
 
 
@@ -134,6 +136,55 @@ class TestVectorizedNetwork:
         snapshot = net.tick(1, input_currents=currents)
         assert "propagation_count" in snapshot
         assert snapshot["propagation_count"] >= 0
+
+    def test_delayed_routing_respects_delay(self) -> None:
+        """放电传播应按 delay 在后续 tick 到达。"""
+        np.random.seed(42)
+        net = VectorizedNetwork(
+            energy_decay=0.0,
+            move_cost=0.0,
+            input_current_scale=5.0,
+            reproduction_threshold=999.0,
+            min_neurons=0,
+        )
+        net.init_neurons(2, v_th=-64.0, r_m=30.0, tau_m=1.0, energy_init=2.0)
+        net.connect_knn(k=1, weight=1.0, delay=2)
+
+        s1 = net.tick(1, input_currents=np.array([1.0, 0.0], dtype=np.float64))
+        assert s1["tick_spikes"] >= 1
+        assert s1["propagation_count"] >= 1
+
+        s2 = net.tick(2)
+        assert s2.get("ready_events", 0) == 0
+
+        s3 = net.tick(3)
+        assert s3.get("ready_events", 0) >= 1
+
+    def test_enqueue_external_event_is_consumed(self) -> None:
+        """外部 enqueue 事件应在指定 tick 注入目标神经元。"""
+        np.random.seed(42)
+        net = VectorizedNetwork(
+            energy_decay=0.0,
+            move_cost=0.0,
+            input_current_scale=5.0,
+            reproduction_threshold=999.0,
+            min_neurons=0,
+        )
+        net.init_neurons(3, v_th=-64.0, r_m=30.0, tau_m=1.0, energy_init=2.0)
+
+        net.enqueue(
+            [
+                Event(token_id=1, t=2, src_id="1", meta={"weight": 1.0}),
+                Event(token_id=1, t=2, src_id="bad-id", meta={"weight": 1.0}),
+            ]
+        )
+
+        s1 = net.tick(1)
+        assert s1.get("ready_events", 0) == 0
+
+        s2 = net.tick(2)
+        assert s2.get("ready_events", 0) >= 1
+        assert s2["tick_spikes"] >= 1
 
     def test_nan_protection(self) -> None:
         """NaN 输入不应导致崩溃"""

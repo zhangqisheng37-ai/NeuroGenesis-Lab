@@ -25,11 +25,15 @@ from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
 @dataclass
 class SpatialGrid:
     """简单网格空间索引 — 加速近邻查找"""
+
     cell_size: float = 5.0
     _grid: dict[tuple[int, int], list[int]] = field(default_factory=dict)
 
     def _cell_key(self, x: float, y: float) -> tuple[int, int]:
-        return (int(math.floor(x / self.cell_size)), int(math.floor(y / self.cell_size)))
+        return (
+            int(math.floor(x / self.cell_size)),
+            int(math.floor(y / self.cell_size)),
+        )
 
     def build(self, positions: np.ndarray) -> None:
         """从 (N, 2) 位置数组构建索引"""
@@ -40,7 +44,9 @@ class SpatialGrid:
                 self._grid[key] = []
             self._grid[key].append(i)
 
-    def query_radius(self, x: float, y: float, radius: float, positions: np.ndarray) -> list[int]:
+    def query_radius(
+        self, x: float, y: float, radius: float, positions: np.ndarray
+    ) -> list[int]:
         """查找半径内的索引"""
         cx, cy = self._cell_key(x, y)
         r_cells = int(math.ceil(radius / self.cell_size))
@@ -67,6 +73,7 @@ class VectorizedNetwork:
 
     状态存储为 NumPy 数组，批量计算 LIF 动力学。
     """
+
     # 神经元状态向量
     n: int = 0
     v: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
@@ -74,7 +81,9 @@ class VectorizedNetwork:
     energy: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
     alive: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.bool_))
     pos: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
-    spike_count: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int64))
+    spike_count: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
 
     # 参数向量
     v_rest: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
@@ -82,7 +91,9 @@ class VectorizedNetwork:
     v_th: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
     tau_m: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
     r_m: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
-    spike_cost: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
+    spike_cost: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
 
     # 连接矩阵 (scipy 稀疏)
     weight_matrix: csr_matrix | None = None
@@ -101,6 +112,11 @@ class VectorizedNetwork:
 
     # 空间索引
     spatial: SpatialGrid = field(default_factory=SpatialGrid)
+    # 事件调度（tick -> 输入电流向量）
+    scheduled_inputs: dict[int, np.ndarray] = field(default_factory=dict)
+    _last_spike_mask: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.bool_)
+    )
 
     # 统计
     total_spikes: int = 0
@@ -111,6 +127,41 @@ class VectorizedNetwork:
     _pe_history: list[float] = field(default_factory=list)
     expected_state: np.ndarray | None = None
     schema_version: str = SCHEMA_VERSION
+
+    def _resolve_neuron_index(self, src_id: Any) -> int | None:
+        if isinstance(src_id, int):
+            idx = src_id
+        elif isinstance(src_id, str):
+            text = src_id.strip()
+            if text.isdigit() or (text.startswith("-") and text[1:].isdigit()):
+                idx = int(text)
+            else:
+                return None
+        else:
+            return None
+        if 0 <= idx < self.n:
+            return idx
+        return None
+
+    def _schedule_currents(self, tick: int, currents: np.ndarray) -> None:
+        if tick in self.scheduled_inputs:
+            self.scheduled_inputs[tick] += currents
+        else:
+            self.scheduled_inputs[tick] = currents.copy()
+
+    def enqueue(self, events: list[Event]) -> None:
+        """注入外部事件（按 tick 调度到目标神经元输入）。"""
+        for event in events:
+            target_idx = self._resolve_neuron_index(event.src_id)
+            if target_idx is None:
+                continue
+            scheduled_tick = max(0, int(event.t))
+            weight = float(event.meta.get("weight", 1.0))
+            if not np.isfinite(weight):
+                continue
+            payload = np.zeros(self.n, dtype=np.float64)
+            payload[target_idx] = weight
+            self._schedule_currents(scheduled_tick, payload)
 
     def init_neurons(
         self,
@@ -143,7 +194,9 @@ class VectorizedNetwork:
         self.weight_matrix = csr_matrix((count, count), dtype=np.float64)
         self.delay_matrix = csr_matrix((count, count), dtype=np.int32)
 
-    def connect_radius(self, radius: float, weight: float = 1.0, delay: int = 1) -> None:
+    def connect_radius(
+        self, radius: float, weight: float = 1.0, delay: int = 1
+    ) -> None:
         """基于距离自动连接（向量化 cdist）"""
         dists = cdist(self.pos, self.pos)
         mask = (dists <= radius) & (dists > 0) & np.outer(self.alive, self.alive)
@@ -159,6 +212,7 @@ class VectorizedNetwork:
     def connect_knn(self, k: int = 3, weight: float = 1.0, delay: int = 1) -> None:
         """k 近邻连接"""
         from numpy.linalg import norm
+
         lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
         lil_d = lil_matrix((self.n, self.n), dtype=np.int32)
         for i in range(self.n):
@@ -174,17 +228,39 @@ class VectorizedNetwork:
         self.weight_matrix = csr_matrix(lil_w)
         self.delay_matrix = csr_matrix(lil_d)
 
-    def tick(self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None) -> TickSnapshot:
+    def tick(
+        self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None
+    ) -> TickSnapshot:
         """向量化 tick — 批量 LIF 更新 + 稀疏矩阵传播"""
         if input_currents is None:
             input_currents = np.zeros(self.n, dtype=np.float64)
+        else:
+            input_currents = np.asarray(input_currents, dtype=np.float64)
+            if input_currents.shape != (self.n,):
+                raise ValueError(
+                    f"input_currents 形状非法: 期望 ({self.n},), 实际 {input_currents.shape}"
+                )
+
+        routed_inputs = self.scheduled_inputs.pop(
+            int(tick), np.zeros(self.n, dtype=np.float64)
+        )
+        ready_events = int(np.count_nonzero(routed_inputs))
+        combined_inputs = input_currents + routed_inputs
+        if combined_inputs.size:
+            combined_inputs = np.nan_to_num(
+                combined_inputs, nan=0.0, posinf=0.0, neginf=0.0
+            )
 
         alive_mask = self.alive
 
         # LIF 动力学 (向量化)
         dv = np.where(
             alive_mask,
-            (-(self.v - self.v_rest) + self.r_m * input_currents * self.input_current_scale) / self.tau_m,
+            (
+                -(self.v - self.v_rest)
+                + self.r_m * combined_inputs * self.input_current_scale
+            )
+            / self.tau_m,
             0.0,
         )
         self.v = np.where(alive_mask, self.v + dv * dt, self.v)
@@ -200,14 +276,35 @@ class VectorizedNetwork:
 
         # 放电后重置
         self.v[spike_mask] = self.v_reset[spike_mask]
-        self.energy[spike_mask] = np.maximum(0.0, self.energy[spike_mask] - self.spike_cost[spike_mask])
+        self.energy[spike_mask] = np.maximum(
+            0.0, self.energy[spike_mask] - self.spike_cost[spike_mask]
+        )
         self.spike_count[spike_mask] += 1
+        self._last_spike_mask = spike_mask.copy()
 
-        # 向量化传播: 稀疏矩阵行切片计算 nnz
+        # 延迟路由传播: 按边 delay 将输入调度到未来 tick
         propagation_count = 0
         if tick_spikes > 0:
-            spike_rows = self.weight_matrix[spike_indices]
-            propagation_count = spike_rows.nnz
+            for spike_idx in spike_indices:
+                row_w = self.weight_matrix.getrow(spike_idx)
+                if row_w.nnz <= 0:
+                    continue
+                row_d = self.delay_matrix.getrow(spike_idx)
+                delay_map = {
+                    int(col): int(delay)
+                    for col, delay in zip(row_d.indices.tolist(), row_d.data.tolist())
+                }
+                targets = row_w.indices
+                weights = row_w.data
+                propagation_count += len(targets)
+                for target, weight in zip(targets, weights):
+                    if not self.alive[target]:
+                        continue
+                    delay = max(0, delay_map.get(int(target), 1))
+                    deliver_tick = int(tick) + delay
+                    payload = np.zeros(self.n, dtype=np.float64)
+                    payload[int(target)] = float(weight)
+                    self._schedule_currents(deliver_tick, payload)
             self.total_propagations += propagation_count
 
         # 移动 (向量化)
@@ -215,10 +312,14 @@ class VectorizedNetwork:
         move_dy = np.random.uniform(-1.0, 1.0, self.n)
         self.pos[alive_mask, 0] += move_dx[alive_mask]
         self.pos[alive_mask, 1] += move_dy[alive_mask]
-        self.energy[alive_mask] = np.maximum(0.0, self.energy[alive_mask] - self.move_cost)
+        self.energy[alive_mask] = np.maximum(
+            0.0, self.energy[alive_mask] - self.move_cost
+        )
 
         # 能量衰减
-        self.energy[alive_mask] = np.maximum(0.0, self.energy[alive_mask] - self.energy_decay)
+        self.energy[alive_mask] = np.maximum(
+            0.0, self.energy[alive_mask] - self.energy_decay
+        )
 
         # 死亡判定
         death_mask = alive_mask & (self.energy <= 0.0)
@@ -263,8 +364,14 @@ class VectorizedNetwork:
                     self.pos[slot] = self.pos[i] + np.random.uniform(-0.5, 0.5, 2)
                     self.spike_count[slot] = 0
                     # 变异参数
-                    self.tau_m[slot] = self.tau_m[i] * (1.0 + np.random.uniform(-self.mutation_scale, self.mutation_scale))
-                    self.v_th[slot] = self.v_th[i] * (1.0 + np.random.uniform(-self.mutation_scale, self.mutation_scale))
+                    self.tau_m[slot] = self.tau_m[i] * (
+                        1.0
+                        + np.random.uniform(-self.mutation_scale, self.mutation_scale)
+                    )
+                    self.v_th[slot] = self.v_th[i] * (
+                        1.0
+                        + np.random.uniform(-self.mutation_scale, self.mutation_scale)
+                    )
                     # 建立连接 (lil 格式高效逐元素写入)
                     lil_w[i, slot] = 1.0
                     lil_w[slot, i] = 1.0
@@ -291,12 +398,15 @@ class VectorizedNetwork:
             pe = 0.0
         else:
             pe = float(np.sqrt(np.sum((actual - self.expected_state) ** 2)))
-            self.expected_state = self.expected_state + 0.3 * (actual - self.expected_state)
+            self.expected_state = self.expected_state + 0.3 * (
+                actual - self.expected_state
+            )
         self._pe_history.append(pe)
 
         return {
             "schema_version": self.schema_version,
             "tick": tick,
+            "ready_events": ready_events,
             "alive_neurons": int(np.sum(self.alive)),
             "total_neurons": self.n,
             "tick_spikes": tick_spikes,
@@ -309,7 +419,9 @@ class VectorizedNetwork:
 
     def get_spike_input_currents(self) -> np.ndarray:
         """根据上一次放电计算传播电流（向量化稀疏矩阵求和）"""
-        spike_mask = self.spike_count > 0
+        spike_mask = self._last_spike_mask
+        if spike_mask.size == 0:
+            return np.zeros(self.n, dtype=np.float64)
         spike_indices = np.where(spike_mask)[0]
         if len(spike_indices) == 0:
             return np.zeros(self.n, dtype=np.float64)
@@ -326,7 +438,11 @@ class VectorizedNetwork:
             "total_propagations": self.total_propagations,
             "birth_count": self.birth_count,
             "death_count": self.death_count,
-            "mean_energy": float(np.mean(self.energy[alive_mask])) if alive_count > 0 else 0.0,
-            "pe_moving_avg": float(np.mean(self._pe_history[-10:])) if self._pe_history else 0.0,
+            "mean_energy": (
+                float(np.mean(self.energy[alive_mask])) if alive_count > 0 else 0.0
+            ),
+            "pe_moving_avg": (
+                float(np.mean(self._pe_history[-10:])) if self._pe_history else 0.0
+            ),
             "active_ratio": alive_count / self.n if self.n > 0 else 0.0,
         }

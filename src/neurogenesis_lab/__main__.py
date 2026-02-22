@@ -221,6 +221,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             fitness_weights=cfg.evolution.fitness_weights,
             congestion_penalty=cfg.evolution.congestion_penalty,
             min_neurons=cfg.evolution.min_neurons,
+            evolution_mutation_amplitude=cfg.evolution.mutation_amplitude,
+            energy_budget_per_tick=cfg.evolution.energy_budget_per_tick,
         )
         # 环形连接
         for i, neuron in enumerate(neurons):
@@ -378,6 +380,71 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     for t in range(1, tick_count + 1):
         net.tick(t)
     orig_time = time.time() - t0
+    orig_summary = net.get_summary()
+
+    def _fmt_num(value: float | int | None, digits: int = 3) -> str:
+        if value is None:
+            return "-"
+        if isinstance(value, float):
+            return f"{value:.{digits}f}"
+        return str(value)
+
+    comparison_rows = [
+        {
+            "metric": "alive_neurons",
+            "original": _fmt_num(orig_summary.get("alive_neurons")),
+            "vectorized": _fmt_num(vec_summary.get("alive_neurons")),
+            "comparable": "可比",
+            "note": "存活数量可直接比较",
+        },
+        {
+            "metric": "total_spikes",
+            "original": _fmt_num(orig_summary.get("total_spikes")),
+            "vectorized": _fmt_num(vec_summary.get("total_spikes")),
+            "comparable": "可比",
+            "note": "总放电次数可比较总体趋势",
+        },
+        {
+            "metric": "mean_energy",
+            "original": _fmt_num(orig_summary.get("mean_energy"), digits=4),
+            "vectorized": _fmt_num(vec_summary.get("mean_energy"), digits=4),
+            "comparable": "可比",
+            "note": "平均能量可比较总体能量态",
+        },
+        {
+            "metric": "neuron_dynamics_model",
+            "original": "LIF + Izh + AdEx",
+            "vectorized": "LIF",
+            "comparable": "不可比",
+            "note": "动力学细节模型不同",
+        },
+        {
+            "metric": "event_routing_trace",
+            "original": "逐事件对象路由",
+            "vectorized": "向量化延迟路由",
+            "comparable": "部分可比",
+            "note": "可比较延迟行为，不比较逐事件轨迹",
+        },
+    ]
+
+    headers = ["指标", "原始引擎", "向量化引擎", "可比性", "说明"]
+    table_data = [
+        [
+            row["metric"],
+            row["original"],
+            row["vectorized"],
+            row["comparable"],
+            row["note"],
+        ]
+        for row in comparison_rows
+    ]
+    widths = [
+        max(len(str(headers[idx])), *(len(str(item[idx])) for item in table_data))
+        for idx in range(len(headers))
+    ]
+
+    def _line(parts: list[str]) -> str:
+        return " | ".join(parts[i].ljust(widths[i]) for i in range(len(parts)))
 
     print(f"\n结果:")
     print(
@@ -388,10 +455,12 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     )
     if compare_n == neuron_count and orig_time > 0:
         print(f"  加速比: {orig_time / vec_time:.1f}x")
-    print(f"  向量化存活: {vec_summary['alive_neurons']}")
-    print("\n口径说明:")
-    print("  可比项: alive_neurons / total_spikes / mean_energy 的总体趋势")
-    print("  不可比项: 多模型动力学细节(Izh/AdEx)、逐事件路由轨迹")
+
+    print("\n对照指标表:")
+    print(f"  {_line(headers)}")
+    print(f"  {_line(['-' * w for w in widths])}")
+    for row in table_data:
+        print(f"  {_line([str(x) for x in row])}")
 
 
 def cmd_info(args: argparse.Namespace) -> None:

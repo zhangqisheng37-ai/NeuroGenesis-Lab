@@ -1,4 +1,5 @@
 """单元测试 — network 模块"""
+
 import sys
 import random
 from pathlib import Path
@@ -143,9 +144,9 @@ class TestPredictionError:
         # PE 在后期应趋于稳定或下降
         early_avg = sum(pe_values[2:5]) / 3
         late_avg = sum(pe_values[-5:]) / 5
-        assert late_avg <= early_avg + 0.1, (
-            f"PE 应展现下降趋势: 早期平均={early_avg:.4f}, 晚期平均={late_avg:.4f}"
-        )
+        assert (
+            late_avg <= early_avg + 0.1
+        ), f"PE 应展现下降趋势: 早期平均={early_avg:.4f}, 晚期平均={late_avg:.4f}"
 
 
 class TestReproductionAndDeath:
@@ -192,6 +193,42 @@ class TestReproductionAndDeath:
         alive = sum(1 for n in net.neurons.values() if n.alive)
         assert 1 <= alive <= 20, f"网络规模应可控，实际: {alive}"
 
+    def test_evolution_mutation_amplitude_is_consumed(self) -> None:
+        """当 evolution_mutation_amplitude 设置为 0 时应覆盖 mutation_scale。"""
+        random.seed(42)
+        parent = LIFNeuron(energy=3.5, tau_m=17.0, v_th=-52.0)
+        net = Network(
+            neurons={parent.id: parent},
+            reproduction_threshold=2.0,
+            reproduction_share=0.4,
+            mutation_scale=0.8,
+            evolution_mutation_amplitude=0.0,
+            max_neurons=3,
+        )
+        net.tick(1)
+        assert len(net.neurons) >= 2
+        child = next(item for item in net.neurons.values() if item.id != parent.id)
+        assert child.tau_m == parent.tau_m
+        assert child.v_th == parent.v_th
+
+    def test_energy_budget_per_tick_is_consumed(self) -> None:
+        """energy_budget_per_tick 应在每个 tick 注入全局能量预算。"""
+        random.seed(42)
+        neuron = LIFNeuron(energy=1.0)
+        net = Network(
+            neurons={neuron.id: neuron},
+            energy_decay=0.0,
+            move_cost=0.0,
+            reproduction_threshold=999.0,
+            energy_budget_per_tick=0.5,
+            min_neurons=0,
+            max_neurons=2,
+            adaptive_decay=False,
+        )
+        before = neuron.energy
+        net.tick(1)
+        assert neuron.energy > before
+
 
 class TestCorpse:
     def test_corpse_energy_decay(self) -> None:
@@ -231,6 +268,7 @@ class TestNetworkSummary:
 class TestReproducibility:
     def test_same_seed_same_result(self) -> None:
         """同一 seed + 同一配置应产生相同结果"""
+
         def run_simulation(seed: int) -> list[dict]:
             random.seed(seed)
             a = LIFNeuron(tau_m=1.0, r_m=30.0, v_th=-64.0)
@@ -252,6 +290,6 @@ class TestReproducibility:
         for s1, s2 in zip(r1, r2):
             assert s1["tick"] == s2["tick"]
             assert s1["propagation_count"] == s2["propagation_count"]
-            assert abs(s1["prediction_error"] - s2["prediction_error"]) < 1e-10, (
-                f"相同 seed 应产生相同 PE: {s1['prediction_error']} vs {s2['prediction_error']}"
-            )
+            assert (
+                abs(s1["prediction_error"] - s2["prediction_error"]) < 1e-10
+            ), f"相同 seed 应产生相同 PE: {s1['prediction_error']} vs {s2['prediction_error']}"

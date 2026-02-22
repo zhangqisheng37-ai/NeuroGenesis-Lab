@@ -151,6 +151,19 @@ def test_cmd_benchmark_smoke(capsys) -> None:
     out = capsys.readouterr().out
     assert "性能基准测试" in out
     assert "结果" in out
+    assert "对照指标表" in out
+    assert "alive_neurons" in out
+    assert "event_routing_trace" in out
+
+
+def test_cmd_benchmark_comparability_labels_are_stable(capsys) -> None:
+    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7)
+    cli.cmd_benchmark(args)
+
+    out = capsys.readouterr().out
+    assert "可比" in out
+    assert "不可比" in out
+    assert "部分可比" in out
 
 
 def test_main_run_smoke_with_checkpoint(tmp_path: Path, monkeypatch, capsys) -> None:

@@ -89,7 +89,22 @@ fitness = propagation_count * w_prop
 繁殖时按适应度排序，高适应度优先繁殖。
 
 > 注：`mutation_amplitude` 与 `energy_budget_per_tick` 已进入配置与日志输出，
-> 当前版本尚未直接参与 `Network.tick()` 的核心调度逻辑。
+> 在当前版本中已直接接入运行时逻辑：
+> - `mutation_amplitude`：用于繁殖阶段的突变幅度（覆盖 network.mutation_scale）。
+> - `energy_budget_per_tick`：每 tick 按存活神经元均分注入能量预算。
+
+### 参数消费矩阵（解析 → 运行时）
+
+| 参数 | 解析入口 | 运行时消费点 | 当前状态 |
+|------|----------|--------------|----------|
+| `simulation.ticks` | `_build_sim_config()` | `cmd_run()` 主循环边界 | ✅ 已消费 |
+| `simulation.seed` | `_build_sim_config()` | `seed_all()` + 引擎初始化 | ✅ 已消费 |
+| `simulation.dt` | `_build_sim_config()` | `network.tick(t, dt=cfg.dt)` | ✅ 已消费 |
+| `network.mutation_scale` | `_build_sim_config()` | `Network.check_reproduction()` 后备突变幅度 | ✅ 已消费 |
+| `evolution.mutation_amplitude` | `_build_sim_config()` | `Network.check_reproduction()` 优先突变幅度 | ✅ 已消费 |
+| `evolution.energy_budget_per_tick` | `_build_sim_config()` | `Network.tick()` 每 tick 能量预算注入 | ✅ 已消费 |
+| `evolution.congestion_penalty` | `_build_sim_config()` | `Network.check_reproduction()` 拥塞惩罚 | ✅ 已消费 |
+| `evolution.min_neurons` | `_build_sim_config()` | `Network.check_death()` 保底机制 | ✅ 已消费 |
 
 **调参建议**：
 - 增大 `prediction_hit` → 奖励预测准确的神经元
