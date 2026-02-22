@@ -237,20 +237,19 @@ class Network:
         self.replay.append(snapshot)
 
         if run_evolution:
-            self._update_corpses()
-            births_before = len(self.neurons)
-            self.check_reproduction()
-            births = len(self.neurons) - births_before
-            self.birth_count += births
+            births, deaths = self._run_evolution_step()
             snapshot["births"] = births
-
-            deaths_before = len(self.neurons)
-            self.check_death()
-            deaths = deaths_before - len(self.neurons)
-            self.death_count += deaths
             snapshot["deaths"] = deaths
 
         return snapshot
+
+    def _run_evolution_step(self) -> tuple[int, int]:
+        self._update_corpses()
+        births = self.check_reproduction()
+        deaths = self.check_death()
+        self.birth_count += births
+        self.death_count += deaths
+        return births, deaths
 
     def pe_moving_average(self, window: int = 10) -> float:
         """PE 滑动均值"""
@@ -297,9 +296,9 @@ class Network:
         }
         return prediction_error
 
-    def check_reproduction(self) -> None:
+    def check_reproduction(self) -> int:
         if len(self.neurons) >= self.max_neurons:
-            return
+            return 0
         candidates = [neuron for neuron in self.neurons.values() if neuron.alive]
         # 按 fitness 排序 — 高适应度优先繁殖
         candidates.sort(key=lambda n: n.fitness(self.fitness_weights), reverse=True)
@@ -307,6 +306,7 @@ class Network:
         # 计算自适应繁殖成本
         alive_count = len(candidates)
         effective_share = self._calculate_adaptive_reproduction_share(alive_count)
+        births = 0
 
         for neuron in candidates:
             if len(self.neurons) >= self.max_neurons:
@@ -322,7 +322,9 @@ class Network:
             self.add_neuron(child)
             self.connect(neuron.id, child.id, weight=1.0, delay=1)
             self.connect(child.id, neuron.id, weight=1.0, delay=1)
+            births += 1
         self._prune_links()
+        return births
 
     def _calculate_adaptive_decay(self, alive_count: int) -> float:
         """根据种群密度计算自适应衰减率"""
@@ -362,7 +364,7 @@ class Network:
         else:
             return self.reproduction_share
 
-    def check_death(self) -> None:
+    def check_death(self) -> int:
         if len(self.neurons) > self.max_neurons:
             ordered = sorted(self.neurons.values(), key=lambda item: item.energy)
             overflow = len(self.neurons) - self.max_neurons
@@ -391,6 +393,7 @@ class Network:
                 self.neurons[nid].energy = max(0.1, self.neurons[nid].energy)
             dead_ids = [nid for nid in dead_ids if nid not in saved]
 
+        deaths = 0
         for neuron_id in dead_ids:
             neuron_obj: Neuron | None = self.neurons.get(neuron_id)
             if neuron_obj is None:
@@ -418,6 +421,8 @@ class Network:
                 )
             )
             self.neurons.pop(neuron_id, None)
+            deaths += 1
+        return deaths
 
     def _update_corpses(self) -> None:
         if not self.corpses:

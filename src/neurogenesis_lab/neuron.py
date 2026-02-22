@@ -61,11 +61,16 @@ class Neuron:
     spike_count: int = 0
     propagation_count: int = 0
     prediction_hits: int = 0
+    _observe_cache: list[dict[str, int]] = field(
+        default_factory=list, init=False, repr=False
+    )
+    _observe_dirty: bool = field(default=True, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.mem = deque(self.mem, maxlen=self.mem_size)
         self.states["energy"] = self.energy
         self.last_energy = self.energy
+        self._observe_dirty = True
 
     def start_tick(self) -> None:
         self.last_energy = self.energy
@@ -80,6 +85,7 @@ class Neuron:
         if len(self.mem) >= 2:
             prev = self.mem[-2]
             self.transitions[(prev.token_id, event.token_id)] += 1
+            self._observe_dirty = True
         if event.token_id in recent_tokens:
             self.states["novelty"] = max(0.0, self.states["novelty"] - 0.02)
         else:
@@ -160,11 +166,14 @@ class Neuron:
         self.states["entropy"] = entropy / max_entropy if max_entropy > 0 else 0.0
 
     def observe(self) -> dict[str, Any]:
-        top = self.transitions.most_common()
-        return {
-            "transition_counts": [
+        if self._observe_dirty:
+            top = self.transitions.most_common()
+            self._observe_cache = [
                 {"from": pair[0], "to": pair[1], "count": count} for pair, count in top
-            ],
+            ]
+            self._observe_dirty = False
+        return {
+            "transition_counts": list(self._observe_cache),
             "states": dict(self.states),
         }
 

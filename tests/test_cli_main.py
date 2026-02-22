@@ -151,3 +151,57 @@ def test_cmd_benchmark_smoke(capsys) -> None:
     out = capsys.readouterr().out
     assert "性能基准测试" in out
     assert "结果" in out
+
+
+def test_main_run_smoke_with_checkpoint(tmp_path: Path, monkeypatch, capsys) -> None:
+    checkpoint_dir = tmp_path / "checkpoints"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "neurogenesis-lab",
+            "run",
+            "--ticks",
+            "3",
+            "--seed",
+            "42",
+            "--neurons",
+            "4",
+            "--output",
+            str(tmp_path),
+            "--checkpoint-interval",
+            "1",
+            "--checkpoint-dir",
+            str(checkpoint_dir),
+        ],
+    )
+
+    cli.main()
+
+    out = capsys.readouterr().out
+    assert "完成!" in out
+    assert list(tmp_path.glob("run_*/run.jsonl"))
+    assert list(checkpoint_dir.glob("checkpoint_tick_*.pkl"))
+
+
+def test_main_benchmark_smoke_with_argv(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "neurogenesis-lab",
+            "benchmark",
+            "--neurons",
+            "8",
+            "--ticks",
+            "3",
+            "--seed",
+            "7",
+        ],
+    )
+
+    cli.main()
+
+    out = capsys.readouterr().out
+    assert "性能基准测试" in out
+    assert "结果" in out

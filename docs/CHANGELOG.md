@@ -4,9 +4,28 @@
 
 ---
 
+## Unreleased (2026-02-22)
+
+### 技术债务与测试补齐
+
+- **TD-1：演化流程解耦**
+  - `Network.tick()` 内演化逻辑提取为 `_run_evolution_step()`。
+  - `check_reproduction()` 与 `check_death()` 改为返回增量计数，便于独立测试和复用。
+- **TD-3：`Neuron.observe()` 性能优化**
+  - 增加 `transition_counts` 缓存与 dirty-flag，仅在 transitions 变更时重建观察结果。
+- **TD-5：CLI 冒烟测试补齐**
+  - 新增从 `main()` 入口执行 `run` 与 `benchmark` 的链路冒烟测试。
+  - `run` 冒烟测试增加 checkpoint 文件输出校验。
+
+### 验证
+
+- 最新全量测试：217 passed, 0 failed。
+
+---
+
 ## v0.4.1 (2026-02-22)
 
-### 新增功能
+### v0.4.1 新增功能
 
 - **持久化与恢复（Checkpoint）**
   - `Network` 新增 `save_checkpoint(path)` 与 `load_checkpoint(path)`。
@@ -16,7 +35,7 @@
   - `run` 命令新增 `--checkpoint-interval`、`--checkpoint-dir`、`--resume-from`。
   - 支持从全局 tick 断点续跑，恢复后可继续记录与可视化。
 
-### 测试与工程改进
+### v0.4.1 测试与工程改进
 
 - 新增 `tests/test_checkpoint.py`，覆盖：
   - 保存/加载 roundtrip
@@ -29,7 +48,7 @@
 
 ## v0.4.0 (2026-02-22)
 
-### 新增功能
+### v0.4.0 新增功能
 
 - **长程稳定性保障**
   - 引入自适应能量衰减机制：根据种群密度动态调整 `energy_decay`。
@@ -49,7 +68,7 @@
   - 神经元增加 `move()` 方法，支持消耗能量进行空间迁移。
   - 繁殖时子代位置在母体附近（高斯扰动）。
 
-### 依赖
+### v0.4.0 依赖
 
 - 新增可选依赖 `matplotlib>=3.5`，可通过 `pip install -e ".[viz]"` 安装。
 
@@ -75,11 +94,11 @@
 - 繁殖时通过 `lil_matrix` 局部修改再转回 `csr_matrix`，避免频繁格式转换
 - `Network._update_corpses` 引入网格索引优化近邻搜索，从 O(corpses × alive) 降至 O(corpses × 9 cells)
 
-### 依赖
+### v0.3.1 依赖
 
 - 新增 `scipy>=1.10` 依赖
 
-### 测试
+### v0.3.1 测试
 
 - 新增 175 个测试用例（+1）
 - 测试覆盖率 92.72%
@@ -88,7 +107,7 @@
 
 ## v0.3.0 (2026-02-15)
 
-### 新增功能
+### v0.3.0 新增功能
 
 - **输出治理系统**
   - 支持 `--log-interval` 日志采样间隔
@@ -119,13 +138,13 @@
 ### 代码默认值
 
 | 参数 | 默认值 |
-|------|--------|
+| ------ | -------- |
 | `v_th` | -55.0 |
 | `reproduction_threshold` | 2.5 |
 | `energy_decay` | 0.003 |
 | `min_neurons` | 2 |
 
-### 测试
+### v0.3.0 测试
 
 - 新增 174 个测试用例
 - 测试覆盖率 92% (要求 75%)
@@ -135,7 +154,7 @@
 
 ## v0.2.0 (2026-01)
 
-### 新增功能
+### v0.2.0 新增功能
 
 - **学习引擎**
   - `PatternMiner`: 表达式模式挖掘
