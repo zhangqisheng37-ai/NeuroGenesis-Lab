@@ -102,12 +102,12 @@ class Network:
     reproduction_threshold: float = 2.5
     reproduction_share: float = 0.4
     mutation_scale: float = 0.05
-    energy_decay: float = 0.005
+    energy_decay: float = 0.003  # 与 NetworkParams 默认值对齐（原值 0.005）
     max_neurons: int = 50
     max_links: int = 200
     corpse_ttl: int = 50
     scavenger_radius: float = 2.5
-    input_current_scale: float = 1.0
+    input_current_scale: float = 1.5  # 与 NetworkParams 默认值对齐（原值 1.0）
     background_current: float = 0.0
     spontaneous_spike_rate: float = 0.0
     move_cost: float = 0.01

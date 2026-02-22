@@ -32,12 +32,13 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 | `deaths` | 本 tick 死亡数 |
 | `prediction_error` | 本 tick 预测误差 |
 | `mean_energy` | 存活神经元平均能量 |
-| `rule_count` | (可选) 当前发现的规则数量 |
-| `prediction_accuracy` | (可选) 当前预测准确率 |
+| `ready_events` | 本 tick 从队列取出的就绪事件数（Network 引擎） |
+| `rule_count` | (可选) 当前发现的规则数量，由 `AutoLearner.on_tick()` 在 `tick()` 调用后注入 |
+| `prediction_accuracy` | (可选) 当前预测准确率，由 `AutoLearner.on_tick()` 在 `tick()` 调用后注入 |
 | `corpse_pool_free` | (可选) 对象池中可复用尸体对象数（Network 引擎） |
 | `corpse_pool_reused` | (可选) 对象池复用累计次数（Network 引擎） |
 
-> 注：`Network` 引擎额外返回 `ready_events` 字段（就绪事件数），不在统一协议中但可直接访问。
+> 注：`rule_count` / `prediction_accuracy` 不由引擎的 `tick()` 本身填充，仅在使用 `AutoLearner` 时才会出现在快照中（`__main__.py` 的主循环会显式写入）。
 
 ## 0.1 引擎摘要 (EngineSummary)
 
@@ -55,8 +56,10 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 | `pe_moving_avg` | 预测误差滑动均值 |
 | `active_ratio` | 活跃比例 (Alive / Total) |
 | `mean_energy` | 存活神经元平均能量 |
-| `rule_count` | (可选) 当前发现的规则数量 |
-| `prediction_accuracy` | (可选) 当前预测准确率 |
+| `corpse_pool_free` | (Network 专属) 对象池中可复用尸体对象数 |
+| `corpse_pool_reused` | (Network 专属) 对象池复用累计次数 |
+
+> 注：`rule_count` / `prediction_accuracy` 由 `AutoLearner.get_summary()` 单独提供，不在引擎 `get_summary()` 中。
 
 ## 1. 网络指标 (Network Metrics)
 

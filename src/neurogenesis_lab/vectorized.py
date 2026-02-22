@@ -168,7 +168,7 @@ class VectorizedNetwork:
         count: int,
         v_rest: float = -65.0,
         v_reset: float = -65.0,
-        v_th: float = -50.0,
+        v_th: float = -55.0,  # 与 NeuronParams 默认值对齐（原值 -50.0）
         tau_m: float = 20.0,
         r_m: float = 1.0,
         spike_cost_val: float = 0.05,
