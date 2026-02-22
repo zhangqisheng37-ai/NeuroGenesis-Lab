@@ -4,7 +4,7 @@
 
 ---
 
-## Unreleased (2026-02-22)
+## v0.4.1 (2026-02-22)
 
 ### Phase 5（Rust 混合架构）
 
@@ -36,15 +36,7 @@
   - 新增从 `main()` 入口执行 `run` 与 `benchmark` 的链路冒烟测试。
   - `run` 冒烟测试增加 checkpoint 文件输出校验。
 
-### 验证
-
-- 最新全量测试：229 passed, 0 failed。
-
----
-
-## v0.4.1 (2026-02-22)
-
-### v0.4.1 新增功能
+### v0.4.1 新增功能 — 持久化与恢复（Checkpoint）
 
 - **持久化与恢复（Checkpoint）**
   - `Network` 新增 `save_checkpoint(path)` 与 `load_checkpoint(path)`。
@@ -54,7 +46,7 @@
   - `run` 命令新增 `--checkpoint-interval`、`--checkpoint-dir`、`--resume-from`。
   - 支持从全局 tick 断点续跑，恢复后可继续记录与可视化。
 
-### v0.4.1 测试与工程改进
+### 测试与工程改进
 
 - 新增 `tests/test_checkpoint.py`，覆盖：
   - 保存/加载 roundtrip
@@ -62,6 +54,10 @@
   - 连续运行 vs 中断恢复一致性
 - 补充 CLI 参数解析测试（checkpoint 参数）。
 - pytest 配置增加 `--basetemp=.pytest_tmp`，规避部分 Windows 环境系统临时目录权限问题。
+
+### 验证
+
+- 最新全量测试：229 passed, 0 failed（2026-02-22）。
 
 ---
 

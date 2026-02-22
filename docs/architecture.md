@@ -66,21 +66,77 @@ graph TD
 
 ### 3.2 神经元模型 (Neuron Model)
 
-采用 **Leaky Integrate-and-Fire (LIF)** 模型，并增加了能量与认知维度：
+系统基类为 `Neuron`，提供能量、记忆、位移与适应度机制，三种具体放电模型均继承自此基类：
 
-#### 物理层 (Physics)
-$$ \tau_m \frac{dV}{dt} = -(V - E_{rest}) + R_m I(t) $$
+#### 3.2.1 LIFNeuron — Leaky Integrate-and-Fire
+
+最常用的计算神经科学模型，计算开销最低。
+
+$$ \tau_m \frac{dV}{dt} = -(V - V_{rest}) + R_m I(t) $$
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `v_rest` | -65.0 | 静息电位 (mV) |
+| `v_reset` | -65.0 | 放电后重置电位 (mV) |
+| `v_th` | -55.0 | 触发放电的阈值电位 (mV) |
+| `tau_m` | 20.0 | 膜时间常数 (ms) |
+| `r_m` | 1.0 | 膜电阻 (MΩ) |
 
 - **输入电流 $I(t)$**：来自外部输入事件和突触前神经元的脉冲。
 - **不应期**：放电后电位重置为 $V_{reset}$。
 
-#### 能量层 (Energy)
+#### 3.2.2 IzhikevichNeuron — Izhikevich 模型
+
+可模拟多种皮层神经元放电模式（常规放电、爆发、快速放电等），计算效率高于 HH 模型。
+
+$$
+\frac{dV}{dt} = 0.04V^2 + 5V + 140 - u + I
+$$
+$$
+\frac{du}{dt} = a(bV - u)
+$$
+
+放电条件：$V \ge V_{peak}$，随后 $V \leftarrow c$，$u \leftarrow u + d$
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `a` | 0.02 | 恢复变量时间尺度 |
+| `b` | 0.2 | 恢复变量对膜电位的耦合强度 |
+| `c` | -65.0 | 放电后膜电位重置值 (mV) |
+| `d` | 8.0 | 放电后恢复变量增量 |
+| `v_peak` | 30.0 | 放电检测阈值 (mV) |
+
+#### 3.2.3 AdExNeuron — Adaptive Exponential Integrate-and-Fire
+
+在 LIF 基础上增加指数项与适应电流 $w$，可更精准地重现神经元放电适应性。
+
+$$
+\tau_m \frac{dV}{dt} = -(V - V_{rest}) + \Delta_T e^{\frac{V - V_{th}}{\Delta_T}} - w + I
+$$
+$$
+\tau_w \frac{dw}{dt} = a(V - V_{rest}) - w
+$$
+
+放电条件：$V \ge V_{peak}$，随后 $V \leftarrow V_{reset}$，$w \leftarrow w + b$
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `delta_t` | 2.0 | 指数斜坡因子 (mV) |
+| `a` | 1.0 | 亚阈值适应耦合 |
+| `b` | 0.5 | 放电触发适应增量 |
+| `tau_w` | 80.0 | 适应电流时间常数 (ms) |
+| `v_peak` | -40.0 | 放电检测阈值 (mV) |
+
+#### 3.2.4 能量层 (Energy)
+
+三种模型共享以下能量动力学（由基类 `Neuron` 提供）：
+
 $$ E(t+1) = E(t) - E_{decay} - E_{spike} \cdot \mathbb{I}(spike) + E_{gain} \cdot I_{in} $$
 
 - 能量耗尽导致死亡。
 - 能量富余触发繁殖。
 
-#### 认知层 (Cognition)
+#### 3.2.5 认知层 (Cognition)
 - **Memory**：维护一个固定长度的 `Event` 队列，记录最近接收到的 Token 序列。
 - **Transitions**：统计 Token 转移概率（如 A -> B），用于简单的预测与规则学习。
 - **Novelty**：基于短期记忆计算输入的新颖性，作为内在奖励信号。

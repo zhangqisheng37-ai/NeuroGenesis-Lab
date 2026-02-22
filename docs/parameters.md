@@ -47,6 +47,9 @@
 | `corpse_ttl` | int | 50 | 尸体存留 tick 数 |
 | `scavenger_radius` | float | 2.5 | 拣食者范围 (距尸体的最大距离) |
 | `input_current_scale` | float | 1.5 | 外部输入电流缩放 |
+| `background_current` | float | 0.0 | 每 tick 注入每个神经元的背景基线电流 |
+| `spontaneous_spike_rate` | float | 0.0 | 每神经元每 tick 自发放电概率（范围 [0, 1]） |
+| `low_activation_threshold` | int | 0 | 低激活告警阈值（总放电/总传播任一不超过该值时触发告警，0 = 关闭） |
 | `move_cost` | float | 0.01 | 神经元移动的能量消耗 |
 | `energy_cap` | float | 5.0 | 神经元能量上限（防止无限积累） |
 | `adaptive_decay` | bool | true | 是否按种群密度自适应调整能量衰减 |
@@ -59,6 +62,9 @@
 - `max_neurons` 决定种群上限，影响内存占用
 - 适当降低 `energy_cap` 可抑制个体能量垄断
 - `adaptive_decay/adaptive_reproduction` 适合长程实验，建议默认开启
+- `background_current > 0` 可为低激活网络提供持续刺激基线（如 0.5），避免网络沉寂
+- `spontaneous_spike_rate > 0`（如 0.01）可模拟神经噪声，有助于探索动力学空间
+- `low_activation_threshold` 设为非零值（如 5）可在总放电活跃度低时输出告警日志
 
 ---
 

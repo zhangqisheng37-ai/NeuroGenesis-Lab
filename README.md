@@ -6,8 +6,10 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 
 ## 当前状态
 
+- **当前版本**：v0.4.1
 - 阶段五（Rust + Python 混合架构、并发与内存优化、异步 I/O）已交付。
 - Rust 扩展已接入运行时（可通过 `python -m neurogenesis_lab info` 查看 `Rust Core: available`）。
+- 新增 checkpoint 持久化与断点恢复功能（`--checkpoint-interval` / `--resume-from`）。
 - 最新测试基线：229 passed, 0 failed（2026-02-22）。
 
 ## 核心特性
