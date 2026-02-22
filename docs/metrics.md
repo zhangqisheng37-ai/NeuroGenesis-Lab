@@ -9,8 +9,6 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 ```json
 {
   "schema_version": "2.0.0",
-  "type": "report",
-  "tick": 123,
   "metrics": { ... },    // 网络级指标
   "learning": { ... },   // 学习与预测指标
   "trends": { ... },     // 趋势与统计
@@ -36,6 +34,8 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 | `mean_energy` | 存活神经元平均能量 |
 | `rule_count` | (可选) 当前发现的规则数量 |
 | `prediction_accuracy` | (可选) 当前预测准确率 |
+| `corpse_pool_free` | (可选) 对象池中可复用尸体对象数（Network 引擎） |
+| `corpse_pool_reused` | (可选) 对象池复用累计次数（Network 引擎） |
 
 > 注：`Network` 引擎额外返回 `ready_events` 字段（就绪事件数），不在统一协议中但可直接访问。
 
@@ -122,6 +122,7 @@ NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以
 - `--gzip-output`：输出为 `run.jsonl.gz`
 - `--max-file-size N`（N>0）：超过阈值后自动轮转为 `run_0001.jsonl(.gz)`, `run_0002.jsonl(.gz)` ...
 - `--log-interval N`：每 N tick 记录一次 tick 报告（`config` 与 `summary` 仍会记录）
+- `--async-log`：启用异步双缓冲写盘（可配合 `--log-buffer-size`）
 
 可以使用 `examples/observe_jsonl.py` 或自定义脚本对 JSONL 文件进行解析与可视化。
 

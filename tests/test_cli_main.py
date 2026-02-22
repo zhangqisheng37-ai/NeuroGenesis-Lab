@@ -18,6 +18,7 @@ def test_cmd_info_outputs_version_and_schema(capsys) -> None:
     out = capsys.readouterr().out
     assert "NeuroGenesis Lab v" in out
     assert "Schema Version" in out
+    assert "Rust Core" in out
     assert "默认配置" in out
 
 
@@ -70,6 +71,12 @@ def test_main_run_accepts_checkpoint_args(monkeypatch) -> None:
             "outputs/checkpoints",
             "--resume-from",
             "outputs/checkpoints/checkpoint_tick_100.pkl",
+            "--background-current",
+            "0.5",
+            "--spontaneous-spike-rate",
+            "0.15",
+            "--low-activation-threshold",
+            "4",
         ],
     )
 
@@ -79,6 +86,9 @@ def test_main_run_accepts_checkpoint_args(monkeypatch) -> None:
     assert captured["args"].checkpoint_interval == 5
     assert captured["args"].checkpoint_dir == "outputs/checkpoints"
     assert captured["args"].resume_from == "outputs/checkpoints/checkpoint_tick_100.pkl"
+    assert captured["args"].background_current == 0.5
+    assert captured["args"].spontaneous_spike_rate == 0.15
+    assert captured["args"].low_activation_threshold == 4
 
 
 def test_main_dispatches_benchmark(monkeypatch) -> None:
@@ -145,19 +155,20 @@ def test_cmd_run_smoke_creates_output(tmp_path: Path, capsys) -> None:
 
 
 def test_cmd_benchmark_smoke(capsys) -> None:
-    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7)
+    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7, rust_size=64)
     cli.cmd_benchmark(args)
 
     out = capsys.readouterr().out
     assert "性能基准测试" in out
     assert "结果" in out
     assert "对照指标表" in out
+    assert "Rust并行LIF" in out
     assert "alive_neurons" in out
     assert "event_routing_trace" in out
 
 
 def test_cmd_benchmark_comparability_labels_are_stable(capsys) -> None:
-    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7)
+    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7, rust_size=64)
     cli.cmd_benchmark(args)
 
     out = capsys.readouterr().out
@@ -210,6 +221,8 @@ def test_main_benchmark_smoke_with_argv(monkeypatch, capsys) -> None:
             "3",
             "--seed",
             "7",
+            "--rust-size",
+            "64",
         ],
     )
 

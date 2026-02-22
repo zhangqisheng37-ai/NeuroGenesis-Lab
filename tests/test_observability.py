@@ -1,4 +1,5 @@
 """单元测试 — observability 模块"""
+
 import sys
 import gzip
 import json
@@ -199,6 +200,23 @@ class TestObservabilityLogger:
 
         rotated = sorted(tmp_path.glob("run*.jsonl"))
         assert len(rotated) >= 2, "启用 max_file_size 后应产生轮转文件"
+
+    def test_async_double_buffer_logging(self, tmp_path: Path) -> None:
+        path = tmp_path / "async.jsonl"
+        neurons = [LIFNeuron()]
+        net = Network(neurons={n.id: n for n in neurons})
+        observer = NetworkObserver(net)
+        logger = ObservabilityLogger(path, async_mode=True, log_buffer_size=2)
+
+        for tick in range(1, 6):
+            snapshot = net.tick(tick)
+            logger.log_tick(observer, tick, snapshot)
+        logger.log_summary(5, observer.get_network_metrics(5))
+        logger.close()
+
+        lines = path.read_text(encoding="utf-8").strip().split("\n")
+        assert len(lines) == 6
+        assert json.loads(lines[-1])["type"] == "summary"
 
 
 class TestCreateExperimentLogger:

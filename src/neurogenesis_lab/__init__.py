@@ -8,6 +8,7 @@ __all__ = [
     "learning",
     "vectorized",
     "protocols",
+    "core_bridge",
 ]
 
 from neurogenesis_lab.config import SCHEMA_VERSION

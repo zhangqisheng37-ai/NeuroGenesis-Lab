@@ -1,5 +1,6 @@
 import json
 import gzip
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -24,10 +25,94 @@ class JsonlWriter:
         with self._open("a") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
+    def append_many(self, records: Iterable[dict]) -> None:
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._open("a") as handle:
+            for record in records:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
     def _open(self, mode: str):
         if self._path.suffix == ".gz":
             return gzip.open(self._path, mode + "t", encoding="utf-8")
         return self._path.open(mode, encoding="utf-8")
+
+
+class AsyncJsonlWriter:
+    """异步双缓冲写盘器：主线程写入 Buffer A，后台线程落盘 Buffer B"""
+
+    def __init__(self, path: Path, buffer_size: int = 256) -> None:
+        self._writer = JsonlWriter(path)
+        self._buffer_size = max(1, int(buffer_size))
+        self._buffers: list[list[dict]] = [[], []]
+        self._active_idx = 0
+        self._pending_idx: int | None = None
+        self._closed = False
+        self._lock = threading.Lock()
+        self._cond = threading.Condition(self._lock)
+        self._thread = threading.Thread(
+            target=self._run,
+            name="observability-async-writer",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def append(self, record: dict) -> None:
+        with self._cond:
+            if self._closed:
+                raise RuntimeError("writer already closed")
+            self._buffers[self._active_idx].append(record)
+            self._promote_if_needed_locked(force=False)
+
+    def write(self, records: Iterable[dict]) -> None:
+        for record in records:
+            self.append(record)
+
+    def close(self) -> None:
+        with self._cond:
+            if self._closed:
+                return
+            while True:
+                self._promote_if_needed_locked(force=True)
+                active_empty = not self._buffers[self._active_idx]
+                if self._pending_idx is None and active_empty:
+                    self._closed = True
+                    self._cond.notify_all()
+                    break
+                self._cond.wait(timeout=0.05)
+        self._thread.join(timeout=2.0)
+
+    def _promote_if_needed_locked(self, force: bool) -> None:
+        if self._pending_idx is not None:
+            return
+        active = self._buffers[self._active_idx]
+        if not active:
+            return
+        if (not force) and len(active) < self._buffer_size:
+            return
+        self._pending_idx = self._active_idx
+        self._active_idx = 1 - self._active_idx
+        self._buffers[self._active_idx] = []
+        self._cond.notify_all()
+
+    def _run(self) -> None:
+        while True:
+            with self._cond:
+                while self._pending_idx is None and not self._closed:
+                    self._cond.wait(timeout=0.2)
+                    self._promote_if_needed_locked(force=True)
+
+                if self._pending_idx is None and self._closed:
+                    return
+
+                pending_idx = self._pending_idx
+                self._pending_idx = None
+                batch = self._buffers[pending_idx] if pending_idx is not None else []
+                if pending_idx is not None:
+                    self._buffers[pending_idx] = []
+                self._cond.notify_all()
+
+            if batch:
+                self._writer.append_many(batch)
 
 
 class NetworkObserver:
@@ -55,10 +140,26 @@ class NetworkObserver:
         alive_neurons = [n for n in neurons if n.alive]
 
         total_connections = sum(len(n.links) for n in neurons)
-        avg_energy = sum(n.energy for n in alive_neurons) / len(alive_neurons) if alive_neurons else 0.0
-        avg_novelty = sum(n.states["novelty"] for n in alive_neurons) / len(alive_neurons) if alive_neurons else 0.0
-        avg_emotion = sum(n.states["emotion"] for n in alive_neurons) / len(alive_neurons) if alive_neurons else 0.0
-        avg_entropy = sum(n.states["entropy"] for n in alive_neurons) / len(alive_neurons) if alive_neurons else 0.0
+        avg_energy = (
+            sum(n.energy for n in alive_neurons) / len(alive_neurons)
+            if alive_neurons
+            else 0.0
+        )
+        avg_novelty = (
+            sum(n.states["novelty"] for n in alive_neurons) / len(alive_neurons)
+            if alive_neurons
+            else 0.0
+        )
+        avg_emotion = (
+            sum(n.states["emotion"] for n in alive_neurons) / len(alive_neurons)
+            if alive_neurons
+            else 0.0
+        )
+        avg_entropy = (
+            sum(n.states["entropy"] for n in alive_neurons) / len(alive_neurons)
+            if alive_neurons
+            else 0.0
+        )
 
         self._alive_history.append(len(alive_neurons))
         self._energy_history.append(avg_energy)
@@ -119,8 +220,16 @@ class NetworkObserver:
 
         window = 10
         pe_window = self._pe_history[-window:] if self._pe_history else [0.0]
-        birth_rate = sum(self._birth_history[-window:]) / min(window, len(self._birth_history)) if self._birth_history else 0.0
-        death_rate = sum(self._death_history[-window:]) / min(window, len(self._death_history)) if self._death_history else 0.0
+        birth_rate = (
+            sum(self._birth_history[-window:]) / min(window, len(self._birth_history))
+            if self._birth_history
+            else 0.0
+        )
+        death_rate = (
+            sum(self._death_history[-window:]) / min(window, len(self._death_history))
+            if self._death_history
+            else 0.0
+        )
         alive_window = self._alive_history[-window:] if self._alive_history else [0]
 
         return {
@@ -159,7 +268,9 @@ class NetworkObserver:
 
         return debug_info
 
-    def generate_report(self, tick: int, include_debug: bool = False, snapshot: dict | None = None) -> dict:
+    def generate_report(
+        self, tick: int, include_debug: bool = False, snapshot: dict | None = None
+    ) -> dict:
         """生成完整报告"""
         report: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
@@ -184,6 +295,8 @@ class ObservabilityLogger:
         experiment_id: str | None = None,
         log_interval: int = 1,
         max_file_size: int = 0,
+        async_mode: bool = False,
+        log_buffer_size: int = 256,
     ) -> None:
         if experiment_id:
             # 按实验编号自动分目录
@@ -191,10 +304,24 @@ class ObservabilityLogger:
         self._base_output_path = output_path
         self._output_path = output_path
         self._segment_index = 0
-        self._writer = JsonlWriter(self._output_path)
+        self._async_mode = bool(async_mode)
+        self._log_buffer_size = max(1, int(log_buffer_size))
+        self._writer: JsonlWriter | AsyncJsonlWriter = self._create_writer()
         self._debug_mode = debug_mode
         self._log_interval = max(1, int(log_interval))
         self._max_file_size = max(0, int(max_file_size))
+
+    def _create_writer(self) -> JsonlWriter | AsyncJsonlWriter:
+        if self._async_mode:
+            return AsyncJsonlWriter(
+                self._output_path, buffer_size=self._log_buffer_size
+            )
+        return JsonlWriter(self._output_path)
+
+    def _close_writer(self) -> None:
+        close_fn = getattr(self._writer, "close", None)
+        if callable(close_fn):
+            close_fn()
 
     def _segment_path(self, segment_index: int) -> Path:
         if segment_index <= 0:
@@ -202,7 +329,9 @@ class ObservabilityLogger:
         name = self._base_output_path.name
         if name.endswith(".jsonl.gz"):
             stem = name[:-9]
-            return self._base_output_path.with_name(f"{stem}_{segment_index:04d}.jsonl.gz")
+            return self._base_output_path.with_name(
+                f"{stem}_{segment_index:04d}.jsonl.gz"
+            )
         if name.endswith(".jsonl"):
             stem = name[:-6]
             return self._base_output_path.with_name(f"{stem}_{segment_index:04d}.jsonl")
@@ -216,8 +345,9 @@ class ObservabilityLogger:
         if self._output_path.stat().st_size < self._max_file_size:
             return
         self._segment_index += 1
+        self._close_writer()
         self._output_path = self._segment_path(self._segment_index)
-        self._writer = JsonlWriter(self._output_path)
+        self._writer = self._create_writer()
 
     def log_config(self, config_dict: dict) -> None:
         """记录实验配置"""
@@ -225,12 +355,16 @@ class ObservabilityLogger:
         record = {"type": "config", "schema_version": SCHEMA_VERSION, **config_dict}
         self._writer.append(record)
 
-    def log_tick(self, observer: NetworkObserver, tick: int, snapshot: dict | None = None) -> None:
+    def log_tick(
+        self, observer: NetworkObserver, tick: int, snapshot: dict | None = None
+    ) -> None:
         """记录单个tick的信息"""
         if tick % self._log_interval != 0:
             return
         self._rotate_if_needed()
-        report = observer.generate_report(tick, include_debug=self._debug_mode, snapshot=snapshot)
+        report = observer.generate_report(
+            tick, include_debug=self._debug_mode, snapshot=snapshot
+        )
         self._writer.append(report)
 
     def log_summary(self, total_ticks: int, final_metrics: dict) -> None:
@@ -247,6 +381,15 @@ class ObservabilityLogger:
     def get_output_path(self) -> Path:
         return self._output_path
 
+    def close(self) -> None:
+        self._close_writer()
+
+    def __del__(self) -> None:
+        try:
+            self.close()
+        except Exception:
+            pass
+
 
 def create_experiment_logger(
     base_dir: Path,
@@ -255,6 +398,8 @@ def create_experiment_logger(
     log_interval: int = 1,
     max_file_size: int = 0,
     gzip_output: bool = False,
+    async_mode: bool = False,
+    log_buffer_size: int = 256,
 ) -> ObservabilityLogger:
     """创建实验日志记录器 — 自动分目录防覆盖（带毫秒精度）"""
     # 使用毫秒精度时间戳，避免快速连续创建时冲突
@@ -268,4 +413,6 @@ def create_experiment_logger(
         debug_mode=debug_mode,
         log_interval=log_interval,
         max_file_size=max_file_size,
+        async_mode=async_mode,
+        log_buffer_size=log_buffer_size,
     )

@@ -25,6 +25,7 @@ from neurogenesis_lab.config import (
     SimConfig,
     seed_all,
 )
+from neurogenesis_lab.core_bridge import parallel_lif_tick_safe, rust_core_status
 from neurogenesis_lab.encoding import Encoder, Event
 from neurogenesis_lab.learning import AutoLearner, RuleDiscovery
 from neurogenesis_lab.network import Network
@@ -107,6 +108,20 @@ def _build_sim_config(args: argparse.Namespace) -> SimConfig:
                 input_current_scale=float(
                     network.get("input_current_scale", cfg.network.input_current_scale)
                 ),
+                background_current=float(
+                    network.get("background_current", cfg.network.background_current)
+                ),
+                spontaneous_spike_rate=float(
+                    network.get(
+                        "spontaneous_spike_rate", cfg.network.spontaneous_spike_rate
+                    )
+                ),
+                low_activation_threshold=int(
+                    network.get(
+                        "low_activation_threshold",
+                        cfg.network.low_activation_threshold,
+                    )
+                ),
                 move_cost=float(network.get("move_cost", cfg.network.move_cost)),
                 energy_cap=float(network.get("energy_cap", cfg.network.energy_cap)),
                 adaptive_decay=bool(
@@ -158,6 +173,18 @@ def _build_sim_config(args: argparse.Namespace) -> SimConfig:
         cfg.seed = args.seed
     if hasattr(args, "dt") and args.dt is not None:
         cfg.dt = args.dt
+    if hasattr(args, "background_current") and args.background_current is not None:
+        cfg.network.background_current = float(args.background_current)
+    if (
+        hasattr(args, "spontaneous_spike_rate")
+        and args.spontaneous_spike_rate is not None
+    ):
+        cfg.network.spontaneous_spike_rate = float(args.spontaneous_spike_rate)
+    if (
+        hasattr(args, "low_activation_threshold")
+        and args.low_activation_threshold is not None
+    ):
+        cfg.network.low_activation_threshold = int(args.low_activation_threshold)
     return cfg
 
 
@@ -213,6 +240,8 @@ def cmd_run(args: argparse.Namespace) -> None:
             corpse_ttl=cfg.network.corpse_ttl,
             scavenger_radius=cfg.network.scavenger_radius,
             input_current_scale=cfg.network.input_current_scale,
+            background_current=cfg.network.background_current,
+            spontaneous_spike_rate=cfg.network.spontaneous_spike_rate,
             move_cost=cfg.network.move_cost,
             energy_cap=cfg.network.energy_cap,
             adaptive_decay=cfg.network.adaptive_decay,
@@ -263,6 +292,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         log_interval=max(1, int(getattr(args, "log_interval", 1) or 1)),
         max_file_size=max(0, int(getattr(args, "max_file_size", 0) or 0)),
         gzip_output=bool(getattr(args, "gzip_output", False)),
+        async_mode=bool(getattr(args, "async_log", False)),
+        log_buffer_size=max(1, int(getattr(args, "log_buffer_size", 256) or 256)),
     )
     debug_neuron_ids = []
     if network.neurons:
@@ -321,6 +352,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     final = observer.get_network_metrics(run_end_tick)
     summary = network.get_summary()
     logger.log_summary(run_end_tick, final)
+    logger.close()
 
     print(f"\n完成! 用时 {elapsed:.2f}s")
     print(f"  输出: {logger.get_output_path()}")
@@ -336,9 +368,13 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(
         f"  预测次数: {learn_summary['total_predictions']}, 正确: {learn_summary['correct_predictions']}"
     )
-    if summary["total_spikes"] <= 0 or summary["total_propagations"] <= 0:
+    low_activation_threshold = max(0, int(cfg.network.low_activation_threshold))
+    if (
+        summary["total_spikes"] <= low_activation_threshold
+        or summary["total_propagations"] <= low_activation_threshold
+    ):
         print(
-            "  警告: 未观察到有效放电传播，可提高 --input-weight 或调整 [neuron]/[network] 参数"
+            f"  警告: 低激活（阈值={low_activation_threshold}），可提高 --input-weight 或调整 [neuron]/[network] 参数"
         )
 
 
@@ -350,9 +386,11 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     neuron_count = getattr(args, "neurons", 1000) or 1000
     tick_count = getattr(args, "ticks", 100) or 100
     seed = getattr(args, "seed", 42) or 42
+    rust_size = max(8, int(getattr(args, "rust_size", 10000) or 10000))
 
     print(f"[NeuroGenesis Lab] 性能基准测试")
     print(f"  neurons={neuron_count}, ticks={tick_count}, seed={seed}")
+    print(f"  rust_lif_size={rust_size}")
 
     # --- 向量化引擎 ---
     np.random.seed(seed)
@@ -381,6 +419,29 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
         net.tick(t)
     orig_time = time.time() - t0
     orig_summary = net.get_summary()
+
+    # --- Rust 并行 LIF 微基准（含 Python 降级）---
+    rng = np.random.default_rng(seed)
+    voltages = rng.normal(loc=-65.0, scale=2.0, size=rust_size).astype(float).tolist()
+    inputs = rng.normal(loc=0.5, scale=1.0, size=rust_size).astype(float).tolist()
+    rust_dt = 1.0
+    rust_t0 = time.time()
+    rust_backend = "unknown"
+    rust_spikes = 0
+    rust_v = voltages
+    for _ in range(tick_count):
+        rust_v, spikes, rust_backend = parallel_lif_tick_safe(
+            rust_v,
+            v_rest=-65.0,
+            v_reset=-65.0,
+            v_th=-55.0,
+            tau_m=20.0,
+            r_m=1.0,
+            inputs=inputs,
+            dt=rust_dt,
+        )
+        rust_spikes += sum(1 for s in spikes if s)
+    rust_time = time.time() - rust_t0
 
     def _fmt_num(value: float | int | None, digits: int = 3) -> str:
         if value is None:
@@ -453,6 +514,9 @@ def cmd_benchmark(args: argparse.Namespace) -> None:
     print(
         f"  原始引擎 ({compare_n} neurons): {orig_time:.3f}s ({tick_count / orig_time:.0f} ticks/s)"
     )
+    print(
+        f"  Rust并行LIF ({rust_size} neurons, backend={rust_backend}): {rust_time:.3f}s ({tick_count / rust_time:.0f} ticks/s), spikes={rust_spikes}"
+    )
     if compare_n == neuron_count and orig_time > 0:
         print(f"  加速比: {orig_time / vec_time:.1f}x")
 
@@ -468,6 +532,15 @@ def cmd_info(args: argparse.Namespace) -> None:
     print(f"NeuroGenesis Lab v{__version__}")
     print(f"Schema Version: {SCHEMA_VERSION}")
     cfg = SimConfig()
+    rust_status = rust_core_status()
+    enabled_components = [
+        name for name, enabled in rust_status.get("components", {}).items() if enabled
+    ]
+    print(f"Rust Core: {'available' if rust_status['available'] else 'unavailable'}")
+    if enabled_components:
+        print("Rust Components:")
+        for comp in enabled_components:
+            print(f"  - {comp}")
     print(f"默认配置:")
     print(json.dumps(cfg.to_dict(), indent=2, ensure_ascii=False))
 
@@ -501,6 +574,24 @@ def main() -> None:
         default=5,
         help="外部刺激注入间隔（tick）",
     )
+    run_parser.add_argument(
+        "--background-current",
+        type=float,
+        default=None,
+        help="全局背景电流（每个神经元每 tick 注入）",
+    )
+    run_parser.add_argument(
+        "--spontaneous-spike-rate",
+        type=float,
+        default=None,
+        help="自发放电概率（每神经元每 tick，范围 [0,1]）",
+    )
+    run_parser.add_argument(
+        "--low-activation-threshold",
+        type=int,
+        default=None,
+        help="低激活告警阈值（总放电/总传播任一不高于该值则告警）",
+    )
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
     run_parser.add_argument(
         "--config", type=str, default=None, help="TOML 配置文件路径"
@@ -522,6 +613,17 @@ def main() -> None:
         type=int,
         default=0,
         help="单个输出文件最大字节数，>0 时启用轮转",
+    )
+    run_parser.add_argument(
+        "--async-log",
+        action="store_true",
+        help="启用异步双缓冲日志写入，降低 I/O 对主循环阻塞",
+    )
+    run_parser.add_argument(
+        "--log-buffer-size",
+        type=int,
+        default=256,
+        help="异步日志双缓冲阈值（记录条数）",
     )
     run_parser.add_argument(
         "--visualize",
@@ -558,6 +660,12 @@ def main() -> None:
     bench_parser.add_argument("--neurons", type=int, default=1000, help="神经元数量")
     bench_parser.add_argument("--ticks", type=int, default=100, help="仿真步数")
     bench_parser.add_argument("--seed", type=int, default=42, help="随机种子")
+    bench_parser.add_argument(
+        "--rust-size",
+        type=int,
+        default=10000,
+        help="Rust 并行 LIF 微基准神经元数量",
+    )
 
     # info
     subparsers.add_parser("info", help="显示版本与配置信息")

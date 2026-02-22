@@ -16,6 +16,10 @@ NeuroGenesis Lab is a Python-based neural evolution simulation framework for stu
 # Install in development mode
 pip install -e .
 
+# (Optional) Install Rust build deps + activate Rust extension
+pip install -e .[rust]
+python -m maturin develop --release
+
 # Run simulation (default 100 ticks)
 python -m neurogenesis_lab run
 
@@ -25,8 +29,14 @@ python -m neurogenesis_lab run --ticks 200 --seed 123 --neurons 12 --config conf
 # Run with output governance (sampling + gzip + rotation)
 python -m neurogenesis_lab run --log-interval 10 --gzip-output --max-file-size 5000000
 
+# Run with async logging (double buffering)
+python -m neurogenesis_lab run --async-log --log-buffer-size 512
+
 # Performance benchmark
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
+
+# Benchmark with Rust micro benchmark size
+python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 10000
 
 # View version and default config
 python -m neurogenesis_lab info

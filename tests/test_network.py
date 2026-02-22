@@ -121,6 +121,39 @@ class TestSpikeAndPropagation:
         s3 = net.tick(3)
         assert s3["ready_events"] >= 1, "delay=2 时 tick 3 应收到传播事件"
 
+    def test_background_current_is_consumed(self) -> None:
+        """background_current 应在无外部事件时驱动膜电位上升。"""
+        random.seed(42)
+        neuron = LIFNeuron(tau_m=20.0, r_m=1.0, v_rest=-65.0, v_th=-50.0)
+        net = Network(
+            neurons={neuron.id: neuron},
+            background_current=5.0,
+            input_current_scale=0.0,
+            energy_decay=0.0,
+            move_cost=0.0,
+            min_neurons=0,
+            adaptive_decay=False,
+        )
+        v_before = neuron.v
+        net.tick(1)
+        assert neuron.v > v_before
+
+    def test_spontaneous_spike_rate_is_consumed(self) -> None:
+        """spontaneous_spike_rate=1 时应在无输入事件下产生放电。"""
+        random.seed(42)
+        neuron = LIFNeuron()
+        net = Network(
+            neurons={neuron.id: neuron},
+            spontaneous_spike_rate=1.0,
+            input_current_scale=0.0,
+            energy_decay=0.0,
+            move_cost=0.0,
+            min_neurons=0,
+            adaptive_decay=False,
+        )
+        snapshot = net.tick(1)
+        assert snapshot["tick_spikes"] >= 1
+
 
 class TestPredictionError:
     def test_pe_decreases_with_repeated_input(self) -> None:
@@ -248,6 +281,24 @@ class TestCorpse:
         net.corpses = [Corpse(pos=(0.1, 0.1), energy=0.5, params={}, ttl=10)]
         net._update_corpses()
         assert scavenger.energy > 1.0, "近距离应吞噬尸体能量"
+
+    def test_corpse_pool_reuse(self) -> None:
+        """尸体对象在回收后应被对象池复用。"""
+        random.seed(42)
+        doomed = LIFNeuron(energy=0.0)
+        net = Network(neurons={doomed.id: doomed}, min_neurons=0, corpse_ttl=1)
+
+        net.tick(1)
+        assert len(net.corpses) == 1
+
+        net._update_corpses()
+        assert len(net.corpses) == 0
+        assert len(net.corpse_pool.free) >= 1
+
+        another = LIFNeuron(energy=0.0)
+        net.add_neuron(another)
+        net.tick(2)
+        assert net.corpse_pool.reused_count >= 1
 
 
 class TestNetworkSummary:

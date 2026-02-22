@@ -148,6 +148,18 @@ python -m neurogenesis_lab run --config config.toml --ticks 500 --seed 99
 
 上例中 `ticks=500` 和 `seed=99` 会覆盖 TOML 中的值。
 
+### 常用 `run` CLI 参数（补充）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--neurons` | int | 8 | 初始神经元数量 |
+| `--expr` | str | `1+2=3` | 外部刺激表达式 |
+| `--input-weight` | float | 40.0 | 外部注入事件默认权重 |
+| `--stim-interval` | int | 5 | 外部刺激注入间隔（tick） |
+| `--output` | str | `outputs` | 输出目录 |
+| `--config` | str | None | TOML 配置路径 |
+| `--debug` | flag | 关闭 | 输出调试级追踪信息 |
+
 ---
 
 ## 输出治理参数（CLI）
@@ -157,6 +169,8 @@ python -m neurogenesis_lab run --config config.toml --ticks 500 --seed 99
 | `--log-interval` | int | 1 | 日志采样间隔（每 N tick 记录一次） |
 | `--gzip-output` | flag | 关闭 | 输出为 `.jsonl.gz` 压缩文件 |
 | `--max-file-size` | int | 0 | 单文件最大字节数，`>0` 时启用自动轮转 |
+| `--async-log` | flag | 关闭 | 启用异步双缓冲日志写入 |
+| `--log-buffer-size` | int | 256 | 异步双缓冲阈值（记录条数） |
 
 示例：
 
@@ -165,6 +179,14 @@ python -m neurogenesis_lab run --ticks 500 --log-interval 10 --gzip-output --max
 ```
 
 该命令会每 10 tick 采样一次日志，输出为压缩 JSONL，并在单文件超过 5MB 时自动轮转为分段文件。
+
+高频记录建议：
+
+```bash
+python -m neurogenesis_lab run --ticks 500 --log-interval 1 --async-log --log-buffer-size 512
+```
+
+该配置可降低主循环被 I/O 阻塞的概率。
 
 ---
 
@@ -179,6 +201,23 @@ python -m neurogenesis_lab run --ticks 500 --log-interval 10 --gzip-output --max
 
 ```bash
 python -m neurogenesis_lab run --visualize --plot-interval 10
+```
+
+---
+
+## 基准参数（CLI）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--neurons` | int | 1000 | 基准主规模（用于原始/向量化对照） |
+| `--ticks` | int | 100 | 基准步数 |
+| `--seed` | int | 42 | 随机种子 |
+| `--rust-size` | int | 10000 | Rust 并行 LIF 微基准神经元数量 |
+
+示例：
+
+```bash
+python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 20000
 ```
 
 ---

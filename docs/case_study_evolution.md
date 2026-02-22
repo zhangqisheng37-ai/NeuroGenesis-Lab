@@ -7,8 +7,16 @@ NeuroGenesis Lab 的核心特性之一是其基于能量经济的演化系统。
 我们使用 `experiment_stable.toml` 配置运行了一个 500 ticks 的长程实验。该配置启用了自适应衰减和繁殖机制，以防止种群崩溃或爆炸。
 
 ```bash
-python -m neurogenesis_lab run --config experiments/experiment_stable.toml --visualize
+python -m neurogenesis_lab run --config experiments/experiment_stable.toml --visualize --async-log --log-buffer-size 512
 ```
+
+建议在运行前执行：
+
+```bash
+python -m neurogenesis_lab info
+```
+
+确认 `Rust Core: available` 后再进行性能相关对照实验。
 
 ## 2. 观察到的现象
 

@@ -17,6 +17,16 @@ pip install -e .
 pip install -e ".[viz]"
 ```
 
+如果你希望启用 Rust 扩展（推荐，用于性能路径与模式挖掘加速），继续执行：
+
+```bash
+pip install -e ".[rust]"
+python -m maturin develop --release
+python -m neurogenesis_lab info
+```
+
+当 `info` 输出包含 `Rust Core: available` 时，表示 Rust 运行时已成功接入。
+
 ## 2. 运行最小实验
 
 NeuroGenesis Lab 提供了一个最小配置，适合快速验证环境。
@@ -27,9 +37,9 @@ python -m neurogenesis_lab run --config experiments/experiment_minimal.toml
 
 你将看到类似如下的输出：
 
-```
-[NeuroGenesis Lab v0.4.1] 运行仿真
-  ticks=100, seed=42, schema=1.0
+```text
+[NeuroGenesis Lab v0.4.0] 运行仿真
+  ticks=100, seed=42, schema=2.0.0
   tick 20/100 (global=20): alive=8, PE=0.0000, rules=0, acc=0.000
   tick 40/100 (global=40): alive=8, PE=0.0000, rules=0, acc=0.000
 ...
@@ -44,6 +54,12 @@ python -m neurogenesis_lab run --config experiments/experiment_minimal.toml
 
 ```bash
 python -m neurogenesis_lab run --config experiments/experiment_minimal.toml --visualize
+```
+
+高频记录或长程实验建议开启异步双缓冲日志：
+
+```bash
+python -m neurogenesis_lab run --config experiments/experiment_minimal.toml --visualize --async-log --log-buffer-size 512
 ```
 
 这会弹出一个窗口，实时显示：
@@ -61,8 +77,15 @@ python -m neurogenesis_lab run --config experiments/experiment_minimal.toml --vi
 python examples/analyze_experiment.py --path outputs/run_20260222_123456_789/run.jsonl --show
 ```
 
+若输出启用了 `--gzip-output`，可先解压：
+
+```bash
+python examples/decompress_outputs.py --path outputs --recursive
+```
+
 ## 5. 下一步
 
 恭喜！你已经成功运行了第一个实验。接下来，你可以：
 - 阅读 [教程 02：参数调优指南](tutorial_02_parameter_tuning.md) 了解如何控制演化过程。
 - 尝试运行长程稳定实验：`python -m neurogenesis_lab run --config experiments/experiment_stable.toml`
+- 尝试 Rust 路径微基准：`python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 10000`

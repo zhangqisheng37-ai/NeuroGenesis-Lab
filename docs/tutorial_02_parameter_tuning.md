@@ -17,10 +17,10 @@ NeuroGenesis Lab 提供了丰富的参数来控制神经演化过程。本教程
 
 能量是神经元生存和繁殖的货币。
 
-- `energy_decay` (默认 0.0015)：每 tick 消耗的基础能量。
-- `spike_cost` (默认 0.04)：每次放电消耗的能量。
-- `reproduction_threshold` (默认 1.8)：繁殖所需的最小能量。
-- `reproduction_share` (默认 0.35)：繁殖时分给子代的能量比例。
+- `energy_decay` (默认 0.003)：每 tick 消耗的基础能量。
+- `spike_cost` (默认 0.05)：每次放电消耗的能量。
+- `reproduction_threshold` (默认 2.5)：繁殖所需的最小能量。
+- `reproduction_share` (默认 0.4)：繁殖时分给子代的能量比例。
 
 **调优建议**：
 - 如果种群迅速崩溃，尝试降低 `energy_decay` 或提高 `input_current_scale`。
@@ -28,17 +28,18 @@ NeuroGenesis Lab 提供了丰富的参数来控制神经演化过程。本教程
 
 ### 2.2 演化与变异
 
-- `mutation_scale` (默认 0.05)：变异发生的概率。
-- `mutation_amplitude` (默认 0.05)：变异的幅度（影响神经元参数）。
+- `mutation_scale` (默认 0.05)：网络默认突变幅度。
+- `mutation_amplitude` (默认 0.05)：演化阶段优先使用的突变幅度（会覆盖 `mutation_scale`）。
+- `congestion_penalty` (默认 0.1)：高连接神经元的繁殖惩罚系数。
 
 **调优建议**：
 - 提高变异率可以加速探索，但也可能导致不稳定。
 
 ### 2.3 空间系统
 
-- `spatial_radius` (默认 5.0)：神经元连接的最大距离。
-- `max_links_per_neuron` (默认 8)：每个神经元的最大连接数。
-- `move_cost` (默认 0.008)：神经元移动消耗的能量。
+- `scavenger_radius` (默认 2.5)：尸体回收有效半径。
+- `max_links` (默认 200)：全网最大连接数。
+- `move_cost` (默认 0.01)：神经元移动消耗的能量。
 
 **调优建议**：
 - 启用空间连接可以观察到聚类现象。降低 `move_cost` 鼓励神经元探索空间。
@@ -61,3 +62,32 @@ python examples/batch_experiments.py --configs experiments/experiment_stable.tom
 ```
 
 这将在 `outputs/batch_results/` 目录下生成 `comparison_report.html`。
+
+## 5. CLI 快速调参（不改 TOML）
+
+当你只想快速验证方向时，可直接用 CLI 覆盖：
+
+```bash
+python -m neurogenesis_lab run --config experiments/experiment_stable.toml --ticks 500 --seed 42 --input-weight 60 --stim-interval 3 --visualize
+```
+
+高频日志建议：
+
+```bash
+python -m neurogenesis_lab run --config experiments/experiment_stable.toml --ticks 500 --async-log --log-buffer-size 512
+```
+
+## 6. 性能调优验证
+
+若已启用 Rust 扩展，可使用以下命令检查并行微基准：
+
+```bash
+python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 10000
+```
+
+输出中 `Rust并行LIF (backend=rust)` 表示已走 Rust 路径；若为 `python-fallback`，请先运行：
+
+```bash
+python -m maturin develop --release
+python -m neurogenesis_lab info
+```

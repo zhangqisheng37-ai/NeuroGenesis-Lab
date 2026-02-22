@@ -24,6 +24,9 @@ max_links = 333
 corpse_ttl = 66
 scavenger_radius = 3.3
 input_current_scale = 2.2
+background_current = 0.6
+spontaneous_spike_rate = 0.12
+low_activation_threshold = 3
 move_cost = 0.02
 
 [evolution]

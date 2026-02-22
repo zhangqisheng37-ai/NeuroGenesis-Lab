@@ -6,9 +6,9 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 
 ## 当前状态
 
-- 阶段四（长程稳定 + 可视化 + 学习集成 + 持久化恢复）已交付。
-- 技术债进度：TD-1、TD-2、TD-3、TD-4、TD-5 已完成，剩余 TD-6、TD-7。
-- 最新测试基线：217 passed, 0 failed（2026-02-22）。
+- 阶段五（Rust + Python 混合架构、并发与内存优化、异步 I/O）已交付。
+- Rust 扩展已接入运行时（可通过 `python -m neurogenesis_lab info` 查看 `Rust Core: available`）。
+- 最新测试基线：229 passed, 0 failed（2026-02-22）。
 
 ## 核心特性
 
@@ -21,6 +21,7 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 - **持久化与恢复**：支持按间隔自动保存 checkpoint，并从中断点恢复继续运行，适配长程实验。
 - **输出治理**：支持日志采样（`--log-interval`）、压缩输出（`--gzip-output`）与按大小轮转（`--max-file-size`）。
 - **高性能架构**：内置基于 NumPy + scipy.sparse 的向量化仿真内核 (`VectorizedNetwork`)，利用稀疏矩阵存储连接权重、向量化放电传播与空间网格索引，支持万级神经元规模的实时演化。
+- **Rust 混合加速**：通过 PyO3/maturin 集成 Rust 核心扩展（`_neurogenesis_core`），提供并行 LIF 微基准、模式挖掘和桥接层降级能力。
 - **统一引擎接口**：`Network` 与 `VectorizedNetwork` 遵循 `SimEngine` 协议，返回统一的 `TickSnapshot` 和 `EngineSummary` 类型，上层代码可无缝切换引擎。
 
 ## 快速开始
@@ -35,6 +36,12 @@ pip install -e .
 
 # 安装包含可视化依赖的完整包
 pip install -e ".[viz]"
+
+# 安装 Rust 构建依赖（可选）
+pip install -e ".[rust]"
+
+# 将 Rust 扩展以开发模式安装到当前环境（推荐）
+python -m maturin develop --release
 ```
 
 ### 运行实验
@@ -52,6 +59,9 @@ python -m neurogenesis_lab run --config experiments/challenge_hardcore.toml
 # 长程实验输出治理（采样 + gzip + 轮转）
 python -m neurogenesis_lab run --ticks 2000 --log-interval 10 --gzip-output --max-file-size 5000000
 
+# 高负载场景下启用异步双缓冲日志
+python -m neurogenesis_lab run --ticks 2000 --async-log --log-buffer-size 512
+
 # 每 100 tick 自动保存 checkpoint
 python -m neurogenesis_lab run --ticks 1000 --checkpoint-interval 100 --checkpoint-dir outputs/checkpoints
 
@@ -60,6 +70,9 @@ python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick
 
 # 性能基准测试（例如 5000 神经元）
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
+
+# 基准中增加 Rust 并行 LIF 微基准规模
+python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 10000
 
 # 查看版本与默认配置
 python -m neurogenesis_lab info
@@ -99,6 +112,31 @@ pytest --basetemp=.pytest_tmp
 ruff check src/
 ```
 
+### Windows 一键编译检查（Rust 扩展）
+
+当你在 Windows 上开发 Rust 扩展（`rust_src/neurogenesis_core`）时，建议使用下面脚本一键完成环境注入与编译检查：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+
+$devCmd = 'C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat'
+if (-not (Test-Path $devCmd)) {
+	throw '未找到 VsDevCmd.bat，请先安装 Visual Studio Build Tools（VC++ 工具链）'
+}
+
+$cargoBin = Join-Path $env:USERPROFILE '.cargo\bin'
+if (-not (Test-Path (Join-Path $cargoBin 'cargo.exe'))) {
+	throw '未找到 cargo.exe，请先安装 Rustup'
+}
+
+$cmd = '"' + $devCmd + '" -no_logo & set PATH=' + $cargoBin + ';%PATH% & cargo check --manifest-path rust_src/neurogenesis_core/Cargo.toml'
+cmd /c $cmd
+```
+
+若 `cargo check` 仍失败，请优先检查：
+- 是否存在 `link.exe`（由 VS Build Tools 提供）；
+- 当前 Python 版本与 `pyo3` 版本是否兼容（本项目当前使用 `pyo3 = 0.28`）。
+
 ## 文档
 
 项目文档位于 `docs/` 目录：
@@ -111,7 +149,8 @@ ruff check src/
 | [可观测性指标](docs/metrics.md) | 输出数据字段说明 |
 | [风险清单](docs/risk_list.md) | 当前已知风险与待办事项 |
 | [更新日志](docs/CHANGELOG.md) | 版本变更历史 |
-| [阶段四开发清单](docs/开发清单04.md) | 当前阶段交付与验收状态 |
+| [阶段四开发清单](docs/开发清单04_已完成.md) | 阶段四交付与验收状态 |
+| [阶段五开发清单](docs/开发清单05.md) | Rust 混合架构阶段交付状态 |
 
 ## 开发路线图
 
@@ -120,4 +159,5 @@ ruff check src/
 - [x] [阶段一：基础脉冲与网络拓扑](docs/开发清单01已完成.md)
 - [x] [阶段二：演化与空间动力学](docs/开发清单02 已完成.md)
 - [x] [阶段三：符号学习与规则发现](docs/开发清单03_已完成.md)
-- [x] [阶段四：长程稳定 + 可视化 + 学习集成 + 持久化恢复](docs/开发清单04.md)（已完成，技术债持续清理）
+- [x] [阶段四：长程稳定 + 可视化 + 学习集成 + 持久化恢复](docs/开发清单04_已完成.md)
+- [x] [阶段五：核心引擎重构与性能突破（Rust 混合架构）](docs/开发清单05.md)

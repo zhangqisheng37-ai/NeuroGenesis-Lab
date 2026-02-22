@@ -8,6 +8,12 @@ pip install -e .
 
 # 安装包含可视化依赖的完整包
 pip install -e ".[viz]"
+
+# 安装 Rust 构建依赖（可选）
+pip install -e ".[rust]"
+
+# 将 Rust 扩展安装到当前虚拟环境（推荐）
+python -m maturin develop --release
 ```
 
 ## 30 秒上手
@@ -31,6 +37,9 @@ python -m neurogenesis_lab run --config config.toml
 # 输出治理（每10 tick采样 + gzip + 轮转）
 python -m neurogenesis_lab run --log-interval 10 --gzip-output --max-file-size 5000000
 
+# 异步双缓冲日志（高频记录推荐）
+python -m neurogenesis_lab run --async-log --log-buffer-size 512
+
 # checkpoint（每 50 tick 自动保存）
 python -m neurogenesis_lab run --ticks 300 --checkpoint-interval 50 --checkpoint-dir outputs/checkpoints
 
@@ -39,7 +48,18 @@ python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick
 
 # 性能基准测试
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
+
+# 基准中加入 Rust 并行 LIF 微基准
+python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 10000
 ```
+
+## Rust 启用检查（推荐）
+
+```bash
+python -m neurogenesis_lab info
+```
+
+当看到 `Rust Core: available` 且列出组件（如 `parallel_lif_tick`、`mine_pattern_counts`）时，表示 Rust 扩展已成功接入运行时。
 
 ## 实验模板
 
@@ -55,7 +75,7 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 
 ## 项目结构
 
-```
+```text
 src/neurogenesis_lab/
 ├── config.py          # 集中配置系统 (SimConfig)
 ├── neuron.py          # 神经元模型 (LIF, Izhikevich, AdEx)
@@ -66,8 +86,12 @@ src/neurogenesis_lab/
 ├── vectorized.py      # 向量化引擎 (NumPy + scipy.sparse 加速)
 ├── visualization.py   # 可视化系统 (实时监控, 离线分析)
 ├── protocols.py       # 双引擎统一接口 (TickSnapshot, EngineSummary, SimEngine)
+├── core_bridge.py     # Rust 扩展桥接层（可用性探测 + fallback）
 ├── logger.py          # 基础日志
 └── __main__.py        # CLI 入口
+
+rust_src/neurogenesis_core/
+└── src/lib.rs         # Rust 扩展核心实现（PyO3 + Rayon）
 ```
 
 ## 代码示例

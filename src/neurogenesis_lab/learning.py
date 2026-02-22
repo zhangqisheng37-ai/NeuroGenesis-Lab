@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from neurogenesis_lab.core_bridge import mine_pattern_counts_safe
 
 if TYPE_CHECKING:
     from neurogenesis_lab.network import Network
@@ -189,33 +190,9 @@ class RuleDiscovery:
     min_support: int = 2
 
     def discover(self, samples: list[list[int]]) -> RuleStore:
-        trigram_support: Counter[tuple[int, int, int]] = Counter()
-        bigram_support: Counter[tuple[int, int]] = Counter()
-
-        for sequence in samples:
-            trigrams = set()
-            bigrams = set()
-            for index in range(len(sequence) - 2):
-                trigrams.add(
-                    (sequence[index], sequence[index + 1], sequence[index + 2])
-                )
-            for index in range(len(sequence) - 1):
-                bigrams.add((sequence[index], sequence[index + 1]))
-            for trigram in trigrams:
-                trigram_support[trigram] += 1
-            for bigram in bigrams:
-                bigram_support[bigram] += 1
-
-        filtered_trigrams = {
-            trigram: support
-            for trigram, support in trigram_support.items()
-            if support >= self.min_support
-        }
-        filtered_bigrams = {
-            bigram: support
-            for bigram, support in bigram_support.items()
-            if support >= self.min_support
-        }
+        filtered_trigrams, filtered_bigrams, _backend = mine_pattern_counts_safe(
+            samples, self.min_support
+        )
         return RuleStore(
             trigram_support=filtered_trigrams, bigram_support=filtered_bigrams
         )

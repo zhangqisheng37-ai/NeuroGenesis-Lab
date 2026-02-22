@@ -6,6 +6,25 @@
 
 ## Unreleased (2026-02-22)
 
+### Phase 5（Rust 混合架构）
+
+- **Rust 扩展与桥接层**
+  - 新增 `src/neurogenesis_lab/core_bridge.py`，提供 Rust 可用性探测与 Python fallback。
+  - `info` 命令可显示 `Rust Core` 可用状态与组件列表。
+  - 基准测试新增 Rust 并行 LIF 微基准参数 `--rust-size`。
+- **规则挖掘 Rust 化**
+  - Rust 侧新增 `mine_pattern_counts`，并接入 `RuleDiscovery`。
+  - 规则发现路径升级为“Rust 优先、Python 降级”。
+- **进化内存分配优化**
+  - 网络引擎新增 `CorpsePool` 对象池，复用高频生灭对象，减少 GC 抖动。
+- **异步观测能力**
+  - `run` 命令新增 `--async-log` 与 `--log-buffer-size`。
+  - 观测写盘支持双缓冲异步落盘。
+
+### 文档更新
+
+- 同步更新 `README.md`、`docs/quickstart.md`、`docs/parameters.md`、`docs/metrics.md`、`docs/risk_list.md`。
+
 ### 技术债务与测试补齐
 
 - **TD-1：演化流程解耦**
@@ -19,7 +38,7 @@
 
 ### 验证
 
-- 最新全量测试：217 passed, 0 failed。
+- 最新全量测试：229 passed, 0 failed。
 
 ---
 

@@ -14,6 +14,7 @@ SCHEMA_VERSION = "2.0.0"
 @dataclass(frozen=True)
 class Config:
     """向后兼容的最小配置"""
+
     ticks: int = 10
     network_size: int = 16
     energy_decay: float = 0.01
@@ -27,6 +28,7 @@ def default_config() -> Config:
 @dataclass
 class NeuronParams:
     """神经元动力学参数"""
+
     v_rest: float = -65.0
     v_reset: float = -65.0
     v_th: float = -55.0
@@ -58,6 +60,7 @@ class NeuronParams:
 @dataclass
 class NetworkParams:
     """网络级参数"""
+
     reproduction_threshold: float = 2.5
     reproduction_share: float = 0.4
     mutation_scale: float = 0.05
@@ -67,6 +70,9 @@ class NetworkParams:
     corpse_ttl: int = 50
     scavenger_radius: float = 2.5
     input_current_scale: float = 1.5
+    background_current: float = 0.0
+    spontaneous_spike_rate: float = 0.0
+    low_activation_threshold: int = 0
     move_cost: float = 0.01
     # 长程稳定性参数
     energy_cap: float = 5.0  # 能量上限，防止无限积累
@@ -77,9 +83,13 @@ class NetworkParams:
     def validate(self) -> list[str]:
         errors: list[str] = []
         if self.reproduction_threshold <= 0:
-            errors.append(f"reproduction_threshold 必须为正: {self.reproduction_threshold}")
+            errors.append(
+                f"reproduction_threshold 必须为正: {self.reproduction_threshold}"
+            )
         if not (0 < self.reproduction_share <= 1):
-            errors.append(f"reproduction_share 必须在 (0, 1]: {self.reproduction_share}")
+            errors.append(
+                f"reproduction_share 必须在 (0, 1]: {self.reproduction_share}"
+            )
         if self.mutation_scale < 0:
             errors.append(f"mutation_scale 不能为负: {self.mutation_scale}")
         if self.energy_decay < 0:
@@ -94,6 +104,16 @@ class NetworkParams:
             errors.append(f"scavenger_radius 不能为负: {self.scavenger_radius}")
         if self.input_current_scale < 0:
             errors.append(f"input_current_scale 不能为负: {self.input_current_scale}")
+        if self.background_current < 0:
+            errors.append(f"background_current 不能为负: {self.background_current}")
+        if not (0.0 <= self.spontaneous_spike_rate <= 1.0):
+            errors.append(
+                f"spontaneous_spike_rate 必须在 [0, 1] 范围内: {self.spontaneous_spike_rate}"
+            )
+        if self.low_activation_threshold < 0:
+            errors.append(
+                f"low_activation_threshold 不能为负: {self.low_activation_threshold}"
+            )
         if self.move_cost < 0:
             errors.append(f"move_cost 不能为负: {self.move_cost}")
         if self.energy_cap <= 0:
@@ -106,11 +126,14 @@ class NetworkParams:
 @dataclass
 class EvolutionParams:
     """演化系统参数"""
-    fitness_weights: dict[str, float] = field(default_factory=lambda: {
-        "propagation": 1.0,
-        "energy_efficiency": 0.5,
-        "prediction_hit": 0.8,
-    })
+
+    fitness_weights: dict[str, float] = field(
+        default_factory=lambda: {
+            "propagation": 1.0,
+            "energy_efficiency": 0.5,
+            "prediction_hit": 0.8,
+        }
+    )
     mutation_amplitude: float = 0.05
     energy_budget_per_tick: float = 0.0  # 0 = 不限
     congestion_penalty: float = 0.1
@@ -128,6 +151,7 @@ class EvolutionParams:
 @dataclass
 class SimConfig:
     """仿真总配置 — 统一入口"""
+
     ticks: int = 100
     seed: int = 42
     dt: float = 1.0
@@ -176,6 +200,9 @@ class SimConfig:
                 "corpse_ttl": self.network.corpse_ttl,
                 "scavenger_radius": self.network.scavenger_radius,
                 "input_current_scale": self.network.input_current_scale,
+                "background_current": self.network.background_current,
+                "spontaneous_spike_rate": self.network.spontaneous_spike_rate,
+                "low_activation_threshold": self.network.low_activation_threshold,
                 "move_cost": self.network.move_cost,
                 "energy_cap": self.network.energy_cap,
                 "adaptive_decay": self.network.adaptive_decay,
@@ -201,6 +228,7 @@ def seed_all(seed: int) -> None:
     random.seed(seed)
     try:
         import numpy as np
+
         np.random.seed(seed)
     except ImportError:
         pass

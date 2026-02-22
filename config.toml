@@ -27,6 +27,9 @@ max_links = 240                # 优化: 相应提高连接数 (原200)
 corpse_ttl = 50
 scavenger_radius = 2.5
 input_current_scale = 2.0      # 优化: 增强输入电流 (原1.5) → 促进放电
+background_current = 0.0       # 背景电流（每个神经元每 tick 注入）
+spontaneous_spike_rate = 0.0   # 自发放电概率（每神经元每 tick，范围 [0,1]）
+low_activation_threshold = 0   # 低激活告警阈值（总放电/总传播任一不高于该值则告警）
 move_cost = 0.008              # 优化: 降低移动成本 (原0.01) → 节省能量
 
 [evolution]

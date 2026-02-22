@@ -1,4 +1,5 @@
 """单元测试 — config 模块"""
+
 import sys
 from pathlib import Path
 
@@ -75,6 +76,21 @@ class TestNetworkParams:
         errors = params.validate()
         assert any("scavenger_radius" in e for e in errors)
 
+    def test_invalid_negative_background_current(self) -> None:
+        params = NetworkParams(background_current=-0.1)
+        errors = params.validate()
+        assert any("background_current" in e for e in errors)
+
+    def test_invalid_spontaneous_spike_rate_out_of_range(self) -> None:
+        params = NetworkParams(spontaneous_spike_rate=1.2)
+        errors = params.validate()
+        assert any("spontaneous_spike_rate" in e for e in errors)
+
+    def test_invalid_negative_low_activation_threshold(self) -> None:
+        params = NetworkParams(low_activation_threshold=-1)
+        errors = params.validate()
+        assert any("low_activation_threshold" in e for e in errors)
+
 
 class TestEvolutionParams:
     def test_valid(self) -> None:
@@ -125,11 +141,15 @@ class TestSimConfig:
         assert "evolution" in d
         assert "corpse_ttl" in d["network"]
         assert "scavenger_radius" in d["network"]
+        assert "background_current" in d["network"]
+        assert "spontaneous_spike_rate" in d["network"]
+        assert "low_activation_threshold" in d["network"]
 
 
 class TestSeedAll:
     def test_seed_reproducibility(self) -> None:
         import random
+
         seed_all(123)
         a = random.random()
         seed_all(123)

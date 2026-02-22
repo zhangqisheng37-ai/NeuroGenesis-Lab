@@ -1,4 +1,5 @@
 """单元测试 — CLI 配置映射"""
+
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -39,6 +40,9 @@ max_links = 333
 corpse_ttl = 66
 scavenger_radius = 3.3
 input_current_scale = 2.2
+background_current = 0.6
+spontaneous_spike_rate = 0.12
+low_activation_threshold = 3
 move_cost = 0.02
 
 [evolution]
@@ -80,6 +84,9 @@ prediction_hit = 0.9
     assert cfg.network.corpse_ttl == 66
     assert cfg.network.scavenger_radius == 3.3
     assert cfg.network.input_current_scale == 2.2
+    assert cfg.network.background_current == 0.6
+    assert cfg.network.spontaneous_spike_rate == 0.12
+    assert cfg.network.low_activation_threshold == 3
     assert cfg.network.move_cost == 0.02
 
     assert cfg.evolution.mutation_amplitude == 0.09
@@ -103,10 +110,20 @@ dt = 1.0
         encoding="utf-8",
     )
 
-    args = Namespace(config=str(cfg_file), ticks=300, seed=123, dt=0.25)
+    args = Namespace(
+        config=str(cfg_file),
+        ticks=300,
+        seed=123,
+        dt=0.25,
+        background_current=0.4,
+        spontaneous_spike_rate=0.2,
+        low_activation_threshold=5,
+    )
     cfg = _build_sim_config(args)
 
     assert cfg.ticks == 300
     assert cfg.seed == 123
     assert cfg.dt == 0.25
-
+    assert cfg.network.background_current == 0.4
+    assert cfg.network.spontaneous_spike_rate == 0.2
+    assert cfg.network.low_activation_threshold == 5

@@ -1,4 +1,5 @@
 """单元测试 — learning 模块"""
+
 import sys
 from pathlib import Path
 
@@ -150,6 +151,22 @@ class TestRuleDiscovery:
         samples = [[1, 2], [1, 2], [3, 4]]
         store = RuleDiscovery(min_support=2).discover(samples)
         assert (1, 2) in store.bigram_support
+
+    def test_discover_uses_bridge(self, monkeypatch) -> None:
+        calls = {"count": 0}
+
+        def _fake_mine(samples: list[list[int]], min_support: int):
+            calls["count"] += 1
+            return {(1, 2, 3): 2}, {(1, 2): 3}, "python-fallback"
+
+        monkeypatch.setattr(
+            "neurogenesis_lab.learning.mine_pattern_counts_safe", _fake_mine
+        )
+
+        store = RuleDiscovery(min_support=2).discover([[1, 2, 3], [1, 2, 3]])
+        assert calls["count"] == 1
+        assert store.trigram_support == {(1, 2, 3): 2}
+        assert store.bigram_support == {(1, 2): 3}
 
 
 class TestRuleComposer:

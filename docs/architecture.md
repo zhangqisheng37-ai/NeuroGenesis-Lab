@@ -166,6 +166,38 @@ NeuroGenesis Lab 探索“从脉冲到符号”的涌现：
 
 上层代码（CLI、可观测性、可视化）可通过统一类型处理两个引擎的输出，无需区分具体实现。
 
+## 8. Rust + Python 混合架构 (Phase 5)
+
+为突破 Python GIL 与复杂逻辑向量化瓶颈，Phase 5 引入了 Rust 扩展模块 `neurogenesis_core`，并通过 PyO3 暴露给 Python：
+
+- **构建链路**：`pyproject.toml` 新增 `tool.maturin` 配置，Rust crate 位于 `rust_src/neurogenesis_core`。
+- **核心模块（Rust）**：
+    - `TickSnapshot` / `EngineSummary`（底层快照与摘要数据结构）
+    - `LIFCore` / `IzhikevichCore`（核心状态更新方程）
+    - `SparseAdjacency`（邻接表结构）
+    - `EventQueue`（事件队列）
+    - `parallel_lif_tick`（基于 Rayon 的并行 Tick 更新示例）
+- **Python 桥接层**：`src/neurogenesis_lab/core_bridge.py` 提供扩展可用性探测和降级能力，确保未编译 Rust 扩展时 Python 端仍可运行。
+
+## 9. 异步观测与双缓冲 I/O
+
+`observability.py` 已支持可选异步双缓冲写盘：
+
+- 主线程持续写入活动缓冲区（Buffer A）。
+- 后台线程刷写待落盘缓冲区（Buffer B）。
+- 通过 CLI 参数 `--async-log` 与 `--log-buffer-size` 启用与调优。
+
+默认仍为同步写盘，保持既有行为与测试兼容。
+
+## 10. 编译与 CI 指南
+
+- **本地构建 Rust 扩展**：
+    - 安装依赖：`pip install -e .[rust]`
+    - 开发安装：`maturin develop --release`
+    - 构建 wheel：`maturin build --release --manifest-path rust_src/neurogenesis_core/Cargo.toml`
+    - 可用性自检：`python -m neurogenesis_lab info`（应显示 `Rust Core: available`）
+- **CI 工作流**：`.github/workflows/rust-wheel.yml` 已配置 Windows/Linux/macOS 三平台构建并上传 wheel 产物。
+
 ---
 
-*设计文档版本：v1.2 (对应代码 v0.3.0)*
+*设计文档版本：v1.5 (对应代码 v0.4.x / Phase 5)*

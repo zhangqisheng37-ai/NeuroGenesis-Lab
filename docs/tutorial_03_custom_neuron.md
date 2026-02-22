@@ -6,6 +6,13 @@ NeuroGenesis Lab 提供了灵活的神经元接口，允许你轻松实现自定
 
 所有神经元模型都继承自 `src/neurogenesis_lab/neuron.py` 中的 `Neuron` 基类。
 
+建议优先参考现有实现（`LIFNeuron` / `IzhikevichNeuron` / `AdExNeuron`）保持接口一致，尤其是：
+
+- `update(dt, input_current)`：返回是否放电
+- `emit(event, current_tick)`：按连接生成传播事件
+- `spawn(mutation_scale, share)`：繁殖子代
+- `mutate(scale)`：参数扰动
+
 ```python
 class Neuron(ABC):
     def __init__(self, neuron_id: str | None = None, **kwargs):
@@ -53,6 +60,8 @@ class IFNeuron(Neuron):
         return False
 ```
 
+> 说明：上述示例用于展示动力学思路。若要完整接入当前引擎，请对齐 `Neuron` 基类的实际更新入口与事件/能量字段处理逻辑。
+
 ## 3. 在网络中使用自定义神经元
 
 你可以将自定义神经元传递给 `Network` 的初始化函数。
@@ -73,6 +82,18 @@ for t in range(1, 101):
     network.tick(t)
 ```
 
+建议先用短程冒烟验证：
+
+```bash
+python -m neurogenesis_lab run --ticks 100 --visualize
+```
+
+重点观察是否出现：
+
+1. `总放电 > 0`
+2. `总传播 > 0`
+3. 存活数量随时间变化（非恒定）
+
 ## 4. 演化与变异
 
 如果你希望你的自定义神经元支持演化（参数变异），你需要重写 `mutate` 方法。
@@ -86,6 +107,20 @@ for t in range(1, 101):
             self.input_gain *= random.uniform(0.9, 1.1)
 ```
 
+若需要让自定义模型被 Rust 路径加速，推荐方式是：
+
+1. 在 Python 侧先确认模型行为稳定（统计指标正确）
+2. 将最耗时内核抽离为纯数值步骤
+3. 在 `rust_src/neurogenesis_core` 中新增 PyO3 导出函数，并在 `core_bridge.py` 提供 fallback 包装
+
 ## 5. 总结
 
 通过继承 `Neuron` 类，你可以实现各种复杂的神经元模型（如 Hodgkin-Huxley、FitzHugh-Nagumo 等），并无缝集成到 NeuroGenesis Lab 的演化和学习框架中。
+
+完成模型接入后，建议使用以下闭环检查：
+
+```bash
+python -m neurogenesis_lab info
+python -m neurogenesis_lab benchmark --neurons 1000 --ticks 50 --rust-size 5000
+pytest
+```

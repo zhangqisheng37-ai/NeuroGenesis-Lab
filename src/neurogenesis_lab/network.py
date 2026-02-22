@@ -49,6 +49,50 @@ class Corpse:
 
 
 @dataclass
+class CorpsePool:
+    """尸体对象池：复用 Corpse 实例，减少频繁分配。"""
+
+    free: list[Corpse] = field(default_factory=list)
+    reused_count: int = 0
+    created_count: int = 0
+
+    def acquire(
+        self,
+        *,
+        pos: tuple[float, float],
+        energy: float,
+        params: dict[str, float],
+        ttl: int,
+        decay_rate: float = 0.02,
+    ) -> Corpse:
+        if self.free:
+            corpse = self.free.pop()
+            corpse.pos = pos
+            corpse.energy = energy
+            corpse.params = params
+            corpse.ttl = ttl
+            corpse.decay_rate = decay_rate
+            self.reused_count += 1
+            return corpse
+        self.created_count += 1
+        return Corpse(
+            pos=pos,
+            energy=energy,
+            params=params,
+            ttl=ttl,
+            decay_rate=decay_rate,
+        )
+
+    def release(self, corpse: Corpse, max_pool_size: int) -> None:
+        if len(self.free) >= max_pool_size:
+            return
+        corpse.params = {}
+        corpse.energy = 0.0
+        corpse.ttl = 0
+        self.free.append(corpse)
+
+
+@dataclass
 class Network:
     neurons: dict[str, Neuron]
     queue: EventQueue = field(default_factory=EventQueue)
@@ -64,6 +108,8 @@ class Network:
     corpse_ttl: int = 50
     scavenger_radius: float = 2.5
     input_current_scale: float = 1.0
+    background_current: float = 0.0
+    spontaneous_spike_rate: float = 0.0
     move_cost: float = 0.01
     # 长程稳定性参数
     energy_cap: float = 5.0
@@ -91,6 +137,8 @@ class Network:
     _pe_history: list[float] = field(default_factory=list)
     _endangered_mode: bool = False
     schema_version: str = SCHEMA_VERSION
+    corpse_pool: CorpsePool = field(default_factory=CorpsePool)
+    corpse_pool_max_size: int = 2048
 
     def connect(
         self, source_id: str, target_id: str, weight: float = 1.0, delay: int = 0
@@ -188,16 +236,35 @@ class Network:
         for neuron in list(self.neurons.values()):
             neuron.start_tick()
             events = inputs.get(neuron.id, [])
-            input_current = 0.0
+            input_current = self.background_current
             for event in events:
                 neuron.receive(event)
                 w = float(event.meta.get("weight", 1.0))
                 input_current += safe_float(w * self.input_current_scale)
-            spiked = neuron.update(dt, input_current)
+            spontaneous_spike = False
+            if self.spontaneous_spike_rate > 0.0:
+                spontaneous_spike = random.random() < self.spontaneous_spike_rate
+            if spontaneous_spike:
+                neuron.on_spike()
+                spiked = True
+            else:
+                spiked = neuron.update(dt, input_current)
             if spiked:
                 tick_spikes += 1
                 if neuron.last_event is not None:
                     emitted.extend(neuron.emit(neuron.last_event, current_tick=tick))
+                elif spontaneous_spike:
+                    emitted.extend(
+                        neuron.emit(
+                            Event(
+                                token_id=0,
+                                t=tick,
+                                src_id=neuron.id,
+                                meta={"spontaneous": True, "weight": 1.0},
+                            ),
+                            current_tick=tick,
+                        )
+                    )
             neuron.move()
 
             # 应用自适应衰减（濒危模式下减半）
@@ -428,7 +495,7 @@ class Network:
                     if isinstance(value, (int, float)):
                         params[attr] = float(value)
             self.corpses.append(
-                Corpse(
+                self.corpse_pool.acquire(
                     pos=neuron_obj.pos,
                     energy=neuron_obj.energy,
                     params=params,
@@ -477,6 +544,8 @@ class Network:
                     corpse.energy = 0.0
             if corpse.ttl > 0 and corpse.energy > 0.0:
                 updated.append(corpse)
+            else:
+                self.corpse_pool.release(corpse, self.corpse_pool_max_size)
         self.corpses = updated
 
     def _prune_links(self) -> None:
@@ -551,6 +620,8 @@ class Network:
             "total_propagations": self.total_propagations,
             "birth_count": self.birth_count,
             "death_count": self.death_count,
+            "corpse_pool_free": len(self.corpse_pool.free),
+            "corpse_pool_reused": self.corpse_pool.reused_count,
             "pe_moving_avg": self.pe_moving_average(),
             "active_ratio": self.active_neuron_ratio(),
             "mean_energy": sum(n.energy for n in alive) / len(alive) if alive else 0.0,

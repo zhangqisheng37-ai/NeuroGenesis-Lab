@@ -7,7 +7,7 @@ NeuroGenesis Lab 的学习引擎（`AutoLearner`）通过观察神经元的记�
 我们使用 `experiment_learning.toml` 配置运行了一个 300 ticks 的实验。该配置启用了学习增强，提高了预测奖励（`prediction_reward`）和惩罚（`prediction_penalty`），鼓励神经元发现规则。
 
 ```bash
-python -m neurogenesis_lab run --config experiments/experiment_learning.toml --visualize
+python -m neurogenesis_lab run --config experiments/experiment_learning.toml --visualize --async-log --log-buffer-size 512
 ```
 
 ## 2. 观察到的现象
@@ -26,7 +26,7 @@ python -m neurogenesis_lab run --config experiments/experiment_learning.toml --v
 
 - **初期**：预测准确率较低，通常在 0.1-0.2 之间。
 - **中期**：预测准确率稳步上升，达到 0.4-0.6。
-- **后期**：预测准确率趋于稳定，通常在 0.6-0.8 之间。
+- **后期**：预测准确率趋于稳定，通常在 0.7-0.9 之间。
 
 ### 2.3 预测驱动的能量分配
 

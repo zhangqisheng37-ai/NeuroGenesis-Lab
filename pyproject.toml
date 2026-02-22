@@ -14,9 +14,16 @@ dependencies = [
 
 [project.optional-dependencies]
 viz = ["matplotlib>=3.5"]
+rust = ["maturin>=1.7"]
 
 [project.scripts]
 neurogenesis-lab = "neurogenesis_lab.__main__:main"
+
+[tool.maturin]
+manifest-path = "rust_src/neurogenesis_core/Cargo.toml"
+module-name = "neurogenesis_lab._neurogenesis_core"
+python-source = "src"
+bindings = "pyo3"
  
  [tool.ruff]
  line-length = 100
