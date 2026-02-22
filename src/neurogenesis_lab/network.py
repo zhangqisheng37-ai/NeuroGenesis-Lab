@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import heapq
 import math
+import pickle
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable
 
 from neurogenesis_lab.config import SCHEMA_VERSION
@@ -83,6 +85,7 @@ class Network:
     death_count: int = 0
     total_spikes: int = 0
     total_propagations: int = 0
+    current_tick: int = 0
     _pe_history: list[float] = field(default_factory=list)
     _endangered_mode: bool = False
     schema_version: str = SCHEMA_VERSION
@@ -154,6 +157,7 @@ class Network:
     def tick(
         self, tick: int, dt: float = 1.0, run_evolution: bool = True
     ) -> TickSnapshot:
+        self.current_tick = tick
         ready = self.queue.pop_ready(tick)
         inputs: dict[str, list[Event]] = defaultdict(list)
         for event in ready:
@@ -468,6 +472,53 @@ class Network:
         for source_id, target_id in all_links[:to_remove]:
             if source_id in self.neurons:
                 self.neurons[source_id].links.pop(target_id, None)
+
+    def save_checkpoint(self, path: str | Path, tick: int | None = None) -> Path:
+        """保存网络 checkpoint（pickle）。"""
+        checkpoint_path = Path(path)
+        checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
+        save_tick = self.current_tick if tick is None else int(tick)
+        payload = {
+            "schema_version": self.schema_version,
+            "tick": save_tick,
+            "random_state": random.getstate(),
+            "network": self,
+        }
+        with checkpoint_path.open("wb") as f:
+            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+        return checkpoint_path
+
+    @staticmethod
+    def load_checkpoint(path: str | Path) -> "Network":
+        """从 checkpoint 恢复网络，并恢复随机数状态。"""
+        checkpoint_path = Path(path)
+        with checkpoint_path.open("rb") as f:
+            payload = pickle.load(f)
+
+        if not isinstance(payload, dict):
+            raise ValueError("checkpoint 格式非法：顶层必须为 dict")
+
+        checkpoint_schema = str(payload.get("schema_version", ""))
+        if checkpoint_schema:
+            current_major = str(SCHEMA_VERSION).split(".", maxsplit=1)[0]
+            loaded_major = checkpoint_schema.split(".", maxsplit=1)[0]
+            if loaded_major != current_major:
+                raise ValueError(
+                    f"checkpoint schema 主版本不兼容: {checkpoint_schema} != {SCHEMA_VERSION}"
+                )
+
+        network = payload.get("network")
+        if not isinstance(network, Network):
+            raise ValueError("checkpoint 格式非法：缺少 network 对象")
+
+        restored_tick = int(payload.get("tick", getattr(network, "current_tick", 0)))
+        network.current_tick = max(0, restored_tick)
+
+        random_state = payload.get("random_state")
+        if random_state is not None:
+            random.setstate(random_state)
+
+        return network
 
     def get_summary(self) -> EngineSummary:
         """生成网络摘要（含 schema_version）"""

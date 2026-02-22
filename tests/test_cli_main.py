@@ -1,4 +1,5 @@
 """单元测试 — CLI 入口分发与信息输出"""
+
 import sys
 from pathlib import Path
 
@@ -46,6 +47,38 @@ def test_main_dispatches_run(monkeypatch) -> None:
     cli.main()
 
     assert called["run"] is True
+
+
+def test_main_run_accepts_checkpoint_args(monkeypatch) -> None:
+    captured = {"args": None}
+
+    def fake_run(args) -> None:
+        captured["args"] = args
+
+    monkeypatch.setattr(cli, "cmd_run", fake_run)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "neurogenesis-lab",
+            "run",
+            "--ticks",
+            "20",
+            "--checkpoint-interval",
+            "5",
+            "--checkpoint-dir",
+            "outputs/checkpoints",
+            "--resume-from",
+            "outputs/checkpoints/checkpoint_tick_100.pkl",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["args"] is not None
+    assert captured["args"].checkpoint_interval == 5
+    assert captured["args"].checkpoint_dir == "outputs/checkpoints"
+    assert captured["args"].resume_from == "outputs/checkpoints/checkpoint_tick_100.pkl"
 
 
 def test_main_dispatches_benchmark(monkeypatch) -> None:

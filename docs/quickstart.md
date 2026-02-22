@@ -31,13 +31,19 @@ python -m neurogenesis_lab run --config config.toml
 # 输出治理（每10 tick采样 + gzip + 轮转）
 python -m neurogenesis_lab run --log-interval 10 --gzip-output --max-file-size 5000000
 
+# checkpoint（每 50 tick 自动保存）
+python -m neurogenesis_lab run --ticks 300 --checkpoint-interval 50 --checkpoint-dir outputs/checkpoints
+
+# 从 checkpoint 恢复并继续运行 100 tick
+python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick_300.pkl --ticks 100
+
 # 性能基准测试
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 ```
 
 ## 实验模板
 
-项目提供四个即开即用的实验脚本：
+项目提供多个即开即用的实验脚本：
 
 | 模板 | 用途 | 命令 |
 |------|------|------|
@@ -45,6 +51,7 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 | `experiment_contrast.py` | 对照实验 (低突变 vs 高突变, 200 ticks) | `python examples/experiment_contrast.py` |
 | `experiment_evolution.py` | 长程演化 (500 ticks, 20 neurons) | `python examples/experiment_evolution.py` |
 | `experiment_genesis.py` | 创世纪实验 (500 ticks, 30 neurons) | `python examples/experiment_genesis.py` |
+| `analyze_experiment.py` | 离线分析并生成图表报告 | `python examples/analyze_experiment.py --path outputs/run_xxx/run.jsonl` |
 
 ## 项目结构
 
@@ -136,6 +143,16 @@ print(engine.query_with_explanation("2+2=?"))
 ```
 
 输出文件自动按实验名和时间戳分目录存放在 `outputs/` 下。
+
+### checkpoint 文件
+
+当启用 `--checkpoint-interval` 时，系统会在 `--checkpoint-dir` 下按 tick 写入：
+
+```text
+checkpoint_tick_<global_tick>.pkl
+```
+
+恢复时将从该 tick + 1 继续运行，并保持随机状态连续性。
 
 ### 查看 `.jsonl.gz` 内容
 

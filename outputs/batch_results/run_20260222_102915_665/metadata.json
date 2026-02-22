@@ -1,0 +1,10 @@
+{
+  "label": "exp_1_experiment_minimal",
+  "description": "Batch run for experiment_minimal.toml",
+  "config_file": "experiment_minimal.toml",
+  "git_commit": "ce26fb5d619711b043208adb78364b1e099c6813",
+  "start_time": "2026-02-22T10:29:15.418786",
+  "end_time": "2026-02-22T10:29:15.718817",
+  "duration_seconds": 0.3000314235687256,
+  "status": "success"
+}

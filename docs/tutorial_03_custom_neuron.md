@@ -1,0 +1,91 @@
+# 教程 03：自定义神经元模型
+
+NeuroGenesis Lab 提供了灵活的神经元接口，允许你轻松实现自定义的神经元动力学模型。
+
+## 1. 神经元基类
+
+所有神经元模型都继承自 `src/neurogenesis_lab/neuron.py` 中的 `Neuron` 基类。
+
+```python
+class Neuron(ABC):
+    def __init__(self, neuron_id: str | None = None, **kwargs):
+        self.id = neuron_id or str(uuid.uuid4())
+        self.v = kwargs.get("v_rest", -65.0)
+        self.energy = kwargs.get("energy_init", 1.0)
+        self.alive = True
+        self.links: dict[str, Synapse] = {}
+        self.pos = kwargs.get("pos", (0.0, 0.0))
+        # ...
+```
+
+## 2. 实现自定义模型
+
+要创建一个新的神经元模型，你需要继承 `Neuron` 并实现 `_update_v` 方法。
+
+### 示例：实现一个简单的 Integrate-and-Fire (IF) 神经元
+
+IF 神经元没有泄漏（Leaky）机制，只要输入电流足够，膜电位就会持续上升直到达到阈值。
+
+```python
+from neurogenesis_lab.neuron import Neuron
+
+class IFNeuron(Neuron):
+    def __init__(self, neuron_id: str | None = None, **kwargs):
+        super().__init__(neuron_id, **kwargs)
+        self.v_rest = kwargs.get("v_rest", -65.0)
+        self.v_reset = kwargs.get("v_reset", -65.0)
+        self.v_th = kwargs.get("v_th", -50.0)
+        self.r_m = kwargs.get("r_m", 1.0)
+        self.input_gain = kwargs.get("input_gain", 0.1)
+
+    def _update_v(self, i_inj: float, dt: float) -> bool:
+        """
+        更新膜电位并返回是否放电
+        """
+        # 简单的积分：dV = I * R * dt
+        dv = i_inj * self.r_m * self.input_gain * dt
+        self.v += dv
+
+        # 检查是否达到阈值
+        if self.v >= self.v_th:
+            self.v = self.v_reset
+            return True
+        return False
+```
+
+## 3. 在网络中使用自定义神经元
+
+你可以将自定义神经元传递给 `Network` 的初始化函数。
+
+```python
+from neurogenesis_lab.network import Network
+from my_neurons import IFNeuron
+
+# 创建 10 个 IF 神经元
+neurons = [IFNeuron() for _ in range(10)]
+neuron_dict = {n.id: n for n in neurons}
+
+# 初始化网络
+network = Network(neurons=neuron_dict)
+
+# 运行仿真
+for t in range(1, 101):
+    network.tick(t)
+```
+
+## 4. 演化与变异
+
+如果你希望你的自定义神经元支持演化（参数变异），你需要重写 `mutate` 方法。
+
+```python
+    def mutate(self, scale: float = 0.1) -> None:
+        super().mutate(scale)
+        # 变异特定参数
+        import random
+        if random.random() < scale:
+            self.input_gain *= random.uniform(0.9, 1.1)
+```
+
+## 5. 总结
+
+通过继承 `Neuron` 类，你可以实现各种复杂的神经元模型（如 Hodgkin-Huxley、FitzHugh-Nagumo 等），并无缝集成到 NeuroGenesis Lab 的演化和学习框架中。

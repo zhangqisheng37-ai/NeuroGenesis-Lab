@@ -4,6 +4,29 @@
 
 ---
 
+## v0.4.1 (2026-02-22)
+
+### 新增功能
+
+- **持久化与恢复（Checkpoint）**
+  - `Network` 新增 `save_checkpoint(path)` 与 `load_checkpoint(path)`。
+  - checkpoint 保存网络状态、事件队列、尸体列表与随机数状态。
+  - 增加 schema 主版本兼容校验，避免不兼容状态文件误加载。
+- **CLI checkpoint 控制**
+  - `run` 命令新增 `--checkpoint-interval`、`--checkpoint-dir`、`--resume-from`。
+  - 支持从全局 tick 断点续跑，恢复后可继续记录与可视化。
+
+### 测试与工程改进
+
+- 新增 `tests/test_checkpoint.py`，覆盖：
+  - 保存/加载 roundtrip
+  - schema 不兼容拒绝
+  - 连续运行 vs 中断恢复一致性
+- 补充 CLI 参数解析测试（checkpoint 参数）。
+- pytest 配置增加 `--basetemp=.pytest_tmp`，规避部分 Windows 环境系统临时目录权限问题。
+
+---
+
 ## v0.4.0 (2026-02-22)
 
 ### 新增功能

@@ -65,5 +65,6 @@ def test_neuron_movement():
     n.energy = 0.1
     old_pos = n.pos
     n.move()
-    assert n.energy == 0.1
+    assert n.energy == 0.0
+    assert n.pos == old_pos
     assert n.pos == old_pos

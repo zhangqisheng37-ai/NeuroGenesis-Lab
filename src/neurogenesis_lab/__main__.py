@@ -175,71 +175,82 @@ def cmd_run(args: argparse.Namespace) -> None:
     print(f"[NeuroGenesis Lab v{__version__}] 运行仿真")
     print(f"  ticks={cfg.ticks}, seed={cfg.seed}, schema={SCHEMA_VERSION}")
 
-    # 创建网络
-    neuron_count = getattr(args, "neurons", 8) or 8
-    neuron_types = [LIFNeuron, IzhikevichNeuron, AdExNeuron]
-    common_neuron_kwargs = {
-        "v_rest": cfg.neuron.v_rest,
-        "v_reset": cfg.neuron.v_reset,
-        "v_th": cfg.neuron.v_th,
-        "tau_m": cfg.neuron.tau_m,
-        "r_m": cfg.neuron.r_m,
-        "spike_cost": cfg.neuron.spike_cost,
-        "input_gain": cfg.neuron.input_gain,
-        "mem_size": cfg.neuron.mem_size,
-        "move_cost": cfg.network.move_cost,
-    }
-    neurons = [
-        neuron_types[i % len(neuron_types)](**common_neuron_kwargs)
-        for i in range(neuron_count)
-    ]
-    network = Network(
-        neurons={n.id: n for n in neurons},
-        reproduction_threshold=cfg.network.reproduction_threshold,
-        reproduction_share=cfg.network.reproduction_share,
-        mutation_scale=cfg.network.mutation_scale,
-        energy_decay=cfg.network.energy_decay,
-        max_neurons=cfg.network.max_neurons,
-        max_links=cfg.network.max_links,
-        corpse_ttl=cfg.network.corpse_ttl,
-        scavenger_radius=cfg.network.scavenger_radius,
-        input_current_scale=cfg.network.input_current_scale,
-        move_cost=cfg.network.move_cost,
-        energy_cap=cfg.network.energy_cap,
-        adaptive_decay=cfg.network.adaptive_decay,
-        adaptive_reproduction=cfg.network.adaptive_reproduction,
-        endangered_threshold=cfg.network.endangered_threshold,
-        fitness_weights=cfg.evolution.fitness_weights,
-        congestion_penalty=cfg.evolution.congestion_penalty,
-        min_neurons=cfg.evolution.min_neurons,
-    )
-    # 环形连接
-    for i, neuron in enumerate(neurons):
-        target = neurons[(i + 1) % len(neurons)]
-        network.connect(neuron.id, target.id, weight=1.0, delay=1)
-
-    # 初始空间连接
-    network.connect_by_proximity(radius=5.0, max_links_per_neuron=3)
-
-    # 注入信号
-    encoder = Encoder()
-    expr = getattr(args, "expr", "1+2=3") or "1+2=3"
-    input_weight = max(0.0, float(getattr(args, "input_weight", 40.0) or 40.0))
-    stim_interval = max(1, int(getattr(args, "stim_interval", 5) or 5))
-    tokens = encoder.encode_expr(expr)
-    for tick_start in range(1, cfg.ticks + 1, stim_interval):
-        base_events = encoder.to_events(tokens, src_id=neurons[0].id)
-        scheduled = [
-            Event(
-                token_id=e.token_id,
-                t=e.t + tick_start,
-                src_id=e.src_id,
-                meta={**e.meta, "weight": input_weight},
-            )
-            for e in base_events
-            if e.t + tick_start <= cfg.ticks
+    resume_path = getattr(args, "resume_from", None)
+    if resume_path:
+        network = Network.load_checkpoint(Path(resume_path))
+        run_start_tick = network.current_tick + 1
+        run_end_tick = network.current_tick + cfg.ticks
+        print(
+            f"  已从 checkpoint 恢复: {resume_path} (from tick={network.current_tick})"
+        )
+    else:
+        # 创建网络
+        neuron_count = getattr(args, "neurons", 8) or 8
+        neuron_types = [LIFNeuron, IzhikevichNeuron, AdExNeuron]
+        common_neuron_kwargs = {
+            "v_rest": cfg.neuron.v_rest,
+            "v_reset": cfg.neuron.v_reset,
+            "v_th": cfg.neuron.v_th,
+            "tau_m": cfg.neuron.tau_m,
+            "r_m": cfg.neuron.r_m,
+            "spike_cost": cfg.neuron.spike_cost,
+            "input_gain": cfg.neuron.input_gain,
+            "mem_size": cfg.neuron.mem_size,
+            "move_cost": cfg.network.move_cost,
+        }
+        neurons = [
+            neuron_types[i % len(neuron_types)](**common_neuron_kwargs)
+            for i in range(neuron_count)
         ]
-        network.enqueue(scheduled)
+        network = Network(
+            neurons={n.id: n for n in neurons},
+            reproduction_threshold=cfg.network.reproduction_threshold,
+            reproduction_share=cfg.network.reproduction_share,
+            mutation_scale=cfg.network.mutation_scale,
+            energy_decay=cfg.network.energy_decay,
+            max_neurons=cfg.network.max_neurons,
+            max_links=cfg.network.max_links,
+            corpse_ttl=cfg.network.corpse_ttl,
+            scavenger_radius=cfg.network.scavenger_radius,
+            input_current_scale=cfg.network.input_current_scale,
+            move_cost=cfg.network.move_cost,
+            energy_cap=cfg.network.energy_cap,
+            adaptive_decay=cfg.network.adaptive_decay,
+            adaptive_reproduction=cfg.network.adaptive_reproduction,
+            endangered_threshold=cfg.network.endangered_threshold,
+            fitness_weights=cfg.evolution.fitness_weights,
+            congestion_penalty=cfg.evolution.congestion_penalty,
+            min_neurons=cfg.evolution.min_neurons,
+        )
+        # 环形连接
+        for i, neuron in enumerate(neurons):
+            target = neurons[(i + 1) % len(neurons)]
+            network.connect(neuron.id, target.id, weight=1.0, delay=1)
+
+        # 初始空间连接
+        network.connect_by_proximity(radius=5.0, max_links_per_neuron=3)
+
+        # 注入信号
+        encoder = Encoder()
+        expr = getattr(args, "expr", "1+2=3") or "1+2=3"
+        input_weight = max(0.0, float(getattr(args, "input_weight", 40.0) or 40.0))
+        stim_interval = max(1, int(getattr(args, "stim_interval", 5) or 5))
+        tokens = encoder.encode_expr(expr)
+        for tick_start in range(1, cfg.ticks + 1, stim_interval):
+            base_events = encoder.to_events(tokens, src_id=neurons[0].id)
+            scheduled = [
+                Event(
+                    token_id=e.token_id,
+                    t=e.t + tick_start,
+                    src_id=e.src_id,
+                    meta={**e.meta, "weight": input_weight},
+                )
+                for e in base_events
+                if e.t + tick_start <= cfg.ticks
+            ]
+            network.enqueue(scheduled)
+        run_start_tick = 1
+        run_end_tick = cfg.ticks
 
     # 输出设置
     output_dir = Path(getattr(args, "output", "outputs") or "outputs")
@@ -251,7 +262,10 @@ def cmd_run(args: argparse.Namespace) -> None:
         max_file_size=max(0, int(getattr(args, "max_file_size", 0) or 0)),
         gzip_output=bool(getattr(args, "gzip_output", False)),
     )
-    observer = NetworkObserver(network, debug_neuron_ids=[neurons[0].id])
+    debug_neuron_ids = []
+    if network.neurons:
+        debug_neuron_ids = [next(iter(network.neurons.keys()))]
+    observer = NetworkObserver(network, debug_neuron_ids=debug_neuron_ids)
     logger.log_config(cfg.to_dict())
 
     # 自动学习引擎
@@ -269,32 +283,42 @@ def cmd_run(args: argparse.Namespace) -> None:
         except Exception as exc:
             print(f"  警告: 无法启动实时监控 ({exc})")
 
+    checkpoint_interval = max(0, int(getattr(args, "checkpoint_interval", 0) or 0))
+    checkpoint_dir = Path(
+        getattr(args, "checkpoint_dir", str(output_dir)) or str(output_dir)
+    )
+
     # 运行
     t0 = time.time()
-    for t in range(1, cfg.ticks + 1):
+    total_ticks = run_end_tick - run_start_tick + 1
+    for t in range(run_start_tick, run_end_tick + 1):
         snapshot = network.tick(t, dt=cfg.dt)
         # 自动学习 — 采样、规则发现、预测奖励
         learn_report = auto_learner.on_tick(t, snapshot, network)
         snapshot["rule_count"] = learn_report["rule_count"]
         snapshot["prediction_accuracy"] = learn_report["prediction_accuracy"]
         logger.log_tick(observer, t, snapshot)
+        local_progress_tick = t - run_start_tick + 1
+        if checkpoint_interval > 0 and local_progress_tick % checkpoint_interval == 0:
+            cp_path = checkpoint_dir / f"checkpoint_tick_{t}.pkl"
+            network.save_checkpoint(cp_path, tick=t)
         if live_monitor is not None:
             live_monitor.on_tick(t, snapshot, network)
-        if t % max(1, cfg.ticks // 5) == 0:
+        if local_progress_tick % max(1, total_ticks // 5) == 0:
             alive = snapshot["alive_neurons"]
             pe = snapshot["prediction_error"]
             acc = learn_report["prediction_accuracy"]
             rules = learn_report["rule_count"]
             print(
-                f"  tick {t}/{cfg.ticks}: alive={alive}, PE={pe:.4f}, rules={rules}, acc={acc:.3f}"
+                f"  tick {local_progress_tick}/{total_ticks} (global={t}): alive={alive}, PE={pe:.4f}, rules={rules}, acc={acc:.3f}"
             )
 
     elapsed = time.time() - t0
     if live_monitor is not None:
         live_monitor.finalize()
-    final = observer.get_network_metrics(cfg.ticks)
+    final = observer.get_network_metrics(run_end_tick)
     summary = network.get_summary()
-    logger.log_summary(cfg.ticks, final)
+    logger.log_summary(run_end_tick, final)
 
     print(f"\n完成! 用时 {elapsed:.2f}s")
     print(f"  输出: {logger.get_output_path()}")
@@ -440,6 +464,24 @@ def main() -> None:
         type=int,
         default=5,
         help="实时图表更新间隔（每 N tick 更新一次）",
+    )
+    run_parser.add_argument(
+        "--checkpoint-interval",
+        type=int,
+        default=0,
+        help="checkpoint 保存间隔（每 N 个本次运行 tick 保存一次，0=禁用）",
+    )
+    run_parser.add_argument(
+        "--resume-from",
+        type=str,
+        default=None,
+        help="从 checkpoint 文件恢复运行",
+    )
+    run_parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default="outputs",
+        help="checkpoint 输出目录",
     )
 
     # benchmark

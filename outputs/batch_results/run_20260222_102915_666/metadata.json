@@ -1,0 +1,10 @@
+{
+  "label": "exp_2_experiment_stable",
+  "description": "Batch run for experiment_stable.toml",
+  "config_file": "experiment_stable.toml",
+  "git_commit": "ce26fb5d619711b043208adb78364b1e099c6813",
+  "start_time": "2026-02-22T10:29:15.422393",
+  "end_time": "2026-02-22T10:29:16.173199",
+  "duration_seconds": 0.7508068084716797,
+  "status": "success"
+}

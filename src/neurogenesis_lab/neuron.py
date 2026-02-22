@@ -132,6 +132,8 @@ class Neuron:
             dy = random.uniform(-0.5, 0.5)
             self.pos = (self.pos[0] + dx, self.pos[1] + dy)
             self.energy = max(0.0, self.energy - self.move_cost)
+        else:
+            self.energy = max(0.0, self.energy - self.move_cost)
         if self.energy <= 0.0:
             self.alive = False
 

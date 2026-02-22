@@ -48,11 +48,17 @@
 | `scavenger_radius` | float | 2.5 | 拣食者范围 (距尸体的最大距离) |
 | `input_current_scale` | float | 1.5 | 外部输入电流缩放 |
 | `move_cost` | float | 0.01 | 神经元移动的能量消耗 |
+| `energy_cap` | float | 5.0 | 神经元能量上限（防止无限积累） |
+| `adaptive_decay` | bool | true | 是否按种群密度自适应调整能量衰减 |
+| `adaptive_reproduction` | bool | true | 是否按种群规模自适应调整繁殖成本 |
+| `endangered_threshold` | int | 10 | 濒危模式阈值（低于该值触发保护） |
 
 **调参建议**：
 - 降低 `reproduction_threshold` → 更容易繁殖 → 种群扩张
 - 增大 `energy_decay` → 能量流失快 → 适者生存压力增大
 - `max_neurons` 决定种群上限，影响内存占用
+- 适当降低 `energy_cap` 可抑制个体能量垄断
+- `adaptive_decay/adaptive_reproduction` 适合长程实验，建议默认开启
 
 ---
 
@@ -144,3 +150,38 @@ python -m neurogenesis_lab run --ticks 500 --log-interval 10 --gzip-output --max
 ```
 
 该命令会每 10 tick 采样一次日志，输出为压缩 JSONL，并在单文件超过 5MB 时自动轮转为分段文件。
+
+---
+
+## 可视化参数（CLI）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--visualize` | flag | 关闭 | 启动实时可视化监控面板 |
+| `--plot-interval` | int | 5 | 图表更新间隔（每 N tick） |
+
+示例：
+
+```bash
+python -m neurogenesis_lab run --visualize --plot-interval 10
+```
+
+---
+
+## 持久化与恢复参数（CLI）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--checkpoint-interval` | int | 0 | 每 N 个本次运行 tick 保存一次 checkpoint，0=禁用 |
+| `--checkpoint-dir` | str | `outputs` | checkpoint 输出目录 |
+| `--resume-from` | str | None | 从指定 checkpoint 文件恢复运行 |
+
+示例：
+
+```bash
+# 自动保存 checkpoint
+python -m neurogenesis_lab run --ticks 500 --checkpoint-interval 100 --checkpoint-dir outputs/checkpoints
+
+# 从 checkpoint 恢复并继续运行
+python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick_500.pkl --ticks 200
+```

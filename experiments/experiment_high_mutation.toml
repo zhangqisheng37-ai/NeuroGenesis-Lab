@@ -1,0 +1,44 @@
+# NeuroGenesis Lab — 高变异率配置
+# 用于探索演化动力学，高变异率加速种群多样性
+
+[simulation]
+ticks = 200
+seed = 42
+dt = 1.0
+
+[neuron]
+v_rest = -65.0
+v_reset = -65.0
+v_th = -50.0
+tau_m = 20.0
+r_m = 1.0
+spike_cost = 0.04
+input_gain = 0.08
+mem_size = 64
+
+[network]
+reproduction_threshold = 1.5
+reproduction_share = 0.3
+mutation_scale = 0.25  # 高变异率
+energy_decay = 0.002
+max_neurons = 100
+max_links = 400
+corpse_ttl = 50
+scavenger_radius = 2.5
+input_current_scale = 2.0
+move_cost = 0.008
+energy_cap = 5.0
+adaptive_decay = true
+adaptive_reproduction = true
+endangered_threshold = 10
+
+[evolution]
+mutation_amplitude = 0.25  # 高变异幅度
+energy_budget_per_tick = 0.0
+congestion_penalty = 0.1
+min_neurons = 5
+
+[evolution.fitness_weights]
+propagation = 1.0
+energy_efficiency = 0.5
+prediction_hit = 0.8
