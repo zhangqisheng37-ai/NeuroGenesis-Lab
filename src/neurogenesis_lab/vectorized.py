@@ -13,10 +13,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from scipy.sparse import csr_matrix, lil_matrix
+from scipy.sparse import csr_matrix, lil_matrix, coo_matrix
 from scipy.spatial.distance import cdist
 
-from neurogenesis_lab.config import SCHEMA_VERSION
+from neurogenesis_lab.config import (
+    MOVE_JITTER_RANGE,
+    RESCUED_NEURON_ENERGY,
+    SCHEMA_VERSION,
+    SPAWN_POSITION_JITTER,
+)
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import safe_float
 from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
@@ -24,7 +29,14 @@ from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
 
 @dataclass
 class SpatialGrid:
-    """简单网格空间索引 — 加速近邻查找"""
+    """简单网格空间索引 — 加速近邻查找。
+
+    将二维空间划分为固定大小的网格单元，支持快速半径查询。
+
+    Attributes:
+        cell_size: 网格单元边长，默认 5.0。
+        _grid: 内部网格字典，键为 (cx, cy) 网格坐标，值为神经元索引列表。
+    """
 
     cell_size: float = 5.0
     _grid: dict[tuple[int, int], list[int]] = field(default_factory=dict)
@@ -36,7 +48,11 @@ class SpatialGrid:
         )
 
     def build(self, positions: np.ndarray) -> None:
-        """从 (N, 2) 位置数组构建索引"""
+        """从位置数组重建空间索引。
+
+        Args:
+            positions: 形状为 (N, 2) 的位置数组。
+        """
         self._grid.clear()
         for i in range(len(positions)):
             key = self._cell_key(float(positions[i, 0]), float(positions[i, 1]))
@@ -47,7 +63,17 @@ class SpatialGrid:
     def query_radius(
         self, x: float, y: float, radius: float, positions: np.ndarray
     ) -> list[int]:
-        """查找半径内的索引"""
+        """查找指定坐标半径内的所有神经元索引。
+
+        Args:
+            x: 查询中心 x 坐标。
+            y: 查询中心 y 坐标。
+            radius: 搜索半径。
+            positions: 形状为 (N, 2) 的位置数组，用于精确距离过滤。
+
+        Returns:
+            半径内的神经元索引列表。
+        """
         cx, cy = self._cell_key(x, y)
         r_cells = int(math.ceil(radius / self.cell_size))
         candidates: list[int] = []
@@ -69,9 +95,30 @@ class SpatialGrid:
 
 @dataclass
 class VectorizedNetwork:
-    """向量化网络引擎 — 万级神经元加速
+    """向量化网络引擎 — 万级神经元加速。
 
     状态存储为 NumPy 数组，批量计算 LIF 动力学。
+    连接权重使用 scipy.sparse CSR 矩阵，向量化放电传播。
+    实现 SimEngine 协议，返回统一的 TickSnapshot 和 EngineSummary。
+
+    Attributes:
+        n: 神经元总数（含已死亡槽位）。
+        v: 膜电位向量，形状 (n,)，单位 mV。
+        u: 恢复变量向量，形状 (n,)。
+        energy: 能量向量，形状 (n,)。
+        alive: 存活掩码向量，形状 (n,)，dtype bool。
+        pos: 位置矩阵，形状 (n, 2)。
+        spike_count: 累计放电次数向量，形状 (n,)。
+        weight_matrix: 连接权重稀疏矩阵 (n, n)。
+        delay_matrix: 传播延迟稀疏矩阵 (n, n)。
+        energy_decay: 每 tick 基础能量衰减量，默认 0.005。
+        schema_version: 数据格式版本号。
+
+    Example:
+        >>> vnet = VectorizedNetwork()
+        >>> vnet.init_neurons(1000, spread=20.0)
+        >>> vnet.connect_knn(k=5)
+        >>> snapshot = vnet.tick(tick=1)
     """
 
     # 神经元状态向量
@@ -150,7 +197,11 @@ class VectorizedNetwork:
             self.scheduled_inputs[tick] = currents.copy()
 
     def enqueue(self, events: list[Event]) -> None:
-        """注入外部事件（按 tick 调度到目标神经元输入）。"""
+        """注入外部事件，按 tick 调度到目标神经元输入电流。
+
+        Args:
+            events: 待注入的事件列表，event.src_id 解析为目标神经元索引。
+        """
         for event in events:
             target_idx = self._resolve_neuron_index(event.src_id)
             if target_idx is None:
@@ -175,7 +226,19 @@ class VectorizedNetwork:
         energy_init: float = 1.0,
         spread: float = 10.0,
     ) -> None:
-        """初始化 N 个 LIF 神经元"""
+        """初始化 N 个 LIF 神经元，分配状态向量和空稀疏矩阵。
+
+        Args:
+            count: 神经元数量。
+            v_rest: 静息电位，单位 mV，默认 -65.0。
+            v_reset: 重置电位，单位 mV，默认 -65.0。
+            v_th: 放电阈值，单位 mV，默认 -55.0。
+            tau_m: 膜时间常数，单位 ms，默认 20.0。
+            r_m: 膜电阻缩放因子，默认 1.0。
+            spike_cost_val: 每次放电能量消耗，默认 0.05。
+            energy_init: 初始能量，默认 1.0。
+            spread: 位置随机分布范围 [-spread, spread]，默认 10.0。
+        """
         self.n = count
         self.v = np.full(count, v_rest, dtype=np.float64)
         self.u = np.zeros(count, dtype=np.float64)
@@ -197,7 +260,13 @@ class VectorizedNetwork:
     def connect_radius(
         self, radius: float, weight: float = 1.0, delay: int = 1
     ) -> None:
-        """基于距离自动连接（向量化 cdist）"""
+        """基于欧氏距离自动连接所有半径内的神经元对。
+
+        Args:
+            radius: 连接搜索半径。
+            weight: 统一连接权重，默认 1.0。
+            delay: 统一传播延迟（tick 数），默认 1。
+        """
         dists = cdist(self.pos, self.pos)
         mask = (dists <= radius) & (dists > 0) & np.outer(self.alive, self.alive)
         lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
@@ -210,7 +279,13 @@ class VectorizedNetwork:
         self.delay_matrix = csr_matrix(lil_d)
 
     def connect_knn(self, k: int = 3, weight: float = 1.0, delay: int = 1) -> None:
-        """k 近邻连接"""
+        """k 近邻连接 — 每个存活神经元连接最近的 k 个邻居。
+
+        Args:
+            k: 近邻数量，默认 3。
+            weight: 统一连接权重，默认 1.0。
+            delay: 统一传播延迟（tick 数），默认 1。
+        """
         from numpy.linalg import norm
 
         lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
@@ -231,7 +306,19 @@ class VectorizedNetwork:
     def tick(
         self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None
     ) -> TickSnapshot:
-        """向量化 tick — 批量 LIF 更新 + 稀疏矩阵传播"""
+        """执行一个向量化仿真时间步 — 批量 LIF 更新 + 稀疏矩阵传播。
+
+        Args:
+            tick: 当前时间步编号。
+            dt: 时间步长，单位 ms，默认 1.0。
+            input_currents: 外部输入电流向量，形状 (n,)，None 时为零输入。
+
+        Returns:
+            本 tick 的快照字典。
+
+        Raises:
+            ValueError: input_currents 形状与神经元数量不匹配时抛出。
+        """
         combined_inputs, ready_events = self._inject_inputs(tick, dt, input_currents)
         alive_mask, spike_indices, tick_spikes = self._vectorized_lif_step(
             dt, combined_inputs
@@ -334,8 +421,8 @@ class VectorizedNetwork:
         self, tick: int, alive_mask: np.ndarray
     ) -> tuple[int, int]:
         _ = tick
-        move_dx = np.random.uniform(-1.0, 1.0, self.n)
-        move_dy = np.random.uniform(-1.0, 1.0, self.n)
+        move_dx = np.random.uniform(-MOVE_JITTER_RANGE, MOVE_JITTER_RANGE, self.n)
+        move_dy = np.random.uniform(-MOVE_JITTER_RANGE, MOVE_JITTER_RANGE, self.n)
         self.pos[alive_mask, 0] += move_dx[alive_mask]
         self.pos[alive_mask, 1] += move_dy[alive_mask]
         self.energy[alive_mask] = np.maximum(
@@ -354,7 +441,7 @@ class VectorizedNetwork:
                 sorted_indices = death_indices[np.argsort(-self.energy[death_indices])]
                 saved = sorted_indices[:save_count]
                 death_mask[saved] = False
-                self.energy[saved] = 0.1
+                self.energy[saved] = RESCUED_NEURON_ENERGY
 
         deaths = int(np.sum(death_mask))
         self.alive[death_mask] = False
@@ -366,15 +453,18 @@ class VectorizedNetwork:
             repro_mask = self.alive & (self.energy >= self.reproduction_threshold)
             repro_indices = np.where(repro_mask)[0]
             if len(repro_indices) > 0:
-                lil_w = self.weight_matrix.tolil()
-                lil_d = self.delay_matrix.tolil()
+                # 收集新边，最后用 COO 批量合并，避免 lil 中间格式开销
+                new_rows: list[int] = []
+                new_cols: list[int] = []
+                new_weights: list[float] = []
+                new_delays: list[int] = []
                 for i in repro_indices:
                     if alive_count + births >= self.max_neurons:
                         break
                     dead_slots = np.where(~self.alive)[0]
                     if len(dead_slots) == 0:
                         break
-                    slot = dead_slots[0]
+                    slot = int(dead_slots[0])
                     child_energy = self.energy[i] * self.reproduction_share
                     self.energy[i] -= child_energy
 
@@ -382,7 +472,7 @@ class VectorizedNetwork:
                     self.u[slot] = 0.0
                     self.energy[slot] = child_energy
                     self.alive[slot] = True
-                    self.pos[slot] = self.pos[i] + np.random.uniform(-0.5, 0.5, 2)
+                    self.pos[slot] = self.pos[i] + np.random.uniform(-SPAWN_POSITION_JITTER, SPAWN_POSITION_JITTER, 2)
                     self.spike_count[slot] = 0
                     self.tau_m[slot] = self.tau_m[i] * (
                         1.0
@@ -392,13 +482,23 @@ class VectorizedNetwork:
                         1.0
                         + np.random.uniform(-self.mutation_scale, self.mutation_scale)
                     )
-                    lil_w[i, slot] = 1.0
-                    lil_w[slot, i] = 1.0
-                    lil_d[i, slot] = 1
-                    lil_d[slot, i] = 1
+                    # 双向连接：parent ↔ child
+                    new_rows.extend([int(i), slot])
+                    new_cols.extend([slot, int(i)])
+                    new_weights.extend([1.0, 1.0])
+                    new_delays.extend([1, 1])
                     births += 1
-                self.weight_matrix = csr_matrix(lil_w)
-                self.delay_matrix = csr_matrix(lil_d)
+                if new_rows:
+                    shape = (self.n, self.n)
+                    delta_w = coo_matrix(
+                        (new_weights, (new_rows, new_cols)), shape=shape
+                    ).tocsr()
+                    delta_d = coo_matrix(
+                        (new_delays, (new_rows, new_cols)), shape=shape, dtype=np.int32
+                    ).tocsr()
+                    # 合并：新边覆盖旧边（取最大值即可，因为新边权重固定为 1）
+                    self.weight_matrix = self.weight_matrix + delta_w
+                    self.delay_matrix = self.delay_matrix + delta_d
         self.birth_count += births
         return births, deaths
 
@@ -450,7 +550,13 @@ class VectorizedNetwork:
         }
 
     def get_spike_input_currents(self) -> np.ndarray:
-        """根据上一次放电计算传播电流（向量化稀疏矩阵求和）"""
+        """根据上一次放电掩码计算传播电流向量。
+
+        利用稀疏矩阵行求和，将放电神经元的出边权重汇总到目标。
+
+        Returns:
+            形状为 (n,) 的电流向量。
+        """
         spike_mask = self._last_spike_mask
         if spike_mask.size == 0:
             return np.zeros(self.n, dtype=np.float64)
@@ -460,6 +566,11 @@ class VectorizedNetwork:
         return np.asarray(self.weight_matrix[spike_indices].sum(axis=0)).ravel()
 
     def get_summary(self) -> EngineSummary:
+        """生成向量化网络运行摘要。
+
+        Returns:
+            包含存活数、放电数、能量均值等统计信息的字典。
+        """
         alive_mask = self.alive
         alive_count = int(np.sum(alive_mask))
         return {

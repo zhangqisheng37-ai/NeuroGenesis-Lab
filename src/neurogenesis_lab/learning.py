@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -10,6 +11,20 @@ if TYPE_CHECKING:
 
 
 def _parse_expression(expr: str) -> tuple[str, str, str, str] | None:
+    """解析简单算术表达式字符串为四元组。
+
+    支持格式: ``A op B = C``，其中 op 为 +、-、*、/ 之一。
+
+    Args:
+        expr: 待解析的表达式字符串，如 ``"1+2=3"``。
+
+    Returns:
+        解析成功返回 (左操作数, 运算符, 右操作数, 结果)，失败返回 None。
+
+    Example:
+        >>> _parse_expression("1+2=3")
+        ('1', '+', '2', '3')
+    """
     cleaned = expr.replace(" ", "")
     if "=" not in cleaned:
         return None
@@ -29,23 +44,51 @@ def _parse_expression(expr: str) -> tuple[str, str, str, str] | None:
 
 @dataclass
 class MemoryBank:
+    """表达式记忆库 — 存储已观察到的算术表达式字符串。
+
+    Attributes:
+        expressions: 已存储的表达式列表。
+    """
+
     expressions: list[str] = field(default_factory=list)
 
     def add(self, expr: str) -> None:
+        """添加一条表达式。
+
+        Args:
+            expr: 表达式字符串。
+        """
         self.expressions.append(expr)
 
     def add_many(self, exprs: list[str]) -> None:
+        """批量添加表达式。
+
+        Args:
+            exprs: 表达式字符串列表。
+        """
         for expr in exprs:
             self.add(expr)
 
 
 @dataclass
 class PatternMiner:
+    """符号模式挖掘器 — 从表达式中提取 (操作数, 运算符, 操作数) -> 结果 的映射。
+
+    Attributes:
+        table: 模式查找表，键为 (a, op, b) 三元组，值为结果字符串。
+        support_count: 各模式的出现次数统计。
+    """
+
     table: dict[tuple[str, str, str], str] = field(default_factory=dict)
     # 置信度/支持度统计
     support_count: dict[tuple[str, str, str], int] = field(default_factory=dict)
 
     def fit(self, expressions: list[str]) -> None:
+        """从表达式列表中提取模式并更新查找表。
+
+        Args:
+            expressions: 表达式字符串列表，如 ``["1+2=3", "3*4=12"]``。
+        """
         for expr in expressions:
             parsed = _parse_expression(expr)
             if parsed is None:
@@ -57,10 +100,29 @@ class PatternMiner:
                 self.support_count[key] = self.support_count.get(key, 0) + 1
 
     def lookup(self, a: str, op: str, b: str) -> str | None:
+        """查找模式表中的结果。
+
+        Args:
+            a: 左操作数。
+            op: 运算符。
+            b: 右操作数。
+
+        Returns:
+            匹配的结果字符串，未找到返回 None。
+        """
         return self.table.get((a, op, b))
 
     def confidence(self, a: str, op: str, b: str) -> float:
-        """返回查询的置信度 (0~1)"""
+        """返回指定模式的置信度。
+
+        Args:
+            a: 左操作数。
+            op: 运算符。
+            b: 右操作数。
+
+        Returns:
+            置信度值，范围 [0, 1]，无匹配时返回 0.0。
+        """
         key = (a, op, b)
         count = self.support_count.get(key, 0)
         if count == 0:
@@ -71,9 +133,23 @@ class PatternMiner:
 
 @dataclass
 class QueryEngine:
+    """查询引擎 — 基于 PatternMiner 回答算术表达式查询。
+
+    Attributes:
+        miner: 底层模式挖掘器实例。
+    """
+
     miner: PatternMiner
 
     def query(self, expr: str) -> str:
+        """查询表达式结果。
+
+        Args:
+            expr: 查询表达式，右侧为 ``?`` 或空，如 ``"1+2=?"``。
+
+        Returns:
+            匹配的结果字符串，未找到返回 ``"unknown"``。
+        """
         parsed = _parse_expression(expr)
         if parsed is None:
             return "unknown"
@@ -84,7 +160,14 @@ class QueryEngine:
         return result if result is not None else "unknown"
 
     def query_with_explanation(self, expr: str) -> dict:
-        """查询并返回解释信息"""
+        """查询并返回解释信息，包含置信度和命中规则。
+
+        Args:
+            expr: 查询表达式，右侧为 ``?`` 或空。
+
+        Returns:
+            包含 answer、reason、confidence、rules_hit 的字典。
+        """
         parsed = _parse_expression(expr)
         if parsed is None:
             return {
@@ -126,27 +209,79 @@ class QueryEngine:
 
 @dataclass
 class RuleStore:
-    trigram_support: dict[tuple[int, int, int], int] = field(default_factory=dict)
-    bigram_support: dict[tuple[int, int], int] = field(default_factory=dict)
+    """规则存储 — 使用 OrderedDict 实现 LRU 淘汰策略
+
+    trigram/bigram 规则按访问顺序排列，最近访问的排在末尾。
+    当规则数超过容量上限时，淘汰最久未访问的规则。
+    """
+
+    trigram_support: OrderedDict[tuple[int, int, int], int] = field(
+        default_factory=OrderedDict
+    )
+    bigram_support: OrderedDict[tuple[int, int], int] = field(
+        default_factory=OrderedDict
+    )
     # 置信度统计
     trigram_total: int = 0
     bigram_total: int = 0
 
     def __post_init__(self) -> None:
+        # 确保传入的普通 dict 被转换为 OrderedDict
+        if not isinstance(self.trigram_support, OrderedDict):
+            self.trigram_support = OrderedDict(self.trigram_support)
+        if not isinstance(self.bigram_support, OrderedDict):
+            self.bigram_support = OrderedDict(self.bigram_support)
         self.trigram_total = sum(self.trigram_support.values())
         self.bigram_total = sum(self.bigram_support.values())
 
+    def _touch_trigram(self, key: tuple[int, int, int]) -> None:
+        """将 trigram 规则移到末尾（标记为最近访问）。"""
+        if key in self.trigram_support:
+            self.trigram_support.move_to_end(key)
+
+    def _touch_bigram(self, key: tuple[int, int]) -> None:
+        """将 bigram 规则移到末尾（标记为最近访问）。"""
+        if key in self.bigram_support:
+            self.bigram_support.move_to_end(key)
+
     def trigram_confidence(self, trigram: tuple[int, int, int]) -> float:
+        """返回 trigram 规则的置信度。
+
+        Args:
+            trigram: (左, 中, 右) token 三元组。
+
+        Returns:
+            置信度值，范围 [0, 1]。
+        """
         if self.trigram_total == 0:
             return 0.0
+        self._touch_trigram(trigram)
         return self.trigram_support.get(trigram, 0) / self.trigram_total
 
     def bigram_confidence(self, bigram: tuple[int, int]) -> float:
+        """返回 bigram 规则的置信度。
+
+        Args:
+            bigram: (左, 右) token 二元组。
+
+        Returns:
+            置信度值，范围 [0, 1]。
+        """
         if self.bigram_total == 0:
             return 0.0
+        self._touch_bigram(bigram)
         return self.bigram_support.get(bigram, 0) / self.bigram_total
 
     def most_common_middle(self, left: int, right: int) -> int | None:
+        """查找给定左右 token 之间最常见的中间 token。
+
+        Args:
+            left: 左侧 token ID。
+            right: 右侧 token ID。
+
+        Returns:
+            支持度最高的中间 token ID，无匹配返回 None。
+        """
         candidates = [
             (mid, support)
             for (a, mid, b), support in self.trigram_support.items()
@@ -154,20 +289,41 @@ class RuleStore:
         ]
         if not candidates:
             return None
-        return max(candidates, key=lambda item: item[1])[0]
+        best = max(candidates, key=lambda item: item[1])
+        self._touch_trigram((left, best[0], right))
+        return best[0]
 
     def most_common_next(self, left: int) -> int | None:
+        """查找给定 token 之后最常见的后继 token。
+
+        Args:
+            left: 前驱 token ID。
+
+        Returns:
+            支持度最高的后继 token ID，无匹配返回 None。
+        """
         candidates = [
             (b, support) for (a, b), support in self.bigram_support.items() if a == left
         ]
         if not candidates:
             return None
-        return max(candidates, key=lambda item: item[1])[0]
+        best = max(candidates, key=lambda item: item[1])
+        self._touch_bigram((left, best[0]))
+        return best[0]
 
     def top_candidates_middle(
         self, left: int, right: int, k: int = 3
     ) -> list[tuple[int, int]]:
-        """返回前 k 个候选中间 token (token, support)"""
+        """返回前 k 个候选中间 token。
+
+        Args:
+            left: 左侧 token ID。
+            right: 右侧 token ID。
+            k: 返回候选数量，默认 3。
+
+        Returns:
+            按支持度降序排列的 (token, support) 列表。
+        """
         candidates = [
             (mid, support)
             for (a, mid, b), support in self.trigram_support.items()
@@ -177,7 +333,15 @@ class RuleStore:
         return candidates[:k]
 
     def top_candidates_next(self, left: int, k: int = 3) -> list[tuple[int, int]]:
-        """返回前 k 个候选后继 token"""
+        """返回前 k 个候选后继 token。
+
+        Args:
+            left: 前驱 token ID。
+            k: 返回候选数量，默认 3。
+
+        Returns:
+            按支持度降序排列的 (token, support) 列表。
+        """
         candidates = [
             (b, support) for (a, b), support in self.bigram_support.items() if a == left
         ]
@@ -187,9 +351,23 @@ class RuleStore:
 
 @dataclass
 class RuleDiscovery:
+    """N-gram 规则发现器 — 从 token 序列样本中挖掘 bigram/trigram 模式。
+
+    Attributes:
+        min_support: 最小支持度阈值，低于此值的模式被过滤，默认 2。
+    """
+
     min_support: int = 2
 
     def discover(self, samples: list[list[int]]) -> RuleStore:
+        """从样本序列中发现规则并返回规则库。
+
+        Args:
+            samples: token 序列列表，每个元素为一条 token ID 序列。
+
+        Returns:
+            包含 trigram 和 bigram 规则的 RuleStore 实例。
+        """
         filtered_trigrams, filtered_bigrams, _backend = mine_pattern_counts_safe(
             samples, self.min_support
         )
@@ -200,14 +378,26 @@ class RuleDiscovery:
 
 @dataclass
 class RuleComposer:
+    """规则组合推理器 — 基于规则库填充序列中的缺失 token。
+
+    支持直接算术运算（加减乘）和基于 trigram/bigram 规则的统计推理。
+
+    Attributes:
+        store: 底层规则库。
+        conflict_strategy: 冲突处理策略，``"highest_support"`` 或 ``"weighted_score"``。
+    """
+
     store: RuleStore
     # 冲突处理策略: "highest_support" | "weighted_score"
     conflict_strategy: str = "highest_support"
 
+    _ASCII_DIGIT_0 = ord("0")  # 48
+    _ASCII_DIGIT_9 = ord("9")  # 57
+
     @staticmethod
     def _digit_value(token: int) -> int | None:
-        if 48 <= token <= 57:
-            return token - 48
+        if RuleComposer._ASCII_DIGIT_0 <= token <= RuleComposer._ASCII_DIGIT_9:
+            return token - RuleComposer._ASCII_DIGIT_0
         return None
 
     def _apply_arithmetic(
@@ -261,6 +451,17 @@ class RuleComposer:
         )
 
     def apply(self, sequence: list[int], missing_token: int = -1) -> list[int]:
+        """填充序列中的缺失 token。
+
+        优先尝试直接算术运算，失败后回退到 trigram/bigram 规则推理。
+
+        Args:
+            sequence: 输入 token 序列，缺失位置用 missing_token 标记。
+            missing_token: 缺失占位符值，默认 -1。
+
+        Returns:
+            填充后的 token 序列副本。
+        """
         # 尝试直接运算
         for op_handler in [
             self._apply_simple_addition,
@@ -292,7 +493,15 @@ class RuleComposer:
     def apply_with_explanation(
         self, sequence: list[int], missing_token: int = -1
     ) -> dict:
-        """推理并返回每步命中的规则"""
+        """推理并返回每步命中的规则详情。
+
+        Args:
+            sequence: 输入 token 序列。
+            missing_token: 缺失占位符值，默认 -1。
+
+        Returns:
+            包含 filled（填充结果）和 rules_hit（命中规则列表）的字典。
+        """
         rules_hit: list[dict] = []
 
         for op_name, op_handler in [
@@ -380,7 +589,11 @@ class AutoLearner:
     _tick_total: int = 0  # 当前 tick 的总预测数
 
     def prediction_accuracy(self) -> float:
-        """返回累计预测准确率"""
+        """返回累计预测准确率。
+
+        Returns:
+            准确率，范围 [0, 1]，无预测时返回 0.0。
+        """
         if self.total_predictions == 0:
             return 0.0
         return self.correct_predictions / self.total_predictions
@@ -481,31 +694,30 @@ class AutoLearner:
                 neuron.energy = max(0.0, neuron.energy - self.prediction_penalty)
 
     def _prune_rules(self) -> None:
-        """淘汰低支持度规则，保留 max_rules 以内"""
-        # 淘汰 trigram
-        if len(self.store.trigram_support) > self.max_rules // 2:
-            sorted_tri = sorted(
-                self.store.trigram_support.items(), key=lambda x: x[1], reverse=True
-            )
-            keep = self.max_rules // 2
-            self.store.trigram_support = dict(sorted_tri[:keep])
-            self.store.trigram_total = sum(self.store.trigram_support.values())
+        """LRU 淘汰低活跃规则，保留 max_rules 以内
 
-        # 淘汰 bigram
-        if len(self.store.bigram_support) > self.max_rules // 2:
-            sorted_bi = sorted(
-                self.store.bigram_support.items(), key=lambda x: x[1], reverse=True
-            )
-            keep = self.max_rules // 2
-            self.store.bigram_support = dict(sorted_bi[:keep])
-            self.store.bigram_total = sum(self.store.bigram_support.values())
+        OrderedDict 头部为最久未访问的规则，直接从头部弹出。
+        """
+        tri_cap = self.max_rules // 2
+        while len(self.store.trigram_support) > tri_cap:
+            self.store.trigram_support.popitem(last=False)  # 弹出最久未访问
+        self.store.trigram_total = sum(self.store.trigram_support.values())
+
+        bi_cap = self.max_rules // 2
+        while len(self.store.bigram_support) > bi_cap:
+            self.store.bigram_support.popitem(last=False)
+        self.store.bigram_total = sum(self.store.bigram_support.values())
 
         self.rule_count = len(self.store.trigram_support) + len(
             self.store.bigram_support
         )
 
     def get_summary(self) -> dict:
-        """返回学习引擎摘要"""
+        """返回学习引擎摘要统计。
+
+        Returns:
+            包含 rule_count、prediction_accuracy 等指标的字典。
+        """
         return {
             "rule_count": self.rule_count,
             "trigram_rules": len(self.store.trigram_support),

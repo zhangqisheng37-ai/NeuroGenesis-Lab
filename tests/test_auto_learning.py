@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+
 import pytest
 
 from neurogenesis_lab.encoding import Encoder, Event
@@ -219,22 +221,27 @@ class TestRulePruning:
         assert auto.rule_count <= 10
 
     def test_prune_keeps_high_support(self):
-        """淘汰应保留高支持度规则"""
+        """LRU 淘汰应移除最久未访问的规则，保留最近访问的"""
         auto = AutoLearner(
             discovery=RuleDiscovery(min_support=1),
             max_rules=4,
         )
-        trigrams = {
-            (1, 2, 3): 100,  # 高支持度
-            (4, 5, 6): 1,  # 低支持度
-            (7, 8, 9): 50,  # 中等
-        }
+        trigrams = OrderedDict([
+            ((1, 2, 3), 100),  # 最早插入
+            ((4, 5, 6), 1),    # 中间插入
+            ((7, 8, 9), 50),   # 最近插入
+        ])
         auto.store = RuleStore(trigram_support=trigrams, bigram_support={})
         auto.rule_count = len(trigrams)
 
+        # 访问 (1,2,3) 使其移到末尾（最近访问）
+        auto.store.trigram_confidence((1, 2, 3))
+
         auto._prune_rules()
-        # 高支持度 (1,2,3) 应被保留
+        # (1,2,3) 最近被访问过，应被保留；(4,5,6) 最久未访问，应被淘汰
         assert (1, 2, 3) in auto.store.trigram_support
+        assert (7, 8, 9) in auto.store.trigram_support
+        assert len(auto.store.trigram_support) <= auto.max_rules // 2
 
 
 class TestSnapshotIntegration:

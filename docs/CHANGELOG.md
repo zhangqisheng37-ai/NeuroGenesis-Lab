@@ -4,6 +4,42 @@
 
 ---
 
+## v0.5.1 (2026-02-23)
+
+### Phase 6（P1 类职责重构 + P3 魔法值消除 + P6 测试补充）
+
+- **P3 魔法值消除**
+  - `config.py` 新增 16 个共享常量（自适应衰减/繁殖阈值、遗传属性列表、位置抖动等）。
+  - `network.py` 自适应衰减/繁殖方法中的硬编码阈值（0.8/0.3/1.2/0.7 等）替换为命名常量。
+  - `neuron.py` `spawn()` 中的硬编码属性列表替换为 `HERITABLE_ATTRS` 常量引用。
+  - `learning.py` ASCII 码判断（48/57）替换为 `_ASCII_DIGIT_0`/`_ASCII_DIGIT_9` 类常量。
+  - `observability.py` 异步写盘轮询超时替换为 `_CLOSE_POLL_INTERVAL`/`_WRITER_POLL_INTERVAL` 类常量。
+  - `vectorized.py` 能量保护值、移动抖动、子代位置抖动替换为从 `config.py` 导入的常量。
+
+- **P1.2 Network 配置/状态分离**
+  - 新增 `NetworkConfig` dataclass（23 个配置字段）和 `NetworkState` dataclass（7 个运行时统计字段）。
+  - `Network` 内部通过 `_config` + `_state` 组件持有，`__getattr__`/`__setattr__` 路由保持外部 API 完全兼容。
+  - `__setstate__` 支持旧 checkpoint 格式自动迁移（无 `_config`/`_state` 时从扁平字段重建）。
+
+- **P1.1 Neuron 组件化**
+  - 新增 `NeuronDynamics`（11 字段）、`NeuronEvolution`（3 字段）、`NeuronMemory`（5 字段）三个组件 dataclass。
+  - `Neuron` 内部通过 `_dynamics`/`_evolution`/`_memory` 组件持有，同样的 `__getattr__`/`__setattr__` 路由模式。
+  - 子类（IzhikevichNeuron/AdExNeuron）额外字段保留在子类 `__dict__` 中，不与组件冲突。
+  - `__setstate__` 支持旧 pickle 格式自动迁移。
+
+- **P6 测试补充**
+  - 新增 `tests/test_constants.py`（常量值正确性、自适应机制使用常量验证）。
+  - 新增 `tests/test_neuron_components.py`（组件访问、setattr 路由、spawn 独立性、pickle 往返、子类兼容、遗传属性完整性）。
+  - 新增 `tests/test_network_config_state.py`（config/state 访问、setattr 路由、pickle 往返、旧格式兼容、构造签名不变）。
+  - 新增 44 个测试用例，总计 281 个测试全部通过。
+
+### 验证
+
+- 最新全量测试：281 passed, 0 failed（2026-02-23）。
+- 覆盖率：89.27%。
+
+---
+
 ## v0.4.1 (2026-02-22)
 
 ### Phase 5（Rust 混合架构）

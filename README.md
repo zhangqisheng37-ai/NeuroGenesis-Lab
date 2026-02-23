@@ -6,11 +6,11 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 
 ## 当前状态
 
-- **当前版本**：v0.4.1
-- 阶段五（Rust + Python 混合架构、并发与内存优化、异步 I/O）已交付。
-- Rust 扩展已接入运行时（可通过 `python -m neurogenesis_lab info` 查看 `Rust Core: available`）。
-- 新增 checkpoint 持久化与断点恢复功能（`--checkpoint-interval` / `--resume-from`）。
-- 最新测试基线：229 passed, 0 failed（2026-02-22）。
+- **当前版本**：v0.5.1
+- 阶段六 P1（类职责重构）+ P3（魔法值消除）+ P6（测试补充）已交付。
+- `Neuron` 拆分为 `NeuronDynamics`/`NeuronEvolution`/`NeuronMemory` 三组件，`Network` 拆分为 `NetworkConfig`/`NetworkState`，外部 API 完全兼容。
+- 16 个共享常量提取至 `config.py`，消除散布的硬编码魔法值。
+- 最新测试基线：281 passed, 0 failed（2026-02-23）。
 
 ## 核心特性
 
@@ -152,7 +152,8 @@ cmd /c $cmd
 | [风险清单](docs/risk_list.md) | 当前已知风险与待办事项 |
 | [更新日志](docs/CHANGELOG.md) | 版本变更历史 |
 | [阶段四开发清单](docs/开发清单04_已完成.md) | 阶段四交付与验收状态 |
-| [阶段五开发清单](docs/开发清单05.md) | Rust 混合架构阶段交付状态 |
+| [阶段五开发清单](docs/开发清单05_已完成.md) | Rust 混合架构阶段交付状态 |
+| [阶段六开发清单](docs/开发清单06.md) | 代码质量治理与架构精炼 |
 
 ## 开发路线图
 
@@ -162,4 +163,5 @@ cmd /c $cmd
 - [x] [阶段二：演化与空间动力学](docs/开发清单02 已完成.md)
 - [x] [阶段三：符号学习与规则发现](docs/开发清单03_已完成.md)
 - [x] [阶段四：长程稳定 + 可视化 + 学习集成 + 持久化恢复](docs/开发清单04_已完成.md)
-- [x] [阶段五：核心引擎重构与性能突破（Rust 混合架构）](docs/开发清单05.md)
+- [x] [阶段五：核心引擎重构与性能突破（Rust 混合架构）](docs/开发清单05_已完成.md)
+- [ ] [阶段六：代码质量治理与架构精炼](docs/开发清单06.md)（P0/P1/P3/P6 已完成，P2/P4/P5 待推进）

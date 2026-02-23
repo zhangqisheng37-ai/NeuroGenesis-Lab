@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 try:
     import matplotlib.pyplot as plt
@@ -34,131 +37,143 @@ def check_matplotlib() -> None:
 
 def plot_population_curve(
     data: list[dict[str, Any]], output_path: Path | None = None, show: bool = True
-) -> Figure:
+) -> Figure | None:
     """绘制种群数量随时间变化曲线"""
     check_matplotlib()
 
-    ticks = [d["metrics"]["tick"] for d in data if "metrics" in d]
-    alive = [d["metrics"]["alive_neurons"] for d in data if "metrics" in d]
-    total = [d["metrics"]["total_neurons"] for d in data if "metrics" in d]
+    try:
+        ticks = [d["metrics"]["tick"] for d in data if "metrics" in d]
+        alive = [d["metrics"]["alive_neurons"] for d in data if "metrics" in d]
+        total = [d["metrics"]["total_neurons"] for d in data if "metrics" in d]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.plot(ticks, alive, label="存活神经元", color="#2ecc71", linewidth=2)
-    ax.plot(
-        ticks, total, label="总神经元", color="#3498db", linewidth=2, linestyle="--"
-    )
-    ax.fill_between(ticks, alive, alpha=0.3, color="#2ecc71")
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.plot(ticks, alive, label="存活神经元", color="#2ecc71", linewidth=2)
+        ax.plot(
+            ticks, total, label="总神经元", color="#3498db", linewidth=2, linestyle="--"
+        )
+        ax.fill_between(ticks, alive, alpha=0.3, color="#2ecc71")
 
-    ax.set_xlabel("Tick", fontsize=12)
-    ax.set_ylabel("神经元数量", fontsize=12)
-    ax.set_title("种群动态", fontsize=14, fontweight="bold")
-    ax.legend(loc="best")
-    ax.grid(True, alpha=0.3)
+        ax.set_xlabel("Tick", fontsize=12)
+        ax.set_ylabel("神经元数量", fontsize=12)
+        ax.set_title("种群动态", fontsize=14, fontweight="bold")
+        ax.legend(loc="best")
+        ax.grid(True, alpha=0.3)
 
-    if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        if output_path:
+            fig.savefig(output_path, dpi=150, bbox_inches="tight")
 
-    if show:
-        plt.show()
+        if show:
+            plt.show()
 
-    return fig
+        return fig
+    except Exception as exc:
+        _logger.warning("绘制种群曲线失败: %s", exc)
+        return None
 
 
 def plot_energy_distribution(
     data: list[dict[str, Any]], output_path: Path | None = None, show: bool = True
-) -> Figure:
+) -> Figure | None:
     """绘制能量分布直方图"""
     check_matplotlib()
 
-    ticks = [d["metrics"]["tick"] for d in data if "metrics" in d]
-    mean_energy = [d["metrics"]["mean_energy"] for d in data if "metrics" in d]
+    try:
+        ticks = [d["metrics"]["tick"] for d in data if "metrics" in d]
+        mean_energy = [d["metrics"]["mean_energy"] for d in data if "metrics" in d]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
 
-    # 能量随时间变化
-    ax1.plot(ticks, mean_energy, color="#e74c3c", linewidth=2)
-    ax1.fill_between(ticks, mean_energy, alpha=0.3, color="#e74c3c")
-    ax1.set_xlabel("Tick", fontsize=12)
-    ax1.set_ylabel("平均能量", fontsize=12)
-    ax1.set_title("能量趋势", fontsize=14, fontweight="bold")
-    ax1.grid(True, alpha=0.3)
+        # 能量随时间变化
+        ax1.plot(ticks, mean_energy, color="#e74c3c", linewidth=2)
+        ax1.fill_between(ticks, mean_energy, alpha=0.3, color="#e74c3c")
+        ax1.set_xlabel("Tick", fontsize=12)
+        ax1.set_ylabel("平均能量", fontsize=12)
+        ax1.set_title("能量趋势", fontsize=14, fontweight="bold")
+        ax1.grid(True, alpha=0.3)
 
-    # 能量分布直方图（最后一个时刻）
-    if mean_energy:
-        ax2.hist(
-            mean_energy[-50:], bins=20, color="#e74c3c", alpha=0.7, edgecolor="black"
-        )
-        ax2.set_xlabel("能量值", fontsize=12)
-        ax2.set_ylabel("频次", fontsize=12)
-        ax2.set_title("能量分布（最近50 ticks）", fontsize=14, fontweight="bold")
-        ax2.grid(True, alpha=0.3, axis="y")
+        # 能量分布直方图（最后一个时刻）
+        if mean_energy:
+            ax2.hist(
+                mean_energy[-50:], bins=20, color="#e74c3c", alpha=0.7, edgecolor="black"
+            )
+            ax2.set_xlabel("能量值", fontsize=12)
+            ax2.set_ylabel("频次", fontsize=12)
+            ax2.set_title("能量分布（最近50 ticks）", fontsize=14, fontweight="bold")
+            ax2.grid(True, alpha=0.3, axis="y")
 
-    plt.tight_layout()
+        plt.tight_layout()
 
-    if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        if output_path:
+            fig.savefig(output_path, dpi=150, bbox_inches="tight")
 
-    if show:
-        plt.show()
+        if show:
+            plt.show()
 
-    return fig
+        return fig
+    except Exception as exc:
+        _logger.warning("绘制能量分布失败: %s", exc)
+        return None
 
 
 def plot_learning_metrics(
     data: list[dict[str, Any]], output_path: Path | None = None, show: bool = True
-) -> Figure:
+) -> Figure | None:
     """绘制学习指标曲线"""
     check_matplotlib()
 
-    ticks = [d["metrics"]["tick"] for d in data if "metrics" in d]
-    pe = [d["metrics"].get("prediction_error", 0.0) for d in data if "metrics" in d]
+    try:
+        ticks = [d["metrics"]["tick"] for d in data if "metrics" in d]
+        pe = [d["metrics"].get("prediction_error", 0.0) for d in data if "metrics" in d]
 
-    # 提取学习指标
-    total_spikes = [d["learning"]["total_spikes"] for d in data if "learning" in d]
-    total_propagations = [
-        d["learning"]["total_propagations"] for d in data if "learning" in d
-    ]
+        # 提取学习指标
+        total_spikes = [d["learning"]["total_spikes"] for d in data if "learning" in d]
+        total_propagations = [
+            d["learning"]["total_propagations"] for d in data if "learning" in d
+        ]
 
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 
-    # 预测误差
-    ax1.plot(ticks, pe, color="#9b59b6", linewidth=2)
-    ax1.fill_between(ticks, pe, alpha=0.3, color="#9b59b6")
-    ax1.set_xlabel("Tick", fontsize=12)
-    ax1.set_ylabel("预测误差", fontsize=12)
-    ax1.set_title("预测误差收敛", fontsize=14, fontweight="bold")
-    ax1.grid(True, alpha=0.3)
+        # 预测误差
+        ax1.plot(ticks, pe, color="#9b59b6", linewidth=2)
+        ax1.fill_between(ticks, pe, alpha=0.3, color="#9b59b6")
+        ax1.set_xlabel("Tick", fontsize=12)
+        ax1.set_ylabel("预测误差", fontsize=12)
+        ax1.set_title("预测误差收敛", fontsize=14, fontweight="bold")
+        ax1.grid(True, alpha=0.3)
 
-    # 放电与传播
-    ax2.plot(
-        ticks[: len(total_spikes)],
-        total_spikes,
-        label="总放电",
-        color="#e67e22",
-        linewidth=2,
-    )
-    ax2.plot(
-        ticks[: len(total_propagations)],
-        total_propagations,
-        label="总传播",
-        color="#1abc9c",
-        linewidth=2,
-    )
-    ax2.set_xlabel("Tick", fontsize=12)
-    ax2.set_ylabel("累计数量", fontsize=12)
-    ax2.set_title("放电与传播统计", fontsize=14, fontweight="bold")
-    ax2.legend(loc="best")
-    ax2.grid(True, alpha=0.3)
+        # 放电与传播
+        ax2.plot(
+            ticks[: len(total_spikes)],
+            total_spikes,
+            label="总放电",
+            color="#e67e22",
+            linewidth=2,
+        )
+        ax2.plot(
+            ticks[: len(total_propagations)],
+            total_propagations,
+            label="总传播",
+            color="#1abc9c",
+            linewidth=2,
+        )
+        ax2.set_xlabel("Tick", fontsize=12)
+        ax2.set_ylabel("累计数量", fontsize=12)
+        ax2.set_title("放电与传播统计", fontsize=14, fontweight="bold")
+        ax2.legend(loc="best")
+        ax2.grid(True, alpha=0.3)
 
-    plt.tight_layout()
+        plt.tight_layout()
 
-    if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        if output_path:
+            fig.savefig(output_path, dpi=150, bbox_inches="tight")
 
-    if show:
-        plt.show()
+        if show:
+            plt.show()
 
-    return fig
+        return fig
+    except Exception as exc:
+        _logger.warning("绘制学习指标失败: %s", exc)
+        return None
 
 
 def plot_spike_raster(
@@ -166,7 +181,7 @@ def plot_spike_raster(
     output_path: Path | None = None,
     show: bool = True,
     max_neurons: int = 50,
-) -> Figure:
+) -> Figure | None:
     """绘制脉冲栅格图
 
     Args:
@@ -180,31 +195,37 @@ def plot_spike_raster(
     if not spike_data:
         raise VisualizationError("没有脉冲数据")
 
-    # 提取唯一神经元ID
-    neuron_ids = sorted(set(nid for _, nid in spike_data))[:max_neurons]
-    neuron_to_idx = {nid: idx for idx, nid in enumerate(neuron_ids)}
+    try:
+        # 提取唯一神经元ID
+        neuron_ids = sorted(set(nid for _, nid in spike_data))[:max_neurons]
+        neuron_to_idx = {nid: idx for idx, nid in enumerate(neuron_ids)}
 
-    # 准备绘图数据
-    ticks = [t for t, nid in spike_data if nid in neuron_to_idx]
-    indices = [neuron_to_idx[nid] for _, nid in spike_data if nid in neuron_to_idx]
+        # 准备绘图数据
+        ticks = [t for t, nid in spike_data if nid in neuron_to_idx]
+        indices = [neuron_to_idx[nid] for _, nid in spike_data if nid in neuron_to_idx]
 
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.scatter(ticks, indices, s=5, color="#34495e", alpha=0.6)
+        fig, ax = plt.subplots(figsize=(12, 8))
+        ax.scatter(ticks, indices, s=5, color="#34495e", alpha=0.6)
 
-    ax.set_xlabel("Tick", fontsize=12)
-    ax.set_ylabel("神经元索引", fontsize=12)
-    ax.set_title("脉冲栅格图", fontsize=14, fontweight="bold")
-    ax.set_yticks(range(len(neuron_ids)))
-    ax.set_yticklabels([f"n{i}" for i in range(len(neuron_ids))], fontsize=8)
-    ax.grid(True, alpha=0.3, axis="x")
+        ax.set_xlabel("Tick", fontsize=12)
+        ax.set_ylabel("神经元索引", fontsize=12)
+        ax.set_title("脉冲栅格图", fontsize=14, fontweight="bold")
+        ax.set_yticks(range(len(neuron_ids)))
+        ax.set_yticklabels([f"n{i}" for i in range(len(neuron_ids))], fontsize=8)
+        ax.grid(True, alpha=0.3, axis="x")
 
-    if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        if output_path:
+            fig.savefig(output_path, dpi=150, bbox_inches="tight")
 
-    if show:
-        plt.show()
+        if show:
+            plt.show()
 
-    return fig
+        return fig
+    except VisualizationError:
+        raise
+    except Exception as exc:
+        _logger.warning("绘制脉冲栅格图失败: %s", exc)
+        return None
 
 
 def plot_network_topology(
@@ -213,7 +234,7 @@ def plot_network_topology(
     energies: dict[str, float] | None = None,
     output_path: Path | None = None,
     show: bool = True,
-) -> Figure:
+) -> Figure | None:
     """绘制网络拓扑图
 
     Args:
@@ -225,50 +246,54 @@ def plot_network_topology(
     """
     check_matplotlib()
 
-    fig, ax = plt.subplots(figsize=(12, 10))
+    try:
+        fig, ax = plt.subplots(figsize=(12, 10))
 
-    # 绘制连接
-    for src, tgt in connections:
-        if src in positions and tgt in positions:
-            x1, y1 = positions[src]
-            x2, y2 = positions[tgt]
-            ax.plot([x1, x2], [y1, y2], color="#bdc3c7", alpha=0.3, linewidth=0.5)
+        # 绘制连接
+        for src, tgt in connections:
+            if src in positions and tgt in positions:
+                x1, y1 = positions[src]
+                x2, y2 = positions[tgt]
+                ax.plot([x1, x2], [y1, y2], color="#bdc3c7", alpha=0.3, linewidth=0.5)
 
-    # 绘制神经元
-    xs = [pos[0] for pos in positions.values()]
-    ys = [pos[1] for pos in positions.values()]
+        # 绘制神经元
+        xs = [pos[0] for pos in positions.values()]
+        ys = [pos[1] for pos in positions.values()]
 
-    if energies:
-        colors = [energies.get(nid, 0.0) for nid in positions.keys()]
-        scatter = ax.scatter(
-            xs,
-            ys,
-            c=colors,
-            cmap="YlOrRd",
-            s=100,
-            alpha=0.8,
-            edgecolors="black",
-            linewidth=1,
-        )
-        plt.colorbar(scatter, ax=ax, label="能量")
-    else:
-        ax.scatter(
-            xs, ys, color="#3498db", s=100, alpha=0.8, edgecolors="black", linewidth=1
-        )
+        if energies:
+            colors = [energies.get(nid, 0.0) for nid in positions.keys()]
+            scatter = ax.scatter(
+                xs,
+                ys,
+                c=colors,
+                cmap="YlOrRd",
+                s=100,
+                alpha=0.8,
+                edgecolors="black",
+                linewidth=1,
+            )
+            plt.colorbar(scatter, ax=ax, label="能量")
+        else:
+            ax.scatter(
+                xs, ys, color="#3498db", s=100, alpha=0.8, edgecolors="black", linewidth=1
+            )
 
-    ax.set_xlabel("X 坐标", fontsize=12)
-    ax.set_ylabel("Y 坐标", fontsize=12)
-    ax.set_title("网络拓扑结构", fontsize=14, fontweight="bold")
-    ax.grid(True, alpha=0.3)
-    ax.set_aspect("equal")
+        ax.set_xlabel("X 坐标", fontsize=12)
+        ax.set_ylabel("Y 坐标", fontsize=12)
+        ax.set_title("网络拓扑结构", fontsize=14, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        ax.set_aspect("equal")
 
-    if output_path:
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        if output_path:
+            fig.savefig(output_path, dpi=150, bbox_inches="tight")
 
-    if show:
-        plt.show()
+        if show:
+            plt.show()
 
-    return fig
+        return fig
+    except Exception as exc:
+        _logger.warning("绘制网络拓扑失败: %s", exc)
+        return None
 
 
 def load_jsonl_data(path: Path) -> list[dict[str, Any]]:
@@ -437,7 +462,10 @@ class LiveMonitor:
         if not self._initialized:
             self._init_figure()
 
-        self._update_plots()
+        try:
+            self._update_plots()
+        except Exception as exc:
+            _logger.warning("实时监控绘图异常（已跳过）: %s", exc)
 
     def _update_plots(self) -> None:
         """刷新所有子图数据"""
@@ -523,6 +551,9 @@ class LiveMonitor:
     def finalize(self) -> None:
         """仿真结束后调用 — 保持窗口显示直到用户关闭"""
         if self._initialized and self._fig is not None:
-            plt.ioff()
-            print("  [实时监控] 仿真结束，关闭窗口以退出")
-            plt.show()
+            try:
+                plt.ioff()
+                print("  [实时监控] 仿真结束，关闭窗口以退出")
+                plt.show()
+            except Exception as exc:
+                _logger.warning("实时监控 finalize 异常: %s", exc)

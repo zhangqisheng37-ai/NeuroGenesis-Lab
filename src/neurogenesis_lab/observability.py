@@ -1,5 +1,6 @@
 import json
 import gzip
+import logging
 import threading
 import time
 from pathlib import Path
@@ -9,23 +10,48 @@ from neurogenesis_lab.config import SCHEMA_VERSION
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import Neuron
 
+_logger = logging.getLogger(__name__)
+
 
 class JsonlWriter:
+    """JSONL 文件写入器 — 支持普通文本和 gzip 压缩格式。
+
+    根据文件后缀自动选择写入模式：``.gz`` 使用 gzip 压缩，否则纯文本。
+
+    Args:
+        path: 输出文件路径。
+    """
+
     def __init__(self, path: Path) -> None:
         self._path = path
 
     def write(self, records: Iterable[dict]) -> None:
+        """覆盖写入多条记录（清空原有内容）。
+
+        Args:
+            records: 待写入的字典记录可迭代对象。
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._open("w") as handle:
             for record in records:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def append(self, record: dict) -> None:
+        """追加写入单条记录。
+
+        Args:
+            record: 待写入的字典记录。
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._open("a") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def append_many(self, records: Iterable[dict]) -> None:
+        """追加写入多条记录。
+
+        Args:
+            records: 待写入的字典记录可迭代对象。
+        """
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with self._open("a") as handle:
             for record in records:
@@ -38,17 +64,34 @@ class JsonlWriter:
 
 
 class AsyncJsonlWriter:
-    """异步双缓冲写盘器：主线程写入 Buffer A，后台线程落盘 Buffer B"""
+    """异步双缓冲写盘器：主线程写入 Buffer A，后台线程落盘 Buffer B
 
-    def __init__(self, path: Path, buffer_size: int = 256) -> None:
+    Args:
+        path: 输出文件路径。
+        buffer_size: 缓冲区满阈值（记录条数），达到后自动切换缓冲区。
+        on_error: 写入失败时的回调函数，签名 ``(exception, lost_records)``。
+            若未提供，则仅记录警告日志。
+    """
+
+    _WRITER_POLL_INTERVAL = 0.2
+
+    def __init__(
+        self,
+        path: Path,
+        buffer_size: int = 256,
+        on_error: Callable[[Exception, list[dict]], None] | None = None,
+    ) -> None:
         self._writer = JsonlWriter(path)
         self._buffer_size = max(1, int(buffer_size))
+        self._on_error = on_error
+        self._lost_records: int = 0
         self._buffers: list[list[dict]] = [[], []]
         self._active_idx = 0
         self._pending_idx: int | None = None
         self._closed = False
         self._lock = threading.Lock()
         self._cond = threading.Condition(self._lock)
+        self._drain_event = threading.Event()
         self._thread = threading.Thread(
             target=self._run,
             name="observability-async-writer",
@@ -56,7 +99,22 @@ class AsyncJsonlWriter:
         )
         self._thread.start()
 
+    @property
+    def lost_records(self) -> int:
+        """写入失败导致丢失的记录总数。"""
+        return self._lost_records
+
     def append(self, record: dict) -> None:
+        """将单条记录追加到活跃缓冲区。
+
+        缓冲区满时自动切换并触发后台落盘。
+
+        Args:
+            record: 待写入的字典记录。
+
+        Raises:
+            RuntimeError: writer 已关闭时抛出。
+        """
         with self._cond:
             if self._closed:
                 raise RuntimeError("writer already closed")
@@ -64,21 +122,25 @@ class AsyncJsonlWriter:
             self._promote_if_needed_locked(force=False)
 
     def write(self, records: Iterable[dict]) -> None:
+        """逐条追加写入多条记录。
+
+        Args:
+            records: 待写入的字典记录可迭代对象。
+        """
         for record in records:
             self.append(record)
 
     def close(self) -> None:
+        """关闭写入器 — 刷新剩余缓冲区并等待后台线程退出。"""
         with self._cond:
             if self._closed:
                 return
-            while True:
-                self._promote_if_needed_locked(force=True)
-                active_empty = not self._buffers[self._active_idx]
-                if self._pending_idx is None and active_empty:
-                    self._closed = True
-                    self._cond.notify_all()
-                    break
-                self._cond.wait(timeout=0.05)
+            # 将剩余数据提升为待写入
+            self._promote_if_needed_locked(force=True)
+            self._closed = True
+            self._cond.notify_all()
+        # 等待后台线程排空并退出，使用 Event 替代轮询
+        self._drain_event.wait(timeout=5.0)
         self._thread.join(timeout=2.0)
 
     def _promote_if_needed_locked(self, force: bool) -> None:
@@ -95,28 +157,58 @@ class AsyncJsonlWriter:
         self._cond.notify_all()
 
     def _run(self) -> None:
-        while True:
-            with self._cond:
-                while self._pending_idx is None and not self._closed:
-                    self._cond.wait(timeout=0.2)
-                    self._promote_if_needed_locked(force=True)
+        try:
+            while True:
+                with self._cond:
+                    while self._pending_idx is None and not self._closed:
+                        self._cond.wait(timeout=AsyncJsonlWriter._WRITER_POLL_INTERVAL)
+                        self._promote_if_needed_locked(force=True)
 
-                if self._pending_idx is None and self._closed:
-                    return
+                    if self._pending_idx is None and self._closed:
+                        # 最后一次尝试提升残留数据
+                        self._promote_if_needed_locked(force=True)
+                        if self._pending_idx is None:
+                            return
 
-                pending_idx = self._pending_idx
-                self._pending_idx = None
-                batch = self._buffers[pending_idx] if pending_idx is not None else []
-                if pending_idx is not None:
-                    self._buffers[pending_idx] = []
-                self._cond.notify_all()
+                    pending_idx = self._pending_idx
+                    self._pending_idx = None
+                    batch = self._buffers[pending_idx] if pending_idx is not None else []
+                    if pending_idx is not None:
+                        self._buffers[pending_idx] = []
+                    self._cond.notify_all()
 
-            if batch:
-                self._writer.append_many(batch)
+                if batch:
+                    self._flush_batch(batch)
+        finally:
+            self._drain_event.set()
+
+    def _flush_batch(self, batch: list[dict]) -> None:
+        """落盘一批记录，失败时触发错误回调。"""
+        try:
+            self._writer.append_many(batch)
+        except Exception as exc:
+            self._lost_records += len(batch)
+            if self._on_error is not None:
+                try:
+                    self._on_error(exc, batch)
+                except Exception:
+                    pass
+            else:
+                _logger.warning(
+                    "AsyncJsonlWriter 写入失败，丢失 %d 条记录: %s",
+                    len(batch),
+                    exc,
+                )
 
 
 class NetworkObserver:
-    """网络级别的可观察性 2.0"""
+    """网络级别的可观察性 — 采集指标、趋势和调试信息。
+
+    Args:
+        network: 被观察的 Network 实例。
+        debug_neuron_ids: 需要追踪的神经元 ID 列表。
+        neuron_filter: 可选的神经元过滤函数，满足条件的神经元也会被追踪。
+    """
 
     def __init__(
         self,
@@ -135,7 +227,14 @@ class NetworkObserver:
         self._energy_history: list[float] = []
 
     def get_network_metrics(self, tick: int) -> dict:
-        """获取 network_metrics"""
+        """获取网络级聚合指标。
+
+        Args:
+            tick: 当前 tick 编号。
+
+        Returns:
+            包含存活数、连接数、平均能量、平均新颖度等指标的字典。
+        """
         neurons = list(self._network.neurons.values())
         alive_neurons = [n for n in neurons if n.alive]
 
@@ -181,7 +280,14 @@ class NetworkObserver:
         }
 
     def get_neuron_metrics(self, neuron_id: str) -> dict | None:
-        """获取 neuron_metrics"""
+        """获取单个神经元的详细指标。
+
+        Args:
+            neuron_id: 目标神经元 ID。
+
+        Returns:
+            神经元指标字典，神经元不存在时返回 None。
+        """
         if neuron_id not in self._network.neurons:
             return None
         neuron = self._network.neurons[neuron_id]
@@ -204,7 +310,11 @@ class NetworkObserver:
         }
 
     def get_learning_metrics(self) -> dict:
-        """获取 learning_metrics"""
+        """获取学习相关指标（放电数、传播数、PE 均值）。
+
+        Returns:
+            包含 total_spikes、total_propagations、pe_moving_avg 的字典。
+        """
         return {
             "total_spikes": self._network.total_spikes,
             "total_propagations": self._network.total_propagations,
@@ -212,7 +322,15 @@ class NetworkObserver:
         }
 
     def get_trend_metrics(self, tick: int, snapshot: dict | None = None) -> dict:
-        """获取趋势指标"""
+        """获取趋势指标（滑动窗口统计）。
+
+        Args:
+            tick: 当前 tick 编号。
+            snapshot: 可选的 TickSnapshot，用于更新历史记录。
+
+        Returns:
+            包含 PE 均值、出生率、死亡率、存活趋势等的字典。
+        """
         if snapshot:
             self._pe_history.append(snapshot.get("prediction_error", 0.0))
             self._birth_history.append(snapshot.get("births", 0))
@@ -251,7 +369,14 @@ class NetworkObserver:
         return self.get_neuron_metrics(neuron_id)
 
     def get_debug_info(self, tick: int) -> dict:
-        """获取调试信息（追踪指定神经元，支持条件过滤）"""
+        """获取调试信息 — 追踪指定神经元，支持条件过滤。
+
+        Args:
+            tick: 当前 tick 编号。
+
+        Returns:
+            包含 tick 和 tracked_neurons 列表的字典。
+        """
         debug_info: dict[str, Any] = {"tick": tick, "tracked_neurons": []}
 
         neuron_ids = list(self._debug_neuron_ids)
@@ -271,7 +396,16 @@ class NetworkObserver:
     def generate_report(
         self, tick: int, include_debug: bool = False, snapshot: dict | None = None
     ) -> dict:
-        """生成完整报告"""
+        """生成完整的可观察性报告。
+
+        Args:
+            tick: 当前 tick 编号。
+            include_debug: 是否包含调试信息，默认 False。
+            snapshot: 可选的 TickSnapshot，传递给趋势指标。
+
+        Returns:
+            包含 metrics、learning、trends（可选 debug）的完整报告字典。
+        """
         report: dict[str, Any] = {
             "schema_version": SCHEMA_VERSION,
             "metrics": self.get_network_metrics(tick),
@@ -286,7 +420,17 @@ class NetworkObserver:
 
 
 class ObservabilityLogger:
-    """可观察性日志记录器 2.0 — 支持实验分目录"""
+    """可观察性日志记录器 — 支持采样、轮转和异步写入。
+
+    Args:
+        output_path: 输出文件路径。
+        debug_mode: 是否记录调试信息，默认 False。
+        experiment_id: 实验编号，非空时自动创建子目录。
+        log_interval: 日志采样间隔（每 N tick 记录一次），默认 1。
+        max_file_size: 单文件最大字节数，超出后自动轮转，0 表示不限，默认 0。
+        async_mode: 是否启用异步双缓冲写入，默认 False。
+        log_buffer_size: 异步模式缓冲区大小（记录条数），默认 256。
+    """
 
     def __init__(
         self,
@@ -358,7 +502,13 @@ class ObservabilityLogger:
     def log_tick(
         self, observer: NetworkObserver, tick: int, snapshot: dict | None = None
     ) -> None:
-        """记录单个tick的信息"""
+        """记录单个 tick 的可观察性报告（受 log_interval 采样控制）。
+
+        Args:
+            observer: NetworkObserver 实例。
+            tick: 当前 tick 编号。
+            snapshot: 可选的 TickSnapshot，传递给报告生成。
+        """
         if tick % self._log_interval != 0:
             return
         self._rotate_if_needed()
@@ -368,7 +518,12 @@ class ObservabilityLogger:
         self._writer.append(report)
 
     def log_summary(self, total_ticks: int, final_metrics: dict) -> None:
-        """记录总结信息"""
+        """记录仿真结束时的总结信息。
+
+        Args:
+            total_ticks: 总运行 tick 数。
+            final_metrics: 最终指标字典。
+        """
         self._rotate_if_needed()
         summary = {
             "type": "summary",
@@ -401,7 +556,21 @@ def create_experiment_logger(
     async_mode: bool = False,
     log_buffer_size: int = 256,
 ) -> ObservabilityLogger:
-    """创建实验日志记录器 — 自动分目录防覆盖（带毫秒精度）"""
+    """创建实验日志记录器 — 自动按时间戳分目录防覆盖。
+
+    Args:
+        base_dir: 输出根目录。
+        experiment_name: 实验名称前缀。
+        debug_mode: 是否记录调试信息，默认 False。
+        log_interval: 日志采样间隔，默认 1。
+        max_file_size: 单文件最大字节数，0 表示不限，默认 0。
+        gzip_output: 是否使用 gzip 压缩输出，默认 False。
+        async_mode: 是否启用异步写入，默认 False。
+        log_buffer_size: 异步缓冲区大小，默认 256。
+
+    Returns:
+        配置好的 ObservabilityLogger 实例。
+    """
     # 使用毫秒精度时间戳，避免快速连续创建时冲突
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     milliseconds = int((time.time() % 1) * 1000)

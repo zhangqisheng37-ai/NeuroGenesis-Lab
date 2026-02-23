@@ -46,6 +46,13 @@ graph TD
 
 ### 3.1 仿真循环 (The Simulation Loop)
 
+`Network` 类采用配置/状态分离的组件化架构（Phase 6）：
+
+- **`NetworkConfig`**：所有配置参数（`reproduction_threshold`, `energy_decay`, `max_neurons` 等 23 个字段）
+- **`NetworkState`**：运行时统计状态（`birth_count`, `death_count`, `total_spikes`, `total_propagations`, `current_tick`, `_pe_history`, `_endangered_mode`）
+
+通过 `__getattr__`/`__setattr__` 属性代理，外部 API 完全兼容。自适应衰减/繁殖机制中的阈值通过 `config.py` 中的命名常量（`DENSITY_HIGH_THRESHOLD`, `REPRO_SHARE_MAX` 等）统一管理。
+
 仿真以离散时间步 `tick` 为单位推进。每个 `tick` (默认 dt=1.0ms) 包含以下阶段：
 
 1.  **事件分发 (Event Dispatch)**：
@@ -66,7 +73,19 @@ graph TD
 
 ### 3.2 神经元模型 (Neuron Model)
 
-系统基类为 `Neuron`，提供能量、记忆、位移与适应度机制，三种具体放电模型均继承自此基类：
+系统基类为 `Neuron`，提供能量、记忆、位移与适应度机制，三种具体放电模型均继承自此基类。
+
+#### 3.2.0 组件化架构（Phase 6）
+
+`Neuron` 类采用组件化设计，内部状态拆分为三个独立的 dataclass 组件：
+
+- **`NeuronDynamics`**：动力学参数（`v`, `u`, `w`, `v_rest`, `v_reset`, `v_th`, `tau_m`, `r_m`, `spike_cost`, `input_gain`, `move_cost`）
+- **`NeuronEvolution`**：演化统计（`spike_count`, `propagation_count`, `prediction_hits`）
+- **`NeuronMemory`**：记忆管理（`mem_size`, `mem`, `transitions`, `_observe_cache`, `_observe_dirty`）
+
+通过 `__getattr__`/`__setattr__` 属性代理，外部 API 完全兼容——访问 `neuron.tau_m` 等价于 `neuron._dynamics.tau_m`。子类（IzhikevichNeuron/AdExNeuron）的额外字段（`a`, `b`, `c`, `d`, `v_peak`, `delta_t`, `tau_w`）保留在子类 `__dict__` 中，不放入组件。
+
+遗传属性列表通过 `config.py` 中的 `HERITABLE_ATTRS` 常量统一管理。
 
 #### 3.2.1 LIFNeuron — Leaky Integrate-and-Fire
 
@@ -256,4 +275,4 @@ NeuroGenesis Lab 探索“从脉冲到符号”的涌现：
 
 ---
 
-*设计文档版本：v1.5 (对应代码 v0.4.x / Phase 5)*
+*设计文档版本：v1.6 (对应代码 v0.5.1 / Phase 6 P1+P3+P6)*

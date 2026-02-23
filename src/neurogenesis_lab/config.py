@@ -4,16 +4,56 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
 SCHEMA_VERSION = "2.0.0"
 
+# ── 共享常量 ──────────────────────────────────────────────
+
+# 自适应衰减
+DENSITY_HIGH_THRESHOLD = 0.8
+DENSITY_LOW_THRESHOLD = 0.3
+DECAY_HIGH_MULTIPLIER = 1.2
+DECAY_LOW_MULTIPLIER = 0.7
+
+# 自适应繁殖
+POPULATION_HIGH_THRESHOLD = 0.8
+POPULATION_LOW_THRESHOLD = 0.3
+REPRO_SHARE_HIGH_MULTIPLIER = 1.3
+REPRO_SHARE_LOW_MULTIPLIER = 0.7
+REPRO_SHARE_MAX = 0.6
+REPRO_SHARE_MIN = 0.2
+
+# 神经元保护
+RESCUED_NEURON_ENERGY = 0.1
+
+# 遗传属性
+HERITABLE_DYNAMICS_ATTRS = (
+    "tau_m", "r_m", "v_th", "v_rest", "v_reset",
+    "spike_cost", "input_gain", "move_cost",
+)
+HERITABLE_SUBCLASS_ATTRS = ("a", "b", "c", "d", "v_peak", "delta_t", "tau_w")
+HERITABLE_ATTRS = HERITABLE_DYNAMICS_ATTRS + HERITABLE_SUBCLASS_ATTRS
+
+# 子代位置抖动
+SPAWN_POSITION_JITTER = 0.5
+
+# 向量化引擎移动抖动
+MOVE_JITTER_RANGE = 1.0
+
 
 @dataclass(frozen=True)
 class Config:
-    """向后兼容的最小配置"""
+    """向后兼容的最小配置。
+
+    Attributes:
+        ticks: 仿真总步数，> 0，默认 10。
+        network_size: 初始网络规模（神经元数），> 0，默认 16。
+        energy_decay: 每 tick 能量衰减量，>= 0，默认 0.01。
+        seed: 随机种子，默认 42。
+    """
 
     ticks: int = 10
     network_size: int = 16
@@ -22,12 +62,28 @@ class Config:
 
 
 def default_config() -> Config:
+    """返回默认的最小配置实例。
+
+    Returns:
+        使用默认参数的 Config 实例。
+    """
     return Config()
 
 
 @dataclass
 class NeuronParams:
-    """神经元动力学参数"""
+    """神经元动力学参数。
+
+    Attributes:
+        v_rest: 静息电位，单位 mV，默认 -65.0。
+        v_reset: 放电后重置电位，单位 mV，默认 -65.0。
+        v_th: 放电阈值，单位 mV，默认 -55.0。
+        tau_m: 膜时间常数，单位 ms，必须 > 0，默认 20.0。
+        r_m: 膜电阻缩放因子，无量纲，默认 1.0。
+        spike_cost: 每次放电能量消耗，>= 0，默认 0.05。
+        input_gain: 接收事件时的能量增益，>= 0，默认 0.05。
+        mem_size: 记忆缓冲区容量（事件条数），> 0，默认 64。
+    """
 
     v_rest: float = -65.0
     v_reset: float = -65.0
@@ -59,7 +115,27 @@ class NeuronParams:
 
 @dataclass
 class NetworkParams:
-    """网络级参数"""
+    """网络级参数。
+
+    Attributes:
+        reproduction_threshold: 繁殖能量阈值，> 0，默认 2.5。
+        reproduction_share: 繁殖能量分配比例，范围 (0, 1]，默认 0.4。
+        mutation_scale: 变异幅度缩放因子，>= 0，默认 0.05。
+        energy_decay: 每 tick 基础能量衰减量，>= 0，默认 0.003。
+        max_neurons: 最大神经元数量，> 0，默认 50。
+        max_links: 最大连接数量，> 0，默认 200。
+        corpse_ttl: 尸体存活 tick 数，> 0，默认 50。
+        scavenger_radius: 拾荒搜索半径，>= 0，默认 2.5。
+        input_current_scale: 输入电流缩放因子，>= 0，默认 1.5。
+        background_current: 背景电流，>= 0，默认 0.0。
+        spontaneous_spike_rate: 自发放电概率，范围 [0, 1]，默认 0.0。
+        low_activation_threshold: 低激活阈值，>= 0，默认 0。
+        move_cost: 每次移动能量消耗，>= 0，默认 0.01。
+        energy_cap: 能量上限，> 0，默认 5.0。
+        adaptive_decay: 是否启用自适应衰减，默认 True。
+        adaptive_reproduction: 是否启用自适应繁殖成本，默认 True。
+        endangered_threshold: 濒危告警阈值（存活数），>= 0，默认 10。
+    """
 
     reproduction_threshold: float = 2.5
     reproduction_share: float = 0.4
@@ -125,7 +201,15 @@ class NetworkParams:
 
 @dataclass
 class EvolutionParams:
-    """演化系统参数"""
+    """演化系统参数。
+
+    Attributes:
+        fitness_weights: 适应度各维度权重字典，键为 propagation/energy_efficiency/prediction_hit。
+        mutation_amplitude: 演化变异幅度，>= 0，默认 0.05。
+        energy_budget_per_tick: 每 tick 全局能量预算，0 表示不限，默认 0.0。
+        congestion_penalty: 拥塞惩罚概率，范围 [0, 1]，默认 0.1。
+        min_neurons: 最小存活神经元数（保护下限），>= 0，默认 2。
+    """
 
     fitness_weights: dict[str, float] = field(
         default_factory=lambda: {
@@ -150,7 +234,21 @@ class EvolutionParams:
 
 @dataclass
 class SimConfig:
-    """仿真总配置 — 统一入口"""
+    """仿真总配置 — 统一入口，组合所有子配置。
+
+    Attributes:
+        ticks: 仿真总步数，> 0，默认 100。
+        seed: 随机种子，默认 42。
+        dt: 时间步长，单位 ms，> 0，默认 1.0。
+        neuron: 神经元参数。
+        network: 网络参数。
+        evolution: 演化参数。
+        schema_version: 数据格式版本号。
+
+    Example:
+        >>> config = SimConfig(ticks=200, seed=123)
+        >>> errors = config.validate()
+    """
 
     ticks: int = 100
     seed: int = 42
@@ -175,56 +273,24 @@ class SimConfig:
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为字典（用于 jsonl 记录）"""
-        return {
-            "schema_version": self.schema_version,
-            "ticks": self.ticks,
-            "seed": self.seed,
-            "dt": self.dt,
-            "neuron": {
-                "v_rest": self.neuron.v_rest,
-                "v_reset": self.neuron.v_reset,
-                "v_th": self.neuron.v_th,
-                "tau_m": self.neuron.tau_m,
-                "r_m": self.neuron.r_m,
-                "spike_cost": self.neuron.spike_cost,
-                "input_gain": self.neuron.input_gain,
-                "mem_size": self.neuron.mem_size,
-            },
-            "network": {
-                "reproduction_threshold": self.network.reproduction_threshold,
-                "reproduction_share": self.network.reproduction_share,
-                "mutation_scale": self.network.mutation_scale,
-                "energy_decay": self.network.energy_decay,
-                "max_neurons": self.network.max_neurons,
-                "max_links": self.network.max_links,
-                "corpse_ttl": self.network.corpse_ttl,
-                "scavenger_radius": self.network.scavenger_radius,
-                "input_current_scale": self.network.input_current_scale,
-                "background_current": self.network.background_current,
-                "spontaneous_spike_rate": self.network.spontaneous_spike_rate,
-                "low_activation_threshold": self.network.low_activation_threshold,
-                "move_cost": self.network.move_cost,
-                "energy_cap": self.network.energy_cap,
-                "adaptive_decay": self.network.adaptive_decay,
-                "adaptive_reproduction": self.network.adaptive_reproduction,
-                "endangered_threshold": self.network.endangered_threshold,
-            },
-            "evolution": {
-                "fitness_weights": self.evolution.fitness_weights,
-                "mutation_amplitude": self.evolution.mutation_amplitude,
-                "energy_budget_per_tick": self.evolution.energy_budget_per_tick,
-                "congestion_penalty": self.evolution.congestion_penalty,
-                "min_neurons": self.evolution.min_neurons,
-            },
-        }
+        return asdict(self)
 
 
 def default_sim_config() -> SimConfig:
+    """返回默认的仿真总配置实例。
+
+    Returns:
+        使用默认参数的 SimConfig 实例。
+    """
     return SimConfig()
 
 
 def seed_all(seed: int) -> None:
-    """统一随机种子入口 — 覆盖所有 random 调用路径"""
+    """统一随机种子入口 — 覆盖 random 和 numpy 的随机状态。
+
+    Args:
+        seed: 随机种子值。
+    """
     random.seed(seed)
     try:
         import numpy as np
