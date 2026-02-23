@@ -207,6 +207,35 @@ class Network:
     def tick(
         self, tick: int, dt: float = 1.0, run_evolution: bool = True
     ) -> TickSnapshot:
+        ready, inputs, effective_decay, budget_share = self._process_inputs(tick, dt)
+        emitted, tick_spikes = self._update_dynamics(
+            tick=tick,
+            dt=dt,
+            inputs=inputs,
+            effective_decay=effective_decay,
+            budget_share=budget_share,
+        )
+        self.queue.push_many(emitted)
+        self.total_spikes += tick_spikes
+        self.total_propagations += len(emitted)
+        snapshot = self._collect_tick_stats(
+            tick=tick,
+            ready_count=len(ready),
+            emitted_count=len(emitted),
+            tick_spikes=tick_spikes,
+        )
+
+        if run_evolution:
+            births, deaths = self._run_evolution_step()
+            snapshot["births"] = births
+            snapshot["deaths"] = deaths
+
+        return snapshot
+
+    def _process_inputs(
+        self, tick: int, dt: float
+    ) -> tuple[list[Event], dict[str, list[Event]], float, float]:
+        _ = dt
         self.current_tick = tick
         ready = self.queue.pop_ready(tick)
         inputs: dict[str, list[Event]] = defaultdict(list)
@@ -215,10 +244,6 @@ class Network:
                 continue
             inputs[event.src_id].append(event)
 
-        emitted: list[Event] = []
-        tick_spikes = 0
-
-        # 计算自适应衰减率
         alive_count = sum(1 for n in self.neurons.values() if n.alive)
         effective_decay = self._calculate_adaptive_decay(alive_count)
         budget_share = (
@@ -227,12 +252,23 @@ class Network:
             else 0.0
         )
 
-        # 检查濒危模式
         if alive_count <= self.endangered_threshold and not self._endangered_mode:
             self._endangered_mode = True
         elif alive_count > self.endangered_threshold * 1.5:
             self._endangered_mode = False
+        return ready, inputs, effective_decay, budget_share
 
+    def _update_dynamics(
+        self,
+        *,
+        tick: int,
+        dt: float,
+        inputs: dict[str, list[Event]],
+        effective_decay: float,
+        budget_share: float,
+    ) -> tuple[list[Event], int]:
+        emitted: list[Event] = []
+        tick_spikes = 0
         for neuron in list(self.neurons.values()):
             neuron.start_tick()
             events = inputs.get(neuron.id, [])
@@ -241,6 +277,7 @@ class Network:
                 neuron.receive(event)
                 w = float(event.meta.get("weight", 1.0))
                 input_current += safe_float(w * self.input_current_scale)
+
             spontaneous_spike = False
             if self.spontaneous_spike_rate > 0.0:
                 spontaneous_spike = random.random() < self.spontaneous_spike_rate
@@ -249,6 +286,7 @@ class Network:
                 spiked = True
             else:
                 spiked = neuron.update(dt, input_current)
+
             if spiked:
                 tick_spikes += 1
                 if neuron.last_event is not None:
@@ -266,27 +304,21 @@ class Network:
                         )
                     )
             neuron.move()
-
-            # 应用自适应衰减（濒危模式下减半）
             decay = effective_decay * (0.5 if self._endangered_mode else 1.0)
             neuron.energy = max(0.0, neuron.energy - decay)
-
             if budget_share > 0.0:
                 neuron.energy += budget_share
-
-            # 应用能量上限
             if neuron.energy > self.energy_cap:
                 neuron.energy = self.energy_cap
-
             energy_loss = max(0.0, neuron.last_energy - neuron.energy)
             reward = calculate_reward(neuron.states["novelty"], energy_loss)
             neuron.apply_reward(reward)
             neuron.finalize_tick(had_input=bool(events))
+        return emitted, tick_spikes
 
-        self.queue.push_many(emitted)
-        self.total_spikes += tick_spikes
-        self.total_propagations += len(emitted)
-
+    def _collect_tick_stats(
+        self, *, tick: int, ready_count: int, emitted_count: int, tick_spikes: int
+    ) -> TickSnapshot:
         actual_state = self._aggregate_state()
         prediction_error = self._update_prediction_error(actual_state)
         self._pe_history.append(prediction_error)
@@ -298,11 +330,11 @@ class Network:
             if alive_count > 0
             else 0.0
         )
-        snapshot = {
+        snapshot: TickSnapshot = {
             "schema_version": self.schema_version,
             "tick": tick,
-            "ready_events": len(ready),
-            "propagation_count": len(emitted),
+            "ready_events": ready_count,
+            "propagation_count": emitted_count,
             "alive_neurons": alive_count,
             "total_neurons": len(self.neurons),
             "prediction_error": prediction_error,
@@ -312,12 +344,6 @@ class Network:
             "mean_energy": mean_energy,
         }
         self.replay.append(snapshot)
-
-        if run_evolution:
-            births, deaths = self._run_evolution_step()
-            snapshot["births"] = births
-            snapshot["deaths"] = deaths
-
         return snapshot
 
     def _run_evolution_step(self) -> tuple[int, int]:

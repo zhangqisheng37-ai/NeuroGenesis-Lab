@@ -232,28 +232,52 @@ class VectorizedNetwork:
         self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None
     ) -> TickSnapshot:
         """向量化 tick — 批量 LIF 更新 + 稀疏矩阵传播"""
-        if input_currents is None:
-            input_currents = np.zeros(self.n, dtype=np.float64)
-        else:
-            input_currents = np.asarray(input_currents, dtype=np.float64)
-            if input_currents.shape != (self.n,):
-                raise ValueError(
-                    f"input_currents 形状非法: 期望 ({self.n},), 实际 {input_currents.shape}"
-                )
-
-        routed_inputs = self.scheduled_inputs.pop(
-            int(tick), np.zeros(self.n, dtype=np.float64)
+        combined_inputs, ready_events = self._inject_inputs(tick, dt, input_currents)
+        alive_mask, spike_indices, tick_spikes = self._vectorized_lif_step(
+            dt, combined_inputs
         )
+        propagation_count = self._propagate_spikes(tick, spike_indices)
+        births, deaths = self._run_vectorized_evolution(tick, alive_mask)
+        self.total_spikes += tick_spikes
+        self.total_ticks += 1
+        self._cleanup_scheduled_inputs(int(tick))
+        return self._collect_vectorized_stats(
+            tick=tick,
+            ready_events=ready_events,
+            tick_spikes=tick_spikes,
+            propagation_count=propagation_count,
+            births=births,
+            deaths=deaths,
+        )
+
+    def _inject_inputs(
+        self, tick: int, dt: float, input_currents: np.ndarray | None
+    ) -> tuple[np.ndarray, int]:
+        _ = dt
+        if input_currents is None:
+            base_inputs = np.zeros(self.n, dtype=np.float64)
+        else:
+            base_inputs = np.asarray(input_currents, dtype=np.float64)
+            if base_inputs.shape != (self.n,):
+                raise ValueError(
+                    f"input_currents 形状非法: 期望 ({self.n},), 实际 {base_inputs.shape}"
+                )
+        routed_inputs = np.zeros(self.n, dtype=np.float64)
+        due_ticks = [k for k in self.scheduled_inputs if k <= int(tick)]
+        for due_tick in due_ticks:
+            routed_inputs += self.scheduled_inputs.pop(due_tick)
         ready_events = int(np.count_nonzero(routed_inputs))
-        combined_inputs = input_currents + routed_inputs
+        combined_inputs = base_inputs + routed_inputs
         if combined_inputs.size:
             combined_inputs = np.nan_to_num(
                 combined_inputs, nan=0.0, posinf=0.0, neginf=0.0
             )
+        return combined_inputs, ready_events
 
+    def _vectorized_lif_step(
+        self, dt: float, combined_inputs: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, int]:
         alive_mask = self.alive
-
-        # LIF 动力学 (向量化)
         dv = np.where(
             alive_mask,
             (
@@ -265,49 +289,51 @@ class VectorizedNetwork:
         )
         self.v = np.where(alive_mask, self.v + dv * dt, self.v)
 
-        # NaN/Inf 保护
         nan_mask = ~np.isfinite(self.v)
         self.v[nan_mask] = self.v_reset[nan_mask]
 
-        # 放电检测
         spike_mask = alive_mask & (self.v >= self.v_th)
         spike_indices = np.where(spike_mask)[0]
         tick_spikes = len(spike_indices)
-
-        # 放电后重置
         self.v[spike_mask] = self.v_reset[spike_mask]
         self.energy[spike_mask] = np.maximum(
             0.0, self.energy[spike_mask] - self.spike_cost[spike_mask]
         )
         self.spike_count[spike_mask] += 1
         self._last_spike_mask = spike_mask.copy()
+        return alive_mask, spike_indices, tick_spikes
 
-        # 延迟路由传播: 按边 delay 将输入调度到未来 tick
+    def _propagate_spikes(self, tick: int, spike_indices: np.ndarray) -> int:
         propagation_count = 0
-        if tick_spikes > 0:
-            for spike_idx in spike_indices:
-                row_w = self.weight_matrix.getrow(spike_idx)
-                if row_w.nnz <= 0:
+        if len(spike_indices) <= 0:
+            return propagation_count
+        for spike_idx in spike_indices:
+            row_w = self.weight_matrix.getrow(spike_idx)
+            if row_w.nnz <= 0:
+                continue
+            row_d = self.delay_matrix.getrow(spike_idx)
+            delay_map = {
+                int(col): int(delay)
+                for col, delay in zip(row_d.indices.tolist(), row_d.data.tolist())
+            }
+            targets = row_w.indices
+            weights = row_w.data
+            propagation_count += len(targets)
+            for target, weight in zip(targets, weights):
+                if not self.alive[target]:
                     continue
-                row_d = self.delay_matrix.getrow(spike_idx)
-                delay_map = {
-                    int(col): int(delay)
-                    for col, delay in zip(row_d.indices.tolist(), row_d.data.tolist())
-                }
-                targets = row_w.indices
-                weights = row_w.data
-                propagation_count += len(targets)
-                for target, weight in zip(targets, weights):
-                    if not self.alive[target]:
-                        continue
-                    delay = max(0, delay_map.get(int(target), 1))
-                    deliver_tick = int(tick) + delay
-                    payload = np.zeros(self.n, dtype=np.float64)
-                    payload[int(target)] = float(weight)
-                    self._schedule_currents(deliver_tick, payload)
-            self.total_propagations += propagation_count
+                delay = max(0, delay_map.get(int(target), 1))
+                deliver_tick = int(tick) + delay
+                payload = np.zeros(self.n, dtype=np.float64)
+                payload[int(target)] = float(weight)
+                self._schedule_currents(deliver_tick, payload)
+        self.total_propagations += propagation_count
+        return propagation_count
 
-        # 移动 (向量化)
+    def _run_vectorized_evolution(
+        self, tick: int, alive_mask: np.ndarray
+    ) -> tuple[int, int]:
+        _ = tick
         move_dx = np.random.uniform(-1.0, 1.0, self.n)
         move_dy = np.random.uniform(-1.0, 1.0, self.n)
         self.pos[alive_mask, 0] += move_dx[alive_mask]
@@ -315,15 +341,11 @@ class VectorizedNetwork:
         self.energy[alive_mask] = np.maximum(
             0.0, self.energy[alive_mask] - self.move_cost
         )
-
-        # 能量衰减
         self.energy[alive_mask] = np.maximum(
             0.0, self.energy[alive_mask] - self.energy_decay
         )
 
-        # 死亡判定
         death_mask = alive_mask & (self.energy <= 0.0)
-        # 保护 min_neurons
         alive_after = int(np.sum(alive_mask)) - int(np.sum(death_mask))
         if alive_after < self.min_neurons:
             death_indices = np.where(death_mask)[0]
@@ -338,7 +360,6 @@ class VectorizedNetwork:
         self.alive[death_mask] = False
         self.death_count += deaths
 
-        # 简单繁殖 — 需要修改稀疏矩阵时转 lil 再转回 csr
         births = 0
         alive_count = int(np.sum(self.alive))
         if alive_count < self.max_neurons:
@@ -363,7 +384,6 @@ class VectorizedNetwork:
                     self.alive[slot] = True
                     self.pos[slot] = self.pos[i] + np.random.uniform(-0.5, 0.5, 2)
                     self.spike_count[slot] = 0
-                    # 变异参数
                     self.tau_m[slot] = self.tau_m[i] * (
                         1.0
                         + np.random.uniform(-self.mutation_scale, self.mutation_scale)
@@ -372,7 +392,6 @@ class VectorizedNetwork:
                         1.0
                         + np.random.uniform(-self.mutation_scale, self.mutation_scale)
                     )
-                    # 建立连接 (lil 格式高效逐元素写入)
                     lil_w[i, slot] = 1.0
                     lil_w[slot, i] = 1.0
                     lil_d[i, slot] = 1
@@ -380,10 +399,24 @@ class VectorizedNetwork:
                     births += 1
                 self.weight_matrix = csr_matrix(lil_w)
                 self.delay_matrix = csr_matrix(lil_d)
-
         self.birth_count += births
-        self.total_spikes += tick_spikes
-        self.total_ticks += 1
+        return births, deaths
+
+    def _cleanup_scheduled_inputs(self, current_tick: int) -> None:
+        stale_ticks = [k for k in self.scheduled_inputs if k < current_tick]
+        for stale_tick in stale_ticks:
+            self.scheduled_inputs.pop(stale_tick, None)
+
+    def _collect_vectorized_stats(
+        self,
+        *,
+        tick: int,
+        ready_events: int,
+        tick_spikes: int,
+        propagation_count: int,
+        births: int,
+        deaths: int,
+    ) -> TickSnapshot:
 
         # 更新空间索引
         if self.total_ticks % 10 == 0:
@@ -402,7 +435,6 @@ class VectorizedNetwork:
                 actual - self.expected_state
             )
         self._pe_history.append(pe)
-
         return {
             "schema_version": self.schema_version,
             "tick": tick,

@@ -188,20 +188,7 @@ def _build_sim_config(args: argparse.Namespace) -> SimConfig:
     return cfg
 
 
-def cmd_run(args: argparse.Namespace) -> None:
-    """运行仿真实验"""
-    cfg = _build_sim_config(args)
-    errors = cfg.validate()
-    if errors:
-        print("配置验证失败:")
-        for e in errors:
-            print(f"  - {e}")
-        sys.exit(1)
-
-    seed_all(cfg.seed)
-    print(f"[NeuroGenesis Lab v{__version__}] 运行仿真")
-    print(f"  ticks={cfg.ticks}, seed={cfg.seed}, schema={SCHEMA_VERSION}")
-
+def _init_network(cfg: SimConfig, args: argparse.Namespace) -> tuple[Network, int, int]:
     resume_path = getattr(args, "resume_from", None)
     if resume_path:
         network = Network.load_checkpoint(Path(resume_path))
@@ -282,8 +269,12 @@ def cmd_run(args: argparse.Namespace) -> None:
             network.enqueue(scheduled)
         run_start_tick = 1
         run_end_tick = cfg.ticks
+    return network, run_start_tick, run_end_tick
 
-    # 输出设置
+
+def _init_logging(
+    cfg: SimConfig, args: argparse.Namespace, network: Network
+) -> tuple[ObservabilityLogger, NetworkObserver, object | None, int, Path]:
     output_dir = Path(getattr(args, "output", "outputs") or "outputs")
     logger = create_experiment_logger(
         output_dir,
@@ -295,16 +286,11 @@ def cmd_run(args: argparse.Namespace) -> None:
         async_mode=bool(getattr(args, "async_log", False)),
         log_buffer_size=max(1, int(getattr(args, "log_buffer_size", 256) or 256)),
     )
-    debug_neuron_ids = []
+    debug_neuron_ids: list[str] = []
     if network.neurons:
         debug_neuron_ids = [next(iter(network.neurons.keys()))]
     observer = NetworkObserver(network, debug_neuron_ids=debug_neuron_ids)
     logger.log_config(cfg.to_dict())
-
-    # 自动学习引擎
-    auto_learner = AutoLearner(discovery=RuleDiscovery(min_support=2))
-
-    # 实时可视化监控
     live_monitor = None
     if getattr(args, "visualize", False):
         try:
@@ -320,13 +306,25 @@ def cmd_run(args: argparse.Namespace) -> None:
     checkpoint_dir = Path(
         getattr(args, "checkpoint_dir", str(output_dir)) or str(output_dir)
     )
+    return logger, observer, live_monitor, checkpoint_interval, checkpoint_dir
 
-    # 运行
+
+def _run_simulation_loop(
+    network: Network,
+    cfg: SimConfig,
+    logger: ObservabilityLogger,
+    observer: NetworkObserver,
+    live_monitor: object | None,
+    run_start_tick: int,
+    run_end_tick: int,
+    checkpoint_interval: int,
+    checkpoint_dir: Path,
+) -> tuple[float, AutoLearner]:
+    auto_learner = AutoLearner(discovery=RuleDiscovery(min_support=2))
     t0 = time.time()
     total_ticks = run_end_tick - run_start_tick + 1
     for t in range(run_start_tick, run_end_tick + 1):
         snapshot = network.tick(t, dt=cfg.dt)
-        # 自动学习 — 采样、规则发现、预测奖励
         learn_report = auto_learner.on_tick(t, snapshot, network)
         snapshot["rule_count"] = learn_report["rule_count"]
         snapshot["prediction_accuracy"] = learn_report["prediction_accuracy"]
@@ -345,30 +343,30 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(
                 f"  tick {local_progress_tick}/{total_ticks} (global={t}): alive={alive}, PE={pe:.4f}, rules={rules}, acc={acc:.3f}"
             )
+    return time.time() - t0, auto_learner
 
-    elapsed = time.time() - t0
-    if live_monitor is not None:
-        live_monitor.finalize()
-    final = observer.get_network_metrics(run_end_tick)
-    summary = network.get_summary()
-    logger.log_summary(run_end_tick, final)
-    logger.close()
 
+def _print_summary(
+    *,
+    elapsed: float,
+    output_path: Path,
+    summary: dict[str, object],
+    learn_summary: dict[str, object],
+    low_activation_threshold: int,
+) -> None:
     print(f"\n完成! 用时 {elapsed:.2f}s")
-    print(f"  输出: {logger.get_output_path()}")
+    print(f"  输出: {output_path}")
     print(f"  存活: {summary['alive_neurons']}/{summary['total_neurons']}")
     print(
         f"  总放电: {summary['total_spikes']}, 总传播: {summary['total_propagations']}"
     )
     print(f"  出生: {summary['birth_count']}, 死亡: {summary['death_count']}")
-    learn_summary = auto_learner.get_summary()
     print(
         f"  规则数: {learn_summary['rule_count']}, 预测准确率: {learn_summary['prediction_accuracy']:.3f}"
     )
     print(
         f"  预测次数: {learn_summary['total_predictions']}, 正确: {learn_summary['correct_predictions']}"
     )
-    low_activation_threshold = max(0, int(cfg.network.low_activation_threshold))
     if (
         summary["total_spikes"] <= low_activation_threshold
         or summary["total_propagations"] <= low_activation_threshold
@@ -376,6 +374,53 @@ def cmd_run(args: argparse.Namespace) -> None:
         print(
             f"  警告: 低激活（阈值={low_activation_threshold}），可提高 --input-weight 或调整 [neuron]/[network] 参数"
         )
+
+
+def _validate_run_config(cfg: SimConfig) -> None:
+    errors = cfg.validate()
+    if not errors:
+        return
+    print("配置验证失败:")
+    for err in errors:
+        print(f"  - {err}")
+    sys.exit(1)
+
+
+def _finalize_run(
+    *, run_end_tick: int, network: Network, observer: NetworkObserver, logger: ObservabilityLogger
+) -> tuple[dict[str, object], Path]:
+    final_metrics = observer.get_network_metrics(run_end_tick)
+    summary = network.get_summary()
+    logger.log_summary(run_end_tick, final_metrics)
+    output_path = logger.get_output_path()
+    logger.close()
+    return summary, output_path
+
+
+def cmd_run(args: argparse.Namespace) -> None:
+    """运行仿真实验"""
+    cfg = _build_sim_config(args)
+    _validate_run_config(cfg)
+    seed_all(cfg.seed)
+    print(f"[NeuroGenesis Lab v{__version__}] 运行仿真")
+    print(f"  ticks={cfg.ticks}, seed={cfg.seed}, schema={SCHEMA_VERSION}")
+    network, run_start_tick, run_end_tick = _init_network(cfg, args)
+    logger, observer, live_monitor, checkpoint_interval, checkpoint_dir = _init_logging(
+        cfg, args, network
+    )
+    elapsed, auto_learner = _run_simulation_loop(
+        network, cfg, logger, observer, live_monitor, run_start_tick, run_end_tick, checkpoint_interval, checkpoint_dir
+    )
+    if live_monitor is not None:
+        live_monitor.finalize()
+    summary, output_path = _finalize_run(run_end_tick=run_end_tick, network=network, observer=observer, logger=logger)
+    _print_summary(
+        elapsed=elapsed,
+        output_path=output_path,
+        summary=summary,
+        learn_summary=auto_learner.get_summary(),
+        low_activation_threshold=max(0, int(cfg.network.low_activation_threshold)),
+    )
 
 
 def cmd_benchmark(args: argparse.Namespace) -> None:

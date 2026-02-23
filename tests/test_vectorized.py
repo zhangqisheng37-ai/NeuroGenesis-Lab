@@ -195,3 +195,80 @@ class TestVectorizedNetwork:
         # np.nan 进入后 safe 处理
         snapshot = net.tick(1, input_currents=currents)
         assert np.all(np.isfinite(net.v[net.alive])), "存活神经元不应有 NaN/Inf 电位"
+
+    def test_tick_snapshot_sequence_regression(self) -> None:
+        np.random.seed(123)
+        net = VectorizedNetwork(
+            energy_decay=0.0,
+            move_cost=0.0,
+            input_current_scale=5.0,
+            reproduction_threshold=999.0,
+            min_neurons=0,
+        )
+        net.init_neurons(2, v_th=-64.0, r_m=30.0, tau_m=1.0, energy_init=2.0)
+        net.connect_knn(k=1, weight=1.0, delay=2)
+
+        snapshots = [
+            net.tick(1, input_currents=np.array([1.0, 0.0], dtype=np.float64)),
+            net.tick(2),
+            net.tick(3),
+        ]
+        expected = [
+            {
+                "tick": 1,
+                "ready_events": 0,
+                "propagation_count": 1,
+                "alive_neurons": 2,
+                "tick_spikes": 1,
+                "births": 0,
+                "deaths": 0,
+                "prediction_error": 0.0,
+                "mean_energy": 1.975,
+            },
+            {
+                "tick": 2,
+                "ready_events": 0,
+                "propagation_count": 0,
+                "alive_neurons": 2,
+                "tick_spikes": 0,
+                "births": 0,
+                "deaths": 0,
+                "prediction_error": 0.0,
+                "mean_energy": 1.975,
+            },
+            {
+                "tick": 3,
+                "ready_events": 1,
+                "propagation_count": 1,
+                "alive_neurons": 2,
+                "tick_spikes": 1,
+                "births": 0,
+                "deaths": 0,
+                "prediction_error": 0.025000000000000133,
+                "mean_energy": 1.95,
+            },
+        ]
+        for snapshot, expected_tick in zip(snapshots, expected):
+            for key, value in expected_tick.items():
+                if isinstance(value, float):
+                    assert snapshot[key] == pytest.approx(value)
+                else:
+                    assert snapshot[key] == value
+
+    def test_scheduled_inputs_cleanup_processed_ticks(self) -> None:
+        net = VectorizedNetwork(
+            energy_decay=0.0,
+            move_cost=0.0,
+            input_current_scale=0.0,
+            reproduction_threshold=999.0,
+            min_neurons=0,
+        )
+        net.init_neurons(2, energy_init=2.0)
+        net.scheduled_inputs[0] = np.array([0.5, 0.0], dtype=np.float64)
+        net.scheduled_inputs[2] = np.array([0.0, 0.5], dtype=np.float64)
+
+        snapshot = net.tick(2)
+
+        assert snapshot["ready_events"] >= 1
+        assert 0 not in net.scheduled_inputs
+        assert 2 not in net.scheduled_inputs

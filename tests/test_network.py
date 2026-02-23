@@ -344,3 +344,63 @@ class TestReproducibility:
             assert (
                 abs(s1["prediction_error"] - s2["prediction_error"]) < 1e-10
             ), f"相同 seed 应产生相同 PE: {s1['prediction_error']} vs {s2['prediction_error']}"
+
+
+class TestTickRegression:
+    def test_tick_snapshot_sequence_regression(self) -> None:
+        random.seed(123)
+        a = LIFNeuron(tau_m=1.0, r_m=30.0, v_th=-64.0)
+        b = LIFNeuron()
+        net = Network(
+            neurons={a.id: a, b.id: b},
+            input_current_scale=5.0,
+            energy_decay=0.0,
+            move_cost=0.0,
+            min_neurons=0,
+            adaptive_decay=False,
+        )
+        net.connect(a.id, b.id, weight=1.0, delay=2)
+        net.enqueue([Event(token_id=1, t=1, src_id=a.id, meta={"weight": 1.0})])
+
+        snapshots = [net.tick(t) for t in (1, 2, 3)]
+        expected = [
+            {
+                "tick": 1,
+                "ready_events": 1,
+                "propagation_count": 1,
+                "alive_neurons": 2,
+                "tick_spikes": 1,
+                "births": 0,
+                "deaths": 0,
+                "prediction_error": 0.0,
+                "mean_energy": 0.99,
+            },
+            {
+                "tick": 2,
+                "ready_events": 0,
+                "propagation_count": 0,
+                "alive_neurons": 2,
+                "tick_spikes": 0,
+                "births": 0,
+                "deaths": 0,
+                "prediction_error": 0.023823517792299277,
+                "mean_energy": 0.98,
+            },
+            {
+                "tick": 3,
+                "ready_events": 1,
+                "propagation_count": 0,
+                "alive_neurons": 2,
+                "tick_spikes": 0,
+                "births": 0,
+                "deaths": 0,
+                "prediction_error": 0.07807188484979724,
+                "mean_energy": 0.995,
+            },
+        ]
+        for snapshot, expected_tick in zip(snapshots, expected):
+            for key, value in expected_tick.items():
+                if isinstance(value, float):
+                    assert snapshot[key] == pytest.approx(value)
+                else:
+                    assert snapshot[key] == value

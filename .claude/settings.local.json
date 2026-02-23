@@ -7,7 +7,8 @@
       "Bash(python -m neurogenesis_lab:*)",
       "Bash(wc -l \"/d/NeuroGenesis Lab/src/neurogenesis_lab/\"*.py)",
       "Bash(pip install -e .)",
-      "Bash(where rustc)"
+      "Bash(where rustc)",
+      "Bash(find:*)"
     ]
   }
 }
