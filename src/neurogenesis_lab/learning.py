@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -408,7 +409,7 @@ class RuleComposer:
         missing_token: int,
         op: str,
         op_char: int,
-        calc: callable,
+        calc: Callable[[int, int], int],
     ) -> list[int] | None:
         """通用算术运算填充方法"""
         missing_indices = [

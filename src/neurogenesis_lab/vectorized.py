@@ -8,16 +8,29 @@
 from __future__ import annotations
 
 import math
+import pickle
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
 
 import numpy as np
 from scipy.sparse import csr_matrix, lil_matrix, coo_matrix
 from scipy.spatial.distance import cdist
 
 from neurogenesis_lab.config import (
+    DECAY_HIGH_MULTIPLIER,
+    DECAY_LOW_MULTIPLIER,
+    DENSITY_HIGH_THRESHOLD,
+    DENSITY_LOW_THRESHOLD,
+    ENDANGERED_DECAY_DISCOUNT,
+    ENDANGERED_EXIT_MULTIPLIER,
     MOVE_JITTER_RANGE,
+    POPULATION_HIGH_THRESHOLD,
+    POPULATION_LOW_THRESHOLD,
+    REPRO_SHARE_HIGH_MULTIPLIER,
+    REPRO_SHARE_LOW_MULTIPLIER,
+    REPRO_SHARE_MAX,
+    REPRO_SHARE_MIN,
     RESCUED_NEURON_ENERGY,
     SCHEMA_VERSION,
     SPAWN_POSITION_JITTER,
@@ -160,6 +173,49 @@ class VectorizedNetwork:
     reproduction_share: float = 0.4
     mutation_scale: float = 0.05
     min_neurons: int = 2
+    energy_cap: float = 5.0
+    corpse_ttl: int = 50
+    adaptive_decay: bool = True
+    adaptive_reproduction: bool = True
+    endangered_threshold: int = 10
+
+    # 多模型类型向量（0=LIF, 1=Izhikevich, 2=AdEx）
+    model_type: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.int32))
+    # Izhikevich 额外参数
+    izh_a: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
+    izh_b: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
+    izh_c: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
+    izh_d: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
+    # AdEx 额外参数
+    adex_delta_t: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
+    adex_tau_w: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
+    adex_a: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
+    adex_b_param: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
+    adex_v_peak: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
+    # 适应电流 w（AdEx/Izh 恢复变量统一使用 self.u）
+
+    # 尸体回收系统
+    corpse_mask: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.bool_)
+    )
+    corpse_timer: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.int32)
+    )
+    corpse_energy: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.float64)
+    )
+    _corpse_decay_rate: float = 0.02
+
+    # 濒危模式标志
+    _endangered_mode: bool = False
 
     # 空间索引
     spatial: SpatialGrid = field(default_factory=SpatialGrid)
@@ -179,7 +235,7 @@ class VectorizedNetwork:
     expected_state: np.ndarray | None = None
     schema_version: str = SCHEMA_VERSION
 
-    def _resolve_neuron_index(self, src_id: Any) -> int | None:
+    def _resolve_neuron_index(self, src_id: int | str) -> int | None:
         if isinstance(src_id, int):
             idx = src_id
         elif isinstance(src_id, str):
@@ -230,7 +286,10 @@ class VectorizedNetwork:
         energy_init: float = 1.0,
         spread: float = 10.0,
     ) -> None:
-        """初始化 N 个 LIF 神经元，分配状态向量和空稀疏矩阵。
+        """初始化 N 个神经元，分配状态向量和空稀疏矩阵。
+
+        支持混合模型初始化：默认全部 LIF，可通过 model_types 指定每个神经元的类型
+        （0=LIF, 1=Izhikevich, 2=AdEx）。
 
         Args:
             count: 神经元数量。
@@ -257,6 +316,27 @@ class VectorizedNetwork:
         self.tau_m = np.full(count, tau_m, dtype=np.float64)
         self.r_m = np.full(count, r_m, dtype=np.float64)
         self.spike_cost = np.full(count, spike_cost_val, dtype=np.float64)
+
+        # 默认全部 LIF 类型
+        self.model_type = np.zeros(count, dtype=np.int32)
+
+        # Izhikevich 默认参数
+        self.izh_a = np.full(count, 0.02, dtype=np.float64)
+        self.izh_b = np.full(count, 0.2, dtype=np.float64)
+        self.izh_c = np.full(count, -65.0, dtype=np.float64)
+        self.izh_d = np.full(count, 8.0, dtype=np.float64)
+
+        # AdEx 默认参数
+        self.adex_delta_t = np.full(count, 2.0, dtype=np.float64)
+        self.adex_tau_w = np.full(count, 30.0, dtype=np.float64)
+        self.adex_a = np.full(count, 0.001, dtype=np.float64)
+        self.adex_b_param = np.full(count, 0.0805, dtype=np.float64)
+        self.adex_v_peak = np.full(count, 20.0, dtype=np.float64)
+
+        # 尸体回收系统初始化
+        self.corpse_mask = np.zeros(count, dtype=np.bool_)
+        self.corpse_timer = np.zeros(count, dtype=np.int32)
+        self.corpse_energy = np.zeros(count, dtype=np.float64)
 
         self.weight_matrix = csr_matrix((count, count), dtype=np.float64)
         self.delay_matrix = csr_matrix((count, count), dtype=np.int32)
@@ -310,7 +390,9 @@ class VectorizedNetwork:
     def tick(
         self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None
     ) -> TickSnapshot:
-        """执行一个向量化仿真时间步 — 批量 LIF 更新 + 稀疏矩阵传播。
+        """执行一个向量化仿真时间步 — 批量多模型更新 + 稀疏矩阵传播。
+
+        支持 LIF / Izhikevich / AdEx 混合模型，通过 model_type 掩码分组计算。
 
         Args:
             tick: 当前时间步编号。
@@ -323,11 +405,19 @@ class VectorizedNetwork:
         Raises:
             ValueError: input_currents 形状与神经元数量不匹配时抛出。
         """
+        # 濒危模式判定
+        alive_count = int(np.sum(self.alive))
+        if alive_count <= self.endangered_threshold and not self._endangered_mode:
+            self._endangered_mode = True
+        if alive_count > self.endangered_threshold * ENDANGERED_EXIT_MULTIPLIER:
+            self._endangered_mode = False
+
         combined_inputs, ready_events = self._inject_inputs(tick, dt, input_currents)
-        alive_mask, spike_indices, tick_spikes = self._vectorized_lif_step(
+        alive_mask, spike_indices, tick_spikes = self._vectorized_dynamics_step(
             dt, combined_inputs
         )
         propagation_count = self._propagate_spikes(tick, spike_indices)
+        self._update_corpses()
         births, deaths = self._run_vectorized_evolution(tick, alive_mask)
         self.total_spikes += tick_spikes
         self.total_ticks += 1
@@ -365,34 +455,118 @@ class VectorizedNetwork:
             )
         return combined_inputs, ready_events
 
-    def _vectorized_lif_step(
+    # ------------------------------------------------------------------
+    # 多模型动力学步进
+    # ------------------------------------------------------------------
+
+    def _vectorized_dynamics_step(
         self, dt: float, combined_inputs: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, int]:
-        alive_mask = self.alive
-        dv = np.where(
-            alive_mask,
-            (
-                -(self.v - self.v_rest)
-                + self.r_m * combined_inputs * self.input_current_scale
-            )
-            / self.tau_m,
-            0.0,
-        )
-        self.v = np.where(alive_mask, self.v + dv * dt, self.v)
+        """统一多模型动力学调度器 — 按 model_type 分组计算。
 
+        model_type: 0=LIF, 1=Izhikevich, 2=AdEx。
+
+        Args:
+            dt: 时间步长 (ms)。
+            combined_inputs: 汇总输入电流向量 (n,)。
+
+        Returns:
+            (alive_mask, spike_indices, tick_spikes)
+        """
+        alive_mask = self.alive.copy()
+        scaled_input = combined_inputs * self.input_current_scale
+
+        # LIF 子集 (model_type == 0)
+        lif_mask = alive_mask & (self.model_type == 0)
+        if np.any(lif_mask):
+            self._lif_step(dt, scaled_input, lif_mask)
+
+        # Izhikevich 子集 (model_type == 1)
+        izh_mask = alive_mask & (self.model_type == 1)
+        if np.any(izh_mask):
+            self._izh_step(dt, scaled_input, izh_mask)
+
+        # AdEx 子集 (model_type == 2)
+        adex_mask = alive_mask & (self.model_type == 2)
+        if np.any(adex_mask):
+            self._adex_step(dt, scaled_input, adex_mask)
+
+        # NaN / Inf 安全回退
         nan_mask = ~np.isfinite(self.v)
         self.v[nan_mask] = self.v_reset[nan_mask]
 
+        # 收集放电
         spike_mask = alive_mask & (self.v >= self.v_th)
         spike_indices = np.where(spike_mask)[0]
         tick_spikes = len(spike_indices)
-        self.v[spike_mask] = self.v_reset[spike_mask]
+
+        # 重置放电神经元
+        # LIF / Izh 重置
+        lif_izh_spike = spike_mask & (self.model_type != 2)
+        self.v[lif_izh_spike] = self.v_reset[lif_izh_spike]
+        # Izh 恢复变量重置
+        izh_spike = spike_mask & (self.model_type == 1)
+        self.v[izh_spike] = self.izh_c[izh_spike]
+        self.u[izh_spike] += self.izh_d[izh_spike]
+        # AdEx 重置
+        adex_spike = spike_mask & (self.model_type == 2)
+        self.v[adex_spike] = self.v_reset[adex_spike]
+        self.u[adex_spike] += self.adex_b_param[adex_spike]
+
+        # 能量消耗 & 放电计数
         self.energy[spike_mask] = np.maximum(
             0.0, self.energy[spike_mask] - self.spike_cost[spike_mask]
         )
         self.spike_count[spike_mask] += 1
         self._last_spike_mask = spike_mask.copy()
         return alive_mask, spike_indices, tick_spikes
+
+    def _lif_step(self, dt: float, scaled_input: np.ndarray, mask: np.ndarray) -> None:
+        """LIF (Leaky Integrate-and-Fire) 向量化步进。"""
+        dv = (
+            -(self.v[mask] - self.v_rest[mask]) + self.r_m[mask] * scaled_input[mask]
+        ) / self.tau_m[mask]
+        self.v[mask] += dv * dt
+
+    def _izh_step(self, dt: float, scaled_input: np.ndarray, mask: np.ndarray) -> None:
+        """Izhikevich 模型向量化步进。
+
+        dv/dt = 0.04v² + 5v + 140 - u + I
+        du/dt = a(bv - u)
+        """
+        v = self.v[mask]
+        u = self.u[mask]
+        I = scaled_input[mask]  # noqa: E741
+        dv = 0.04 * v * v + 5.0 * v + 140.0 - u + I
+        du = self.izh_a[mask] * (self.izh_b[mask] * v - u)
+        self.v[mask] += dv * dt
+        self.u[mask] += du * dt
+
+    def _adex_step(self, dt: float, scaled_input: np.ndarray, mask: np.ndarray) -> None:
+        """AdEx (Adaptive Exponential) 模型向量化步进。
+
+        C dv/dt = -g_L(v - E_L) + g_L Δ_T exp((v - V_T)/Δ_T) - w + I
+        τ_w dw/dt = a(v - E_L) - w
+
+        简化：使用 tau_m 替代 C/g_L，v_rest 替代 E_L，v_th 替代 V_T。
+        """
+        v = self.v[mask]
+        u = self.u[mask]
+        I = scaled_input[mask]  # noqa: E741
+        delta_t = self.adex_delta_t[mask]
+        # 指数项，裁切避免溢出
+        exp_arg = np.clip(
+            (v - self.v_th[mask]) / np.maximum(delta_t, 1e-6), -50.0, 50.0
+        )
+        dv = (
+            -(v - self.v_rest[mask])
+            + delta_t * np.exp(exp_arg)
+            - self.r_m[mask] * u
+            + self.r_m[mask] * I
+        ) / self.tau_m[mask]
+        du = (self.adex_a[mask] * (v - self.v_rest[mask]) - u) / self.adex_tau_w[mask]
+        self.v[mask] += dv * dt
+        self.u[mask] += du * dt
 
     def _propagate_spikes(self, tick: int, spike_indices: np.ndarray) -> int:
         propagation_count = 0
@@ -421,10 +595,104 @@ class VectorizedNetwork:
         self.total_propagations += propagation_count
         return propagation_count
 
+    # ------------------------------------------------------------------
+    # 尸体回收系统
+    # ------------------------------------------------------------------
+
+    def _update_corpses(self) -> None:
+        """更新尸体状态 — TTL 递减、能量衰减、附近神经元拾取。"""
+        if not np.any(self.corpse_mask):
+            return
+
+        # TTL 递减
+        self.corpse_timer[self.corpse_mask] -= 1
+        # 能量衰减
+        self.corpse_energy[self.corpse_mask] = np.maximum(
+            0.0, self.corpse_energy[self.corpse_mask] - self._corpse_decay_rate
+        )
+
+        # 拾荒：存活神经元吸收半径内尸体能量
+        corpse_indices = np.where(self.corpse_mask & (self.corpse_energy > 0))[0]
+        for ci in corpse_indices:
+            cx, cy = float(self.pos[ci, 0]), float(self.pos[ci, 1])
+            nearby = self.spatial.query_radius(cx, cy, self.scavenger_radius, self.pos)
+            # 过滤出存活且非尸体的神经元
+            alive_nearby = [idx for idx in nearby if idx != ci and self.alive[idx]]
+            if alive_nearby:
+                # 选择最近的一个
+                dists = [
+                    (self.pos[idx, 0] - cx) ** 2 + (self.pos[idx, 1] - cy) ** 2
+                    for idx in alive_nearby
+                ]
+                nearest = alive_nearby[int(np.argmin(dists))]
+                self.energy[nearest] += self.corpse_energy[ci]
+                self.corpse_energy[ci] = 0.0
+
+        # 清理过期或无能量尸体
+        expired = self.corpse_mask & (
+            (self.corpse_timer <= 0) | (self.corpse_energy <= 0)
+        )
+        self.corpse_mask[expired] = False
+        self.corpse_timer[expired] = 0
+        self.corpse_energy[expired] = 0.0
+
+    # ------------------------------------------------------------------
+    # 自适应衰减 & 繁殖
+    # ------------------------------------------------------------------
+
+    def _calculate_adaptive_decay(self, alive_count: int) -> float:
+        """根据种群密度计算自适应能量衰减系数。
+
+        Args:
+            alive_count: 当前存活神经元数量。
+
+        Returns:
+            调整后的能量衰减值。
+        """
+        if not self.adaptive_decay:
+            return self.energy_decay
+        density_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
+        if density_ratio > DENSITY_HIGH_THRESHOLD:
+            return self.energy_decay * DECAY_HIGH_MULTIPLIER
+        elif density_ratio < DENSITY_LOW_THRESHOLD:
+            return self.energy_decay * DECAY_LOW_MULTIPLIER
+        return self.energy_decay
+
+    def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
+        """根据种群数量计算自适应繁殖份额。
+
+        Args:
+            alive_count: 当前存活神经元数量。
+
+        Returns:
+            调整后的繁殖能量分享比例。
+        """
+        if not self.adaptive_reproduction:
+            return self.reproduction_share
+        pop_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
+        if pop_ratio > POPULATION_HIGH_THRESHOLD:
+            return min(
+                REPRO_SHARE_MAX,
+                self.reproduction_share * REPRO_SHARE_HIGH_MULTIPLIER,
+            )
+        elif pop_ratio < POPULATION_LOW_THRESHOLD:
+            return max(
+                REPRO_SHARE_MIN,
+                self.reproduction_share * REPRO_SHARE_LOW_MULTIPLIER,
+            )
+        return self.reproduction_share
+
+    # ------------------------------------------------------------------
+    # 演化 tick
+    # ------------------------------------------------------------------
+
     def _run_vectorized_evolution(
         self, tick: int, alive_mask: np.ndarray
     ) -> tuple[int, int]:
         _ = tick
+        alive_count = int(np.sum(self.alive))
+
+        # 移动
         move_dx = np.random.uniform(-MOVE_JITTER_RANGE, MOVE_JITTER_RANGE, self.n)
         move_dy = np.random.uniform(-MOVE_JITTER_RANGE, MOVE_JITTER_RANGE, self.n)
         self.pos[alive_mask, 0] += move_dx[alive_mask]
@@ -432,12 +700,21 @@ class VectorizedNetwork:
         self.energy[alive_mask] = np.maximum(
             0.0, self.energy[alive_mask] - self.move_cost
         )
+
+        # 自适应衰减（含濒危折扣）
+        effective_decay = self._calculate_adaptive_decay(alive_count)
+        if self._endangered_mode:
+            effective_decay *= ENDANGERED_DECAY_DISCOUNT
         self.energy[alive_mask] = np.maximum(
-            0.0, self.energy[alive_mask] - self.energy_decay
+            0.0, self.energy[alive_mask] - effective_decay
         )
 
+        # 能量上限裁切
+        self.energy[alive_mask] = np.minimum(self.energy_cap, self.energy[alive_mask])
+
+        # 死亡判定
         death_mask = alive_mask & (self.energy <= 0.0)
-        alive_after = int(np.sum(alive_mask)) - int(np.sum(death_mask))
+        alive_after = alive_count - int(np.sum(death_mask))
         if alive_after < self.min_neurons:
             death_indices = np.where(death_mask)[0]
             if len(death_indices) > 0:
@@ -448,16 +725,23 @@ class VectorizedNetwork:
                 self.energy[saved] = RESCUED_NEURON_ENERGY
 
         deaths = int(np.sum(death_mask))
+        # 死亡神经元 → 尸体
+        dead_indices = np.where(death_mask)[0]
+        for di in dead_indices:
+            self.corpse_mask[di] = True
+            self.corpse_timer[di] = self.corpse_ttl
+            self.corpse_energy[di] = max(0.0, float(self.energy[di]))
         self.alive[death_mask] = False
         self.death_count += deaths
 
+        # 繁殖
         births = 0
         alive_count = int(np.sum(self.alive))
+        effective_share = self._calculate_adaptive_reproduction_share(alive_count)
         if alive_count < self.max_neurons:
             repro_mask = self.alive & (self.energy >= self.reproduction_threshold)
             repro_indices = np.where(repro_mask)[0]
             if len(repro_indices) > 0:
-                # 收集新边，最后用 COO 批量合并，避免 lil 中间格式开销
                 new_rows: list[int] = []
                 new_cols: list[int] = []
                 new_weights: list[float] = []
@@ -465,21 +749,26 @@ class VectorizedNetwork:
                 for i in repro_indices:
                     if alive_count + births >= self.max_neurons:
                         break
-                    dead_slots = np.where(~self.alive)[0]
+                    dead_slots = np.where(~self.alive & ~self.corpse_mask)[0]
                     if len(dead_slots) == 0:
                         break
                     slot = int(dead_slots[0])
-                    child_energy = self.energy[i] * self.reproduction_share
+                    child_energy = self.energy[i] * effective_share
                     self.energy[i] -= child_energy
 
                     self.v[slot] = self.v_rest[i]
                     self.u[slot] = 0.0
                     self.energy[slot] = child_energy
                     self.alive[slot] = True
+                    self.corpse_mask[slot] = False
+                    self.corpse_timer[slot] = 0
+                    self.corpse_energy[slot] = 0.0
                     self.pos[slot] = self.pos[i] + np.random.uniform(
                         -SPAWN_POSITION_JITTER, SPAWN_POSITION_JITTER, 2
                     )
                     self.spike_count[slot] = 0
+                    # 继承模型类型
+                    self.model_type[slot] = self.model_type[i]
                     self.tau_m[slot] = self.tau_m[i] * (
                         1.0
                         + np.random.uniform(-self.mutation_scale, self.mutation_scale)
@@ -488,7 +777,6 @@ class VectorizedNetwork:
                         1.0
                         + np.random.uniform(-self.mutation_scale, self.mutation_scale)
                     )
-                    # 双向连接：parent ↔ child
                     new_rows.extend([int(i), slot])
                     new_cols.extend([slot, int(i)])
                     new_weights.extend([SPAWN_LINK_WEIGHT, SPAWN_LINK_WEIGHT])
@@ -502,7 +790,6 @@ class VectorizedNetwork:
                     delta_d = coo_matrix(
                         (new_delays, (new_rows, new_cols)), shape=shape, dtype=np.int32
                     ).tocsr()
-                    # 合并：新边覆盖旧边（取最大值即可，因为新边权重固定为 1）
                     self.weight_matrix = self.weight_matrix + delta_w
                     self.delay_matrix = self.delay_matrix + delta_d
         self.birth_count += births
@@ -595,3 +882,62 @@ class VectorizedNetwork:
             ),
             "active_ratio": alive_count / self.n if self.n > 0 else 0.0,
         }
+
+    # ------------------------------------------------------------------
+    # Checkpoint 持久化
+    # ------------------------------------------------------------------
+
+    def save_checkpoint(self, path: str | Path, save_tick: int = 0) -> None:
+        """将向量化网络完整状态序列化为 pickle 文件。
+
+        Args:
+            path: checkpoint 文件路径。
+            save_tick: 当前 tick 编号，记入 payload。
+        """
+        filepath = Path(path)
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": self.schema_version,
+            "tick": save_tick,
+            "random_state": random.getstate(),
+            "numpy_random_state": np.random.get_state(),
+            "network": self,
+        }
+        with open(filepath, "wb") as f:
+            pickle.dump(payload, f)
+
+    @classmethod
+    def load_checkpoint(cls, path: str | Path) -> tuple["VectorizedNetwork", int]:
+        """从 pickle checkpoint 恢复向量化网络实例。
+
+        Args:
+            path: checkpoint 文件路径。
+
+        Returns:
+            (network, tick) 恢复的网络实例和保存时的 tick 编号。
+
+        Raises:
+            ValueError: schema 版本不兼容时抛出。
+            TypeError: 序列化对象类型不匹配时抛出。
+        """
+        filepath = Path(path)
+        with open(filepath, "rb") as f:
+            payload = pickle.load(f)  # noqa: S301
+        saved_version = payload.get("schema_version", "0.0")
+        current_major = SCHEMA_VERSION.split(".")[0]
+        saved_major = saved_version.split(".")[0]
+        if current_major != saved_major:
+            raise ValueError(
+                f"Schema 版本不兼容：当前 {SCHEMA_VERSION}，checkpoint {saved_version}"
+            )
+        net = payload.get("network")
+        if not isinstance(net, cls):
+            raise TypeError(
+                f"Checkpoint 中的对象类型不匹配：期望 {cls.__name__}，"
+                f"实际 {type(net).__name__}"
+            )
+        tick = payload.get("tick", 0)
+        random.setstate(payload["random_state"])
+        if "numpy_random_state" in payload:
+            np.random.set_state(payload["numpy_random_state"])
+        return net, tick

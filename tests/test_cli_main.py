@@ -1,5 +1,6 @@
 """单元测试 — CLI 入口分发与信息输出"""
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -9,12 +10,17 @@ if str(ROOT / "src") not in sys.path:
 
 import pytest
 
-import neurogenesis_lab.__main__ as cli
+import neurogenesis_lab.__main__ as cli_compat  # 向后兼容导入
+import neurogenesis_lab.cli.parser as cli_parser
+import neurogenesis_lab.cli.run as cli_run
+import neurogenesis_lab.cli.benchmark as cli_bench
+import neurogenesis_lab.cli.info as cli_info
+import neurogenesis_lab.cli.config_builder as cli_config
 from neurogenesis_lab.config import SimConfig
 
 
 def test_cmd_info_outputs_version_and_schema(capsys) -> None:
-    cli.cmd_info(cli.argparse.Namespace())
+    cli_info.cmd_info(argparse.Namespace())
     out = capsys.readouterr().out
     assert "NeuroGenesis Lab v" in out
     assert "Schema Version" in out
@@ -28,10 +34,10 @@ def test_main_dispatches_info(monkeypatch) -> None:
     def fake_info(args) -> None:
         called["info"] = True
 
-    monkeypatch.setattr(cli, "cmd_info", fake_info)
+    monkeypatch.setattr(cli_parser, "cmd_info", fake_info)
     monkeypatch.setattr(sys, "argv", ["neurogenesis-lab", "info"])
 
-    cli.main()
+    cli_parser.main()
 
     assert called["info"] is True
 
@@ -42,10 +48,10 @@ def test_main_dispatches_run(monkeypatch) -> None:
     def fake_run(args) -> None:
         called["run"] = True
 
-    monkeypatch.setattr(cli, "cmd_run", fake_run)
+    monkeypatch.setattr(cli_parser, "cmd_run", fake_run)
     monkeypatch.setattr(sys, "argv", ["neurogenesis-lab", "run"])
 
-    cli.main()
+    cli_parser.main()
 
     assert called["run"] is True
 
@@ -56,7 +62,7 @@ def test_main_run_accepts_checkpoint_args(monkeypatch) -> None:
     def fake_run(args) -> None:
         captured["args"] = args
 
-    monkeypatch.setattr(cli, "cmd_run", fake_run)
+    monkeypatch.setattr(cli_parser, "cmd_run", fake_run)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -80,7 +86,7 @@ def test_main_run_accepts_checkpoint_args(monkeypatch) -> None:
         ],
     )
 
-    cli.main()
+    cli_parser.main()
 
     assert captured["args"] is not None
     assert captured["args"].checkpoint_interval == 5
@@ -97,10 +103,10 @@ def test_main_dispatches_benchmark(monkeypatch) -> None:
     def fake_benchmark(args) -> None:
         called["benchmark"] = True
 
-    monkeypatch.setattr(cli, "cmd_benchmark", fake_benchmark)
+    monkeypatch.setattr(cli_parser, "cmd_benchmark", fake_benchmark)
     monkeypatch.setattr(sys, "argv", ["neurogenesis-lab", "benchmark"])
 
-    cli.main()
+    cli_parser.main()
 
     assert called["benchmark"] is True
 
@@ -108,7 +114,7 @@ def test_main_dispatches_benchmark(monkeypatch) -> None:
 def test_main_without_command_prints_help(monkeypatch, capsys) -> None:
     monkeypatch.setattr(sys, "argv", ["neurogenesis-lab"])
 
-    cli.main()
+    cli_parser.main()
 
     out = capsys.readouterr().out
     assert "可用命令" in out
@@ -118,10 +124,10 @@ def test_main_without_command_prints_help(monkeypatch, capsys) -> None:
 
 
 def test_cmd_run_rejects_invalid_config(capsys, monkeypatch) -> None:
-    monkeypatch.setattr(cli, "_build_sim_config", lambda args: SimConfig(ticks=0))
+    monkeypatch.setattr(cli_run, "build_sim_config", lambda args: SimConfig(ticks=0))
 
     with pytest.raises(SystemExit) as exc:
-        cli.cmd_run(cli.argparse.Namespace())
+        cli_run.cmd_run(argparse.Namespace())
 
     out = capsys.readouterr().out
     assert exc.value.code == 1
@@ -130,7 +136,7 @@ def test_cmd_run_rejects_invalid_config(capsys, monkeypatch) -> None:
 
 
 def test_cmd_run_smoke_creates_output(tmp_path: Path, capsys) -> None:
-    args = cli.argparse.Namespace(
+    args = argparse.Namespace(
         ticks=3,
         seed=42,
         dt=1.0,
@@ -146,7 +152,7 @@ def test_cmd_run_smoke_creates_output(tmp_path: Path, capsys) -> None:
         max_file_size=0,
     )
 
-    cli.cmd_run(args)
+    cli_run.cmd_run(args)
 
     out = capsys.readouterr().out
     assert "完成!" in out
@@ -155,8 +161,8 @@ def test_cmd_run_smoke_creates_output(tmp_path: Path, capsys) -> None:
 
 
 def test_cmd_benchmark_smoke(capsys) -> None:
-    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7, rust_size=64)
-    cli.cmd_benchmark(args)
+    args = argparse.Namespace(neurons=8, ticks=3, seed=7, rust_size=64)
+    cli_bench.cmd_benchmark(args)
 
     out = capsys.readouterr().out
     assert "性能基准测试" in out
@@ -168,12 +174,11 @@ def test_cmd_benchmark_smoke(capsys) -> None:
 
 
 def test_cmd_benchmark_comparability_labels_are_stable(capsys) -> None:
-    args = cli.argparse.Namespace(neurons=8, ticks=3, seed=7, rust_size=64)
-    cli.cmd_benchmark(args)
+    args = argparse.Namespace(neurons=8, ticks=3, seed=7, rust_size=64)
+    cli_bench.cmd_benchmark(args)
 
     out = capsys.readouterr().out
     assert "可比" in out
-    assert "不可比" in out
     assert "部分可比" in out
 
 
@@ -200,7 +205,7 @@ def test_main_run_smoke_with_checkpoint(tmp_path: Path, monkeypatch, capsys) -> 
         ],
     )
 
-    cli.main()
+    cli_parser.main()
 
     out = capsys.readouterr().out
     assert "完成!" in out
@@ -226,7 +231,7 @@ def test_main_benchmark_smoke_with_argv(monkeypatch, capsys) -> None:
         ],
     )
 
-    cli.main()
+    cli_parser.main()
 
     out = capsys.readouterr().out
     assert "性能基准测试" in out

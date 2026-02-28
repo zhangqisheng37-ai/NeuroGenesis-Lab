@@ -1,4 +1,5 @@
 __all__ = [
+    "cli",
     "config",
     "encoding",
     "logger",
@@ -7,10 +8,11 @@ __all__ = [
     "observability",
     "learning",
     "vectorized",
+    "visualization",
     "protocols",
     "core_bridge",
 ]
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 
-__version__ = "0.4.1"
+__version__ = "0.6.0"

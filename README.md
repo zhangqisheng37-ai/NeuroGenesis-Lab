@@ -6,15 +6,17 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 
 ## 当前状态
 
-- **当前版本**：v0.4.1
-- 阶段六 P1（类职责重构）+ P3（魔法值消除）+ P6（测试补充）已交付。
-- `Neuron` 拆分为 `NeuronDynamics`/`NeuronEvolution`/`NeuronMemory` 三组件，`Network` 拆分为 `NetworkConfig`/`NetworkState`，外部 API 完全兼容。
-- 16 个共享常量提取至 `config.py`，消除散布的硬编码魔法值。
-- 最新测试基线：310 passed, 0 failed（2026-02-25）。
+- **当前版本**：v0.6.0
+- 阶段七（工程基础设施完善与双引擎功能对齐）开发中。
+- `VectorizedNetwork` 功能对齐：多模型动力学（LIF/Izh/AdEx）、尸体回收、自适应衰减/繁殖、能量上限、濒危模式、checkpoint 持久化。
+- CLI 重构为 `cli/` 子包（6 个模块），`__main__.py` 精简为兼容存根。
+- CI/CD 管道：GitHub Actions 多平台测试 + lint + 覆盖率 + 文档发布。
+- API 文档：mkdocs-material + mkdocstrings-python 自动生成。
+- 最新测试基线：347 passed, 0 failed, 覆盖率 92.61%（2026-02-25）。
 
 ## 核心特性
 
-- **生物启发模型**：基于能量约束的 LIF (Leaky Integrate-and-Fire) 神经元模型，支持动态突触与可塑性。
+- **生物启发模型**：基于能量约束的多模型脉冲神经元 — LIF (Leaky Integrate-and-Fire)、Izhikevich、AdEx (Adaptive Exponential)，支持动态突触与可塑性。
 - **演化系统**：内置自然选择机制，包括基于适应度的繁殖、突变、死亡与尸体回收（Scavenging）。
 - **空间动力学**：神经元具有二维空间坐标，支持基于空间距离的连接策略（Proximity Connection）与消耗能量的迁移（Migration）行为。
 - **混合学习引擎**：结合符号规则发现 (Rule Discovery) 与神经动力学预测，支持从脉冲序列中提取因果逻辑，并与仿真流自动集成（AutoLearner）。
@@ -141,6 +143,19 @@ cmd /c $cmd
 
 ## 文档
 
+### 在线文档
+
+API 文档通过 mkdocs 自动生成，push 到 main 时部署到 GitHub Pages。
+
+本地构建预览：
+
+```bash
+pip install -e ".[docs]"
+mkdocs serve
+```
+
+### 项目文档
+
 项目文档位于 `docs/` 目录：
 
 | 文档 | 说明 |
@@ -151,9 +166,9 @@ cmd /c $cmd
 | [可观测性指标](docs/metrics.md) | 输出数据字段说明 |
 | [风险清单](docs/risk_list.md) | 当前已知风险与待办事项 |
 | [更新日志](docs/CHANGELOG.md) | 版本变更历史 |
-| [阶段四开发清单](docs/开发清单04_已完成.md) | 阶段四交付与验收状态 |
 | [阶段五开发清单](docs/开发清单05_已完成.md) | Rust 混合架构阶段交付状态 |
-| [阶段六开发清单](docs/开发清单06.md) | 代码质量治理与架构精炼 |
+| [阶段六开发清单](docs/开发清单06_已完成.md) | 代码质量治理与架构精炼 |
+| [阶段七开发清单](docs/开发清单07.md) | 工程基础设施完善与双引擎功能对齐 |
 
 ## 开发路线图
 
@@ -164,4 +179,5 @@ cmd /c $cmd
 - [x] [阶段三：符号学习与规则发现](docs/开发清单03_已完成.md)
 - [x] [阶段四：长程稳定 + 可视化 + 学习集成 + 持久化恢复](docs/开发清单04_已完成.md)
 - [x] [阶段五：核心引擎重构与性能突破（Rust 混合架构）](docs/开发清单05_已完成.md)
-- [ ] [阶段六：代码质量治理与架构精炼](docs/开发清单06.md)（P0/P1/P3/P6 已完成，P2/P4/P5 待推进）
+- [x] [阶段六：代码质量治理与架构精炼](docs/开发清单06_已完成.md)
+- [ ] [阶段七：工程基础设施完善与双引擎功能对齐](docs/开发清单07.md)（P0~P7 开发中）

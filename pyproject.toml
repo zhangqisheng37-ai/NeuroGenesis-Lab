@@ -4,8 +4,9 @@
  
 [project]
 name = "neurogenesis-lab"
-version = "0.4.1"
+version = "0.6.0"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 dependencies = [
   "numpy>=1.24",
   "scipy>=1.10",
@@ -15,9 +16,19 @@ dependencies = [
 [project.optional-dependencies]
 viz = ["matplotlib>=3.5"]
 rust = ["maturin>=1.7"]
+dev = [
+  "pytest>=7.0",
+  "pytest-cov>=4.0",
+  "ruff>=0.4",
+  "mypy>=1.10",
+]
+docs = [
+  "mkdocs-material>=9.5",
+  "mkdocstrings[python]>=0.25",
+]
 
 [project.scripts]
-neurogenesis-lab = "neurogenesis_lab.__main__:main"
+neurogenesis-lab = "neurogenesis_lab.cli:main"
 
 [tool.maturin]
 manifest-path = "rust_src/neurogenesis_core/Cargo.toml"
@@ -32,3 +43,13 @@ bindings = "pyo3"
 testpaths = ["tests"]
 python_files = ["test_*.py", "[0-9][0-9]_*.py"]
 addopts = "--cov=src/neurogenesis_lab --cov-report=term-missing --cov-fail-under=75 --basetemp=.pytest_tmp"
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+strict_optional = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+warn_unused_ignores = true
+no_implicit_optional = true

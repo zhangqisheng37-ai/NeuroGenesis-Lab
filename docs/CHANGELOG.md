@@ -4,6 +4,73 @@
 
 ---
 
+## v0.6.0 (2026-02-25)
+
+### Phase 7（工程基础设施完善与双引擎功能对齐）
+
+- **P0：CI/CD 管道**
+  - 新增 `.github/workflows/python-test.yml` — 多平台 (Ubuntu/Windows) × 多版本 (3.10/3.11/3.12) 测试矩阵。
+  - 新增 `.github/workflows/lint.yml` — ruff check + format --check + mypy。
+  - 新增 `.github/workflows/coverage.yml` — PR 覆盖率报告。
+  - 新增 `.github/workflows/docs.yml` — push 到 main 时自动构建部署 API 文档。
+  - `pyproject.toml` 新增 `[project.optional-dependencies] dev` 组。
+
+- **P1：版本治理**
+  - 版本号统一升级至 `0.6.0`（pyproject.toml / `__init__.py` / README.md）。
+  - 新增 `LICENSE`（MIT 许可证）。
+  - 新增 `CONTRIBUTING.md`（贡献指南）。
+  - 新增 `src/neurogenesis_lab/py.typed`（PEP 561 标记）。
+  - `pyproject.toml` 新增 `license` 字段和 `[tool.mypy]` 配置。
+
+- **P2：VectorizedNetwork 功能对齐**（核心变更）
+  - **多模型动力学**：新增 `_vectorized_dynamics_step()` 统一调度器，按 `model_type` 掩码分组计算 LIF/Izhikevich/AdEx。
+    - `_lif_step()` — 标准 LIF 向量化步进。
+    - `_izh_step()` — Izhikevich (v²+5v+140) 动力学。
+    - `_adex_step()` — AdEx 指数自适应动力学（含溢出裁切）。
+    - 放电重置按模型类型分别处理（LIF→v_reset, Izh→c+d, AdEx→v_reset+b）。
+  - **尸体回收系统**：新增 `corpse_mask` / `corpse_timer` / `corpse_energy` 数组。
+    - `_update_corpses()` — TTL 递减、能量衰减、空间网格内拾荒（最近存活神经元吸收尸体全部剩余能量）。
+    - 死亡神经元→尸体转化：在 `_run_vectorized_evolution()` 中死亡时自动填充尸体数组。
+    - 繁殖时排除尸体槽位（`~self.corpse_mask`），子代清除尸体标记。
+  - **自适应衰减**：新增 `_calculate_adaptive_decay(alive_count)`，使用 `DENSITY_HIGH/LOW_THRESHOLD` 密度阈值调节衰减系数，配合 `ENDANGERED_DECAY_DISCOUNT` 濒危折扣。
+  - **自适应繁殖**：新增 `_calculate_adaptive_reproduction_share(alive_count)`，使用 `POPULATION_HIGH/LOW_THRESHOLD` 种群阈值调节繁殖份额，`REPRO_SHARE_MAX/MIN` 限幅。
+  - **能量上限**：`energy_cap=5.0`，每 tick 演化后裁切存活神经元能量。
+  - **濒危模式**：`endangered_threshold=10`，存活数低于阈值时自动进入濒危模式减缓衰减，超过退出倍数时自动退出。
+  - **Checkpoint 持久化**：`save_checkpoint(path, tick)` / `load_checkpoint(path)` 支持完整网络状态序列化、schema 版本校验、随机数状态恢复。
+  - **模型继承**：繁殖时子代继承父代 `model_type`。
+  - 新增 40+ 个 dataclass 字段（多模型参数、尸体系统、自适应配置）。
+
+- **P3：CLI 模块拆分**
+  - 创建 `src/neurogenesis_lab/cli/` 子包（6 个模块）：
+    - `__init__.py`、`parser.py`、`config_builder.py`、`run.py`、`benchmark.py`、`info.py`。
+  - `__main__.py` 精简为 ~20 行兼容存根。
+  - `pyproject.toml` 入口点更新为 `neurogenesis_lab.cli:main`。
+  - Benchmark 对照表更新：`neuron_dynamics_model` 标记为 "可比"。
+
+- **P4：API 文档骨架**
+  - 新增 `mkdocs.yml` — mkdocs-material + mkdocstrings-python 配置。
+  - 新增 `docs_site/` 目录：API 参考（9 模块）、教程、案例研究、参数/架构/指标文档。
+  - `pyproject.toml` 新增 `[project.optional-dependencies] docs` 组。
+
+- **P5：测试基础设施**
+  - 新增 `tests/conftest.py` — 5 个共享 fixture（`sample_config` / `small_network` / `small_vectorized` / `tmp_output_dir` / `sensitive_neurons`）。
+
+- **P6：类型标注收紧**
+  - `vectorized.py`：`_resolve_neuron_index(src_id: Any)` → `int | str`。
+  - `visualization.py`：`on_tick(network: Any)` → `object | None`。
+  - `learning.py`：`calc: callable` → `Callable[[int, int], int]`。
+
+- **P7：README / 文档同步**
+  - README 更新：当前状态、核心特性（多模型）、文档表格、路线图。
+  - 新增在线文档构建说明。
+
+- **测试**
+  - 新增 37 个 P2 测试（`test_vectorized_p2.py`）：多模型动力学、尸体回收、自适应衰减/繁殖、能量上限、濒危模式、checkpoint、边界条件。
+  - 总计：347 passed, 0 failed, 覆盖率 92.61%。
+  - vectorized.py 覆盖率：67% → 97%。
+
+---
+
 ## v0.4.1-p6 (2026-02-24)
 
 ### Phase 6（P1 类职责重构 + P3 魔法值消除 + P6 测试补充）

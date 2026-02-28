@@ -94,7 +94,11 @@ def plot_energy_distribution(
         # 能量分布直方图（最后一个时刻）
         if mean_energy:
             ax2.hist(
-                mean_energy[-50:], bins=20, color="#e74c3c", alpha=0.7, edgecolor="black"
+                mean_energy[-50:],
+                bins=20,
+                color="#e74c3c",
+                alpha=0.7,
+                edgecolor="black",
             )
             ax2.set_xlabel("能量值", fontsize=12)
             ax2.set_ylabel("频次", fontsize=12)
@@ -275,7 +279,13 @@ def plot_network_topology(
             plt.colorbar(scatter, ax=ax, label="能量")
         else:
             ax.scatter(
-                xs, ys, color="#3498db", s=100, alpha=0.8, edgecolors="black", linewidth=1
+                xs,
+                ys,
+                color="#3498db",
+                s=100,
+                alpha=0.8,
+                edgecolors="black",
+                linewidth=1,
             )
 
         ax.set_xlabel("X 坐标", fontsize=12)
@@ -426,7 +436,9 @@ class LiveMonitor:
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         self._initialized = True
 
-    def on_tick(self, tick: int, snapshot: dict[str, Any], network: Any = None) -> None:
+    def on_tick(
+        self, tick: int, snapshot: dict[str, Any], network: object | None = None
+    ) -> None:
         """每个 tick 后调用，按间隔更新图表
 
         Args:

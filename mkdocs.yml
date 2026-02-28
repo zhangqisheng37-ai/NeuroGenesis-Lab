@@ -1,0 +1,79 @@
+site_name: NeuroGenesis Lab 文档
+site_description: 神经演化仿真框架 — API 参考与教程
+site_url: https://example.github.io/neurogenesis-lab/
+repo_url: https://github.com/example/neurogenesis-lab
+repo_name: neurogenesis-lab
+docs_dir: docs_site
+
+theme:
+  name: material
+  language: zh
+  palette:
+    - scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: 切换暗色模式
+    - scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: 切换亮色模式
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.annotate
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+            show_root_heading: true
+            members_order: source
+            docstring_style: google
+            merge_init_into_class: true
+            show_signature_annotations: true
+
+nav:
+  - 首页: index.md
+  - 快速开始: quickstart.md
+  - 教程:
+      - 第一个实验: tutorials/tutorial_01_first_experiment.md
+      - 参数调优: tutorials/tutorial_02_parameter_tuning.md
+      - 自定义神经元: tutorials/tutorial_03_custom_neuron.md
+  - 案例研究:
+      - 演化案例: case_studies/case_study_evolution.md
+      - 学习案例: case_studies/case_study_learning.md
+  - API 参考:
+      - config: api/config.md
+      - neuron: api/neuron.md
+      - network: api/network.md
+      - vectorized: api/vectorized.md
+      - learning: api/learning.md
+      - encoding: api/encoding.md
+      - observability: api/observability.md
+      - protocols: api/protocols.md
+      - cli: api/cli.md
+  - 架构设计: architecture.md
+  - 参数参考: parameters.md
+  - 指标说明: metrics.md
+  - 更新日志: changelog.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - toc:
+      permalink: true
