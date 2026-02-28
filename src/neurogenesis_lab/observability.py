@@ -6,7 +6,11 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from neurogenesis_lab.config import SCHEMA_VERSION
+from neurogenesis_lab.config import (
+    SCHEMA_VERSION,
+    ASYNC_DRAIN_TIMEOUT,
+    ASYNC_JOIN_TIMEOUT,
+)
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import Neuron
 
@@ -140,8 +144,8 @@ class AsyncJsonlWriter:
             self._closed = True
             self._cond.notify_all()
         # 等待后台线程排空并退出，使用 Event 替代轮询
-        self._drain_event.wait(timeout=5.0)
-        self._thread.join(timeout=2.0)
+        self._drain_event.wait(timeout=ASYNC_DRAIN_TIMEOUT)
+        self._thread.join(timeout=ASYNC_JOIN_TIMEOUT)
 
     def _promote_if_needed_locked(self, force: bool) -> None:
         if self._pending_idx is not None:
@@ -172,7 +176,9 @@ class AsyncJsonlWriter:
 
                     pending_idx = self._pending_idx
                     self._pending_idx = None
-                    batch = self._buffers[pending_idx] if pending_idx is not None else []
+                    batch = (
+                        self._buffers[pending_idx] if pending_idx is not None else []
+                    )
                     if pending_idx is not None:
                         self._buffers[pending_idx] = []
                     self._cond.notify_all()
@@ -363,9 +369,25 @@ class NetworkObserver:
 
     # 向后兼容
     def get_tick_metrics(self, tick: int) -> dict:
+        """获取指定 tick 的网络指标（向后兼容别名）。
+
+        Args:
+            tick: 当前时间步编号。
+
+        Returns:
+            网络指标字典，同 ``get_network_metrics()``。
+        """
         return self.get_network_metrics(tick)
 
     def get_neuron_detail(self, neuron_id: str) -> dict | None:
+        """获取单个神经元详细指标（向后兼容别名）。
+
+        Args:
+            neuron_id: 目标神经元 ID。
+
+        Returns:
+            神经元指标字典，同 ``get_neuron_metrics()``。
+        """
         return self.get_neuron_metrics(neuron_id)
 
     def get_debug_info(self, tick: int) -> dict:
@@ -534,9 +556,15 @@ class ObservabilityLogger:
         self._writer.append(summary)
 
     def get_output_path(self) -> Path:
+        """获取当前实验输出目录路径。
+
+        Returns:
+            输出文件所在的 Path 对象。
+        """
         return self._output_path
 
     def close(self) -> None:
+        """关闭日志记录器，释放底层写入器资源。"""
         self._close_writer()
 
     def __del__(self) -> None:

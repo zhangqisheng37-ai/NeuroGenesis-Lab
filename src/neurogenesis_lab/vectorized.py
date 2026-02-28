@@ -21,6 +21,10 @@ from neurogenesis_lab.config import (
     RESCUED_NEURON_ENERGY,
     SCHEMA_VERSION,
     SPAWN_POSITION_JITTER,
+    PE_SMOOTHING_ALPHA,
+    SPATIAL_REBUILD_INTERVAL,
+    SPAWN_LINK_WEIGHT,
+    SPAWN_LINK_DELAY,
 )
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import safe_float
@@ -472,7 +476,9 @@ class VectorizedNetwork:
                     self.u[slot] = 0.0
                     self.energy[slot] = child_energy
                     self.alive[slot] = True
-                    self.pos[slot] = self.pos[i] + np.random.uniform(-SPAWN_POSITION_JITTER, SPAWN_POSITION_JITTER, 2)
+                    self.pos[slot] = self.pos[i] + np.random.uniform(
+                        -SPAWN_POSITION_JITTER, SPAWN_POSITION_JITTER, 2
+                    )
                     self.spike_count[slot] = 0
                     self.tau_m[slot] = self.tau_m[i] * (
                         1.0
@@ -485,8 +491,8 @@ class VectorizedNetwork:
                     # 双向连接：parent ↔ child
                     new_rows.extend([int(i), slot])
                     new_cols.extend([slot, int(i)])
-                    new_weights.extend([1.0, 1.0])
-                    new_delays.extend([1, 1])
+                    new_weights.extend([SPAWN_LINK_WEIGHT, SPAWN_LINK_WEIGHT])
+                    new_delays.extend([SPAWN_LINK_DELAY, SPAWN_LINK_DELAY])
                     births += 1
                 if new_rows:
                     shape = (self.n, self.n)
@@ -519,7 +525,7 @@ class VectorizedNetwork:
     ) -> TickSnapshot:
 
         # 更新空间索引
-        if self.total_ticks % 10 == 0:
+        if self.total_ticks % SPATIAL_REBUILD_INTERVAL == 0:
             self.spatial.build(self.pos)
 
         # PE 计算
@@ -531,7 +537,7 @@ class VectorizedNetwork:
             pe = 0.0
         else:
             pe = float(np.sqrt(np.sum((actual - self.expected_state) ** 2)))
-            self.expected_state = self.expected_state + 0.3 * (
+            self.expected_state = self.expected_state + PE_SMOOTHING_ALPHA * (
                 actual - self.expected_state
             )
         self._pe_history.append(pe)

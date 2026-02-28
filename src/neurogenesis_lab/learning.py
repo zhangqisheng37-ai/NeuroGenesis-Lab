@@ -4,6 +4,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from neurogenesis_lab.config import ASCII_PRINTABLE_MIN, ASCII_PRINTABLE_MAX
 from neurogenesis_lab.core_bridge import mine_pattern_counts_safe
 
 if TYPE_CHECKING:
@@ -393,6 +394,7 @@ class RuleComposer:
 
     _ASCII_DIGIT_0 = ord("0")  # 48
     _ASCII_DIGIT_9 = ord("9")  # 57
+    _ASCII_EQUALS = ord("=")  # 61
 
     @staticmethod
     def _digit_value(token: int) -> int | None:
@@ -416,7 +418,7 @@ class RuleComposer:
             return None
         if len(sequence) < 5:
             return None
-        if sequence[1] != op_char or sequence[3] != ord("="):
+        if sequence[1] != op_char or sequence[3] != RuleComposer._ASCII_EQUALS:
             return None
         left = self._digit_value(sequence[0])
         right = self._digit_value(sequence[2])
@@ -640,7 +642,9 @@ class AutoLearner:
             if len(tokens) >= 3:
                 samples.append(tokens)
             # 提取表达式字符串
-            raw_expr = "".join(chr(t) for t in tokens if 32 <= t < 127)
+            raw_expr = "".join(
+                chr(t) for t in tokens if ASCII_PRINTABLE_MIN <= t < ASCII_PRINTABLE_MAX
+            )
             if "=" in raw_expr:
                 expressions.append(raw_expr)
 

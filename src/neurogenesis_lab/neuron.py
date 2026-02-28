@@ -7,7 +7,16 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable
 from uuid import uuid4
 
-from neurogenesis_lab.config import HERITABLE_ATTRS, SPAWN_POSITION_JITTER
+from neurogenesis_lab.config import (
+    HERITABLE_ATTRS,
+    SPAWN_POSITION_JITTER,
+    NOVELTY_DECAY_STEP,
+    NOVELTY_GROWTH_STEP,
+    STATE_NATURAL_DECAY,
+    REWARD_EMOTION_SCALE,
+    RECENT_TOKEN_WINDOW,
+    NEURON_MOVE_JITTER,
+)
 from neurogenesis_lab.encoding import Event
 
 
@@ -280,9 +289,7 @@ class Neuron:
             }
             object.__setattr__(self, "_evolution", NeuronEvolution(**evo_kwargs))
             mem_kwargs = {
-                f: self.__dict__[f]
-                for f in _NEURON_MEMORY_FIELDS
-                if f in self.__dict__
+                f: self.__dict__[f] for f in _NEURON_MEMORY_FIELDS if f in self.__dict__
             }
             object.__setattr__(self, "_memory", NeuronMemory(**mem_kwargs))
             for fname in _all:
@@ -303,7 +310,9 @@ class Neuron:
         """
         if not self.alive:
             return []
-        recent_tokens = [item.token_id for item in list(self.mem)[-8:]]
+        recent_tokens = [
+            item.token_id for item in list(self.mem)[-RECENT_TOKEN_WINDOW:]
+        ]
         self.mem.append(event)
         self.last_event = event
         self.energy = max(0.0, self.energy + self.input_gain)
@@ -312,9 +321,13 @@ class Neuron:
             self.transitions[(prev.token_id, event.token_id)] += 1
             self._observe_dirty = True
         if event.token_id in recent_tokens:
-            self.states["novelty"] = max(0.0, self.states["novelty"] - 0.02)
+            self.states["novelty"] = max(
+                0.0, self.states["novelty"] - NOVELTY_DECAY_STEP
+            )
         else:
-            self.states["novelty"] = min(1.0, self.states["novelty"] + 0.1)
+            self.states["novelty"] = min(
+                1.0, self.states["novelty"] + NOVELTY_GROWTH_STEP
+            )
         return []
 
     def update(self, dt: float, input_current: float) -> bool:
@@ -379,8 +392,8 @@ class Neuron:
             return
         # 只有能量充足时才移动
         if self.energy > self.move_cost * 2:
-            dx = random.uniform(-0.5, 0.5)
-            dy = random.uniform(-0.5, 0.5)
+            dx = random.uniform(-NEURON_MOVE_JITTER, NEURON_MOVE_JITTER)
+            dy = random.uniform(-NEURON_MOVE_JITTER, NEURON_MOVE_JITTER)
             self.pos = (self.pos[0] + dx, self.pos[1] + dy)
             self.energy = max(0.0, self.energy - self.move_cost)
         else:
@@ -395,7 +408,9 @@ class Neuron:
             reward: 奖励值，正值提升情绪，负值降低情绪。
         """
         self.last_reward = reward
-        self.states["emotion"] = clamp(self.states["emotion"] + reward * 0.5, 0.0, 1.0)
+        self.states["emotion"] = clamp(
+            self.states["emotion"] + reward * REWARD_EMOTION_SCALE, 0.0, 1.0
+        )
 
     def finalize_tick(self, had_input: bool) -> None:
         """结束当前 tick，更新能量/熵/情绪/新颖度状态。
@@ -405,8 +420,8 @@ class Neuron:
         """
         self.states["energy"] = self.energy
         if not had_input:
-            self.states["novelty"] *= 0.98
-            self.states["emotion"] *= 0.98
+            self.states["novelty"] *= STATE_NATURAL_DECAY
+            self.states["emotion"] *= STATE_NATURAL_DECAY
         tokens = [item.token_id for item in self.mem]
         if not tokens:
             self.states["entropy"] = 0.0

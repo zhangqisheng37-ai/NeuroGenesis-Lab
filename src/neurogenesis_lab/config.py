@@ -31,8 +31,14 @@ RESCUED_NEURON_ENERGY = 0.1
 
 # 遗传属性
 HERITABLE_DYNAMICS_ATTRS = (
-    "tau_m", "r_m", "v_th", "v_rest", "v_reset",
-    "spike_cost", "input_gain", "move_cost",
+    "tau_m",
+    "r_m",
+    "v_th",
+    "v_rest",
+    "v_reset",
+    "spike_cost",
+    "input_gain",
+    "move_cost",
 )
 HERITABLE_SUBCLASS_ATTRS = ("a", "b", "c", "d", "v_peak", "delta_t", "tau_w")
 HERITABLE_ATTRS = HERITABLE_DYNAMICS_ATTRS + HERITABLE_SUBCLASS_ATTRS
@@ -42,6 +48,55 @@ SPAWN_POSITION_JITTER = 0.5
 
 # 向量化引擎移动抖动
 MOVE_JITTER_RANGE = 1.0
+
+# 预测误差指数平滑系数
+PE_SMOOTHING_ALPHA = 0.3
+
+# 濒危模式退出乘数：alive > endangered_threshold * 此值时解除
+ENDANGERED_EXIT_MULTIPLIER = 1.5
+
+# 濒危模式衰减折扣系数
+ENDANGERED_DECAY_DISCOUNT = 0.5
+
+# 拥塞惩罚连接数阈值
+CONGESTION_LINK_THRESHOLD = 10
+
+# 近邻连接权重下界
+PROXIMITY_WEIGHT_MIN = 0.1
+
+# 近邻连接延迟缩放因子
+PROXIMITY_DELAY_SCALE = 5
+
+# 空间索引重建间隔 (tick 数)
+SPATIAL_REBUILD_INTERVAL = 10
+
+# 神经元新奇度衰减步长 / 增长步长
+NOVELTY_DECAY_STEP = 0.02
+NOVELTY_GROWTH_STEP = 0.1
+
+# 新奇度 / 情绪自然衰减率
+STATE_NATURAL_DECAY = 0.98
+
+# 奖励情绪缩放系数
+REWARD_EMOTION_SCALE = 0.5
+
+# 神经元近期 token 窗口大小
+RECENT_TOKEN_WINDOW = 8
+
+# 神经元移动抖动范围
+NEURON_MOVE_JITTER = 0.5
+
+# 繁殖连接默认权重和延迟
+SPAWN_LINK_WEIGHT = 1.0
+SPAWN_LINK_DELAY = 1
+
+# 异步写入器关闭超时 (秒)
+ASYNC_DRAIN_TIMEOUT = 5.0
+ASYNC_JOIN_TIMEOUT = 2.0
+
+# ASCII 可打印字符范围
+ASCII_PRINTABLE_MIN = 32
+ASCII_PRINTABLE_MAX = 127
 
 
 @dataclass(frozen=True)
@@ -95,6 +150,11 @@ class NeuronParams:
     mem_size: int = 64
 
     def validate(self) -> list[str]:
+        """校验神经元参数的合法性。
+
+        Returns:
+            错误信息列表，空列表表示所有参数合法。
+        """
         errors: list[str] = []
         if not math.isfinite(self.v_rest):
             errors.append(f"v_rest 不是有限数: {self.v_rest}")
@@ -157,6 +217,11 @@ class NetworkParams:
     endangered_threshold: int = 10  # 濒危告警阈值
 
     def validate(self) -> list[str]:
+        """校验网络参数的合法性。
+
+        Returns:
+            错误信息列表，空列表表示所有参数合法。
+        """
         errors: list[str] = []
         if self.reproduction_threshold <= 0:
             errors.append(
@@ -224,6 +289,11 @@ class EvolutionParams:
     min_neurons: int = 2
 
     def validate(self) -> list[str]:
+        """校验演化参数的合法性。
+
+        Returns:
+            错误信息列表，空列表表示所有参数合法。
+        """
         errors: list[str] = []
         if self.mutation_amplitude < 0:
             errors.append(f"mutation_amplitude 不能为负: {self.mutation_amplitude}")
@@ -259,6 +329,11 @@ class SimConfig:
     schema_version: str = SCHEMA_VERSION
 
     def validate(self) -> list[str]:
+        """校验仿真总配置的合法性 — 递归检查所有子配置。
+
+        Returns:
+            错误信息列表，空列表表示所有参数合法。
+        """
         errors: list[str] = []
         if self.ticks <= 0:
             errors.append(f"ticks 必须为正: {self.ticks}")

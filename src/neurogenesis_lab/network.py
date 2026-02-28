@@ -23,6 +23,14 @@ from neurogenesis_lab.config import (
     REPRO_SHARE_MIN,
     RESCUED_NEURON_ENERGY,
     SCHEMA_VERSION,
+    PE_SMOOTHING_ALPHA,
+    ENDANGERED_EXIT_MULTIPLIER,
+    ENDANGERED_DECAY_DISCOUNT,
+    CONGESTION_LINK_THRESHOLD,
+    PROXIMITY_WEIGHT_MIN,
+    PROXIMITY_DELAY_SCALE,
+    SPAWN_LINK_WEIGHT,
+    SPAWN_LINK_DELAY,
 )
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import Neuron, calculate_reward, safe_float
@@ -116,6 +124,18 @@ class CorpsePool:
         ttl: int,
         decay_rate: float = 0.02,
     ) -> Corpse:
+        """从池中获取或创建尸体实例。
+
+        Args:
+            pos: 尸体位置坐标 (x, y)。
+            energy: 尸体遗留能量。
+            params: 可遗传参数快照。
+            ttl: 剩余存活 tick 数。
+            decay_rate: 每 tick 能量衰减比率，默认 0.02。
+
+        Returns:
+            复用或新建的 Corpse 实例。
+        """
         if self.free:
             corpse = self.free.pop()
             corpse.pos = pos
@@ -135,6 +155,12 @@ class CorpsePool:
         )
 
     def release(self, corpse: Corpse, max_pool_size: int) -> None:
+        """将尸体实例归还对象池以供复用。
+
+        Args:
+            corpse: 待归还的尸体实例（内部状态将被重置）。
+            max_pool_size: 池最大容量，超出时直接丢弃。
+        """
         if len(self.free) >= max_pool_size:
             return
         corpse.params = {}
@@ -425,10 +451,10 @@ class Network:
                 if links_added >= max_links_per_neuron:
                     break
                 if target.id not in source.links:
-                    # 距离越近，权重越大 (0.1 ~ 1.0)
-                    weight = max(0.1, 1.0 - (dist / radius))
-                    # 距离越远，延迟越大 (1 ~ 5)
-                    delay = max(1, int((dist / radius) * 5))
+                    # 距离越近，权重越大 (PROXIMITY_WEIGHT_MIN ~ 1.0)
+                    weight = max(PROXIMITY_WEIGHT_MIN, 1.0 - (dist / radius))
+                    # 距离越远，延迟越大 (1 ~ PROXIMITY_DELAY_SCALE)
+                    delay = max(1, int((dist / radius) * PROXIMITY_DELAY_SCALE))
                     self.connect(source.id, target.id, weight=weight, delay=delay)
                     links_added += 1
 
@@ -498,7 +524,7 @@ class Network:
                 continue
             inputs[event.src_id].append(event)
 
-        alive_count = sum(1 for n in self.neurons.values() if n.alive)
+        alive_count: int = sum(1 for n in self.neurons.values() if n.alive)
         effective_decay = self._calculate_adaptive_decay(alive_count)
         budget_share = (
             self.energy_budget_per_tick / alive_count
@@ -508,7 +534,7 @@ class Network:
 
         if alive_count <= self.endangered_threshold and not self._endangered_mode:
             self._endangered_mode = True
-        elif alive_count > self.endangered_threshold * 1.5:
+        if alive_count > self.endangered_threshold * ENDANGERED_EXIT_MULTIPLIER:
             self._endangered_mode = False
         return ready, inputs, effective_decay, budget_share
 
@@ -558,7 +584,9 @@ class Network:
                         )
                     )
             neuron.move()
-            decay = effective_decay * (0.5 if self._endangered_mode else 1.0)
+            decay = effective_decay * (
+                ENDANGERED_DECAY_DISCOUNT if self._endangered_mode else 1.0
+            )
             neuron.energy = max(0.0, neuron.energy - decay)
             if budget_share > 0.0:
                 neuron.energy += budget_share
@@ -609,14 +637,25 @@ class Network:
         return births, deaths
 
     def pe_moving_average(self, window: int = 10) -> float:
-        """PE 滑动均值"""
+        """计算预测误差 (PE) 的滑动平均值。
+
+        Args:
+            window: 滑动窗口大小（tick 数），默认 10。
+
+        Returns:
+            最近 window 个 tick 的 PE 均值，无历史时返回 0.0。
+        """
         if not self._pe_history:
             return 0.0
         recent = self._pe_history[-window:]
         return sum(recent) / len(recent)
 
     def active_neuron_ratio(self) -> float:
-        """活跃神经元比例"""
+        """计算当前存活神经元占总神经元的比例。
+
+        Returns:
+            存活数 / 总数，无神经元时返回 0.0。
+        """
         if not self.neurons:
             return 0.0
         alive = sum(1 for n in self.neurons.values() if n.alive)
@@ -645,7 +684,7 @@ class Network:
             )
         )
         prediction_error = safe_float(prediction_error)
-        alpha = 0.3
+        alpha = PE_SMOOTHING_ALPHA
         self.expected_state = {
             key: self.expected_state.get(key, 0.0)
             + alpha * (actual_state[key] - self.expected_state.get(key, 0.0))
@@ -682,13 +721,20 @@ class Network:
                 continue
             # 拥塞惩罚: 该神经元连接过多时降低繁殖概率
             link_count = len(neuron.links)
-            if link_count > 10 and random.random() < self.congestion_penalty:
+            if (
+                link_count > CONGESTION_LINK_THRESHOLD
+                and random.random() < self.congestion_penalty
+            ):
                 continue
             child = neuron.spawn(max(0.0, effective_mutation_scale), effective_share)
             neuron.energy = max(0.0, neuron.energy - child.energy)
             self.add_neuron(child)
-            self.connect(neuron.id, child.id, weight=1.0, delay=1)
-            self.connect(child.id, neuron.id, weight=1.0, delay=1)
+            self.connect(
+                neuron.id, child.id, weight=SPAWN_LINK_WEIGHT, delay=SPAWN_LINK_DELAY
+            )
+            self.connect(
+                child.id, neuron.id, weight=SPAWN_LINK_WEIGHT, delay=SPAWN_LINK_DELAY
+            )
             births += 1
         self._prune_links()
         return births
@@ -724,10 +770,14 @@ class Network:
         # 接近上限时增加繁殖成本，远离上限时降低成本
         if population_ratio > POPULATION_HIGH_THRESHOLD:
             # 接近容量上限，增加成本（母体分享更多能量）
-            return min(REPRO_SHARE_MAX, self.reproduction_share * REPRO_SHARE_HIGH_MULTIPLIER)
+            return min(
+                REPRO_SHARE_MAX, self.reproduction_share * REPRO_SHARE_HIGH_MULTIPLIER
+            )
         elif population_ratio < POPULATION_LOW_THRESHOLD:
             # 种群稀少，降低成本（鼓励繁殖）
-            return max(REPRO_SHARE_MIN, self.reproduction_share * REPRO_SHARE_LOW_MULTIPLIER)
+            return max(
+                REPRO_SHARE_MIN, self.reproduction_share * REPRO_SHARE_LOW_MULTIPLIER
+            )
         else:
             return self.reproduction_share
 
@@ -770,7 +820,9 @@ class Network:
             saved = {nid for nid, _ in dead_neurons[:save_count]}
             for nid in saved:
                 self.neurons[nid].alive = True
-                self.neurons[nid].energy = max(RESCUED_NEURON_ENERGY, self.neurons[nid].energy)
+                self.neurons[nid].energy = max(
+                    RESCUED_NEURON_ENERGY, self.neurons[nid].energy
+                )
             dead_ids = [nid for nid in dead_ids if nid not in saved]
 
         deaths = 0
