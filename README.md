@@ -6,11 +6,11 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 
 ## 当前状态
 
-- **当前版本**：v0.5.1
+- **当前版本**：v0.4.1
 - 阶段六 P1（类职责重构）+ P3（魔法值消除）+ P6（测试补充）已交付。
 - `Neuron` 拆分为 `NeuronDynamics`/`NeuronEvolution`/`NeuronMemory` 三组件，`Network` 拆分为 `NetworkConfig`/`NetworkState`，外部 API 完全兼容。
 - 16 个共享常量提取至 `config.py`，消除散布的硬编码魔法值。
-- 最新测试基线：281 passed, 0 failed（2026-02-23）。
+- 最新测试基线：310 passed, 0 failed（2026-02-25）。
 
 ## 核心特性
 

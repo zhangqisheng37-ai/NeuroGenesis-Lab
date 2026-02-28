@@ -4,7 +4,7 @@
 
 ---
 
-## v0.5.1 (2026-02-23)
+## v0.4.1-p6 (2026-02-24)
 
 ### Phase 6（P1 类职责重构 + P3 魔法值消除 + P6 测试补充）
 
@@ -31,12 +31,12 @@
   - 新增 `tests/test_constants.py`（常量值正确性、自适应机制使用常量验证）。
   - 新增 `tests/test_neuron_components.py`（组件访问、setattr 路由、spawn 独立性、pickle 往返、子类兼容、遗传属性完整性）。
   - 新增 `tests/test_network_config_state.py`（config/state 访问、setattr 路由、pickle 往返、旧格式兼容、构造签名不变）。
-  - 新增 44 个测试用例，总计 281 个测试全部通过。
+  - 新增 44 个测试用例，总计 310 个测试全部通过。
 
 ### 验证
 
-- 最新全量测试：281 passed, 0 failed（2026-02-23）。
-- 覆盖率：89.27%。
+- 最新全量测试：310 passed, 0 failed（2026-02-25）。
+- 覆盖率：91.96%。
 
 ---
 
