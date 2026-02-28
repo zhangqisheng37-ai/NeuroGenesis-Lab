@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 from scipy.sparse import csr_matrix, lil_matrix, coo_matrix
+from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 
 from neurogenesis_lab.config import (
@@ -346,46 +347,63 @@ class VectorizedNetwork:
     ) -> None:
         """基于欧氏距离自动连接所有半径内的神经元对。
 
+        使用 cKDTree 加速近邻搜索，复杂度 O(N log N)。
+
         Args:
             radius: 连接搜索半径。
             weight: 统一连接权重，默认 1.0。
             delay: 统一传播延迟（tick 数），默认 1。
         """
-        dists = cdist(self.pos, self.pos)
-        mask = (dists <= radius) & (dists > 0) & np.outer(self.alive, self.alive)
-        lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
-        lil_d = lil_matrix((self.n, self.n), dtype=np.int32)
-        rows, cols = np.where(mask)
-        for r, c in zip(rows, cols):
-            lil_w[r, c] = weight
-            lil_d[r, c] = delay
-        self.weight_matrix = csr_matrix(lil_w)
-        self.delay_matrix = csr_matrix(lil_d)
+        alive_idx = np.where(self.alive)[0]
+        if len(alive_idx) == 0:
+            return
+        tree = cKDTree(self.pos[alive_idx])
+        pairs = tree.query_pairs(r=radius, output_type="ndarray")
+        if len(pairs) == 0:
+            self.weight_matrix = csr_matrix((self.n, self.n), dtype=np.float64)
+            self.delay_matrix = csr_matrix((self.n, self.n), dtype=np.int32)
+            return
+        # pairs 是局部索引，映射回全局索引
+        gi = alive_idx[pairs[:, 0]]
+        gj = alive_idx[pairs[:, 1]]
+        # 双向连接
+        rows = np.concatenate([gi, gj])
+        cols = np.concatenate([gj, gi])
+        n_edges = len(rows)
+        weights = np.full(n_edges, weight, dtype=np.float64)
+        delays = np.full(n_edges, delay, dtype=np.int32)
+        self.weight_matrix = csr_matrix((weights, (rows, cols)), shape=(self.n, self.n))
+        self.delay_matrix = csr_matrix((delays, (rows, cols)), shape=(self.n, self.n))
 
     def connect_knn(self, k: int = 3, weight: float = 1.0, delay: int = 1) -> None:
         """k 近邻连接 — 每个存活神经元连接最近的 k 个邻居。
+
+        使用 cKDTree 加速近邻搜索，复杂度 O(N log N)。
 
         Args:
             k: 近邻数量，默认 3。
             weight: 统一连接权重，默认 1.0。
             delay: 统一传播延迟（tick 数），默认 1。
         """
-        from numpy.linalg import norm
-
-        lil_w = lil_matrix((self.n, self.n), dtype=np.float64)
-        lil_d = lil_matrix((self.n, self.n), dtype=np.int32)
-        for i in range(self.n):
-            if not self.alive[i]:
-                continue
-            dists = norm(self.pos - self.pos[i], axis=1)
-            dists[i] = np.inf
-            nearest = np.argsort(dists)[:k]
-            for j in nearest:
-                if self.alive[j]:
-                    lil_w[i, j] = weight
-                    lil_d[i, j] = delay
-        self.weight_matrix = csr_matrix(lil_w)
-        self.delay_matrix = csr_matrix(lil_d)
+        alive_idx = np.where(self.alive)[0]
+        if len(alive_idx) == 0:
+            return
+        alive_pos = self.pos[alive_idx]
+        actual_k = min(k + 1, len(alive_idx))  # +1 因为包含自身
+        tree = cKDTree(alive_pos)
+        _, local_indices = tree.query(alive_pos, k=actual_k)
+        # local_indices 形状 (n_alive, actual_k)
+        if local_indices.ndim == 1:
+            local_indices = local_indices[:, np.newaxis]
+        n_alive = len(alive_idx)
+        # 构建行列索引，排除自身（第 0 列是自身）
+        src = np.repeat(alive_idx, actual_k - 1)
+        dst = alive_idx[local_indices[:, 1:].ravel()]
+        n_edges = len(src)
+        weights = np.full(n_edges, weight, dtype=np.float64)
+        delays = np.full(n_edges, delay, dtype=np.int32)
+        self.weight_matrix = csr_matrix((weights, (src, dst)), shape=(self.n, self.n))
+        self.delay_matrix = csr_matrix((delays, (src, dst)), shape=(self.n, self.n))
 
     def tick(
         self, tick: int, dt: float = 1.0, input_currents: np.ndarray | None = None
