@@ -79,7 +79,7 @@ python -m neurogenesis_lab info
 src/neurogenesis_lab/
 ├── config.py          # 集中配置系统 (SimConfig)
 ├── neuron.py          # 神经元模型 (LIF, Izhikevich, AdEx)
-├── network.py         # 网络引擎 (事件队列, 演化, 空间连接)
+├── network.py         # 标准网络引擎 (事件队列, 演化, 空间连接)
 ├── encoding.py        # 编码系统 (Token, Event)
 ├── learning.py        # 学习引擎 (规则发现, 查询, AutoLearner)
 ├── observability.py   # 可观察性 (指标, 日志, 实验管理)
@@ -88,7 +88,14 @@ src/neurogenesis_lab/
 ├── protocols.py       # 双引擎统一接口 (TickSnapshot, EngineSummary, SimEngine)
 ├── core_bridge.py     # Rust 扩展桥接层（可用性探测 + fallback）
 ├── logger.py          # 基础日志
-└── __main__.py        # CLI 入口
+├── __main__.py        # CLI 向后兼容存根
+└── cli/               # CLI 子包 (v0.6.0 拆分)
+    ├── __init__.py    # 导出 main()
+    ├── parser.py      # argparse 参数定义
+    ├── config_builder.py  # TOML→SimConfig
+    ├── run.py         # run 命令
+    ├── benchmark.py   # benchmark 命令
+    └── info.py        # info 命令
 
 rust_src/neurogenesis_core/
 └── src/lib.rs         # Rust 扩展核心实现（PyO3 + Rayon）

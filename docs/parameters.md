@@ -162,7 +162,12 @@ python -m neurogenesis_lab run --config config.toml --ticks 500 --seed 99
 | `--expr` | str | `1+2=3` | 外部刺激表达式 |
 | `--input-weight` | float | 40.0 | 外部注入事件默认权重 |
 | `--stim-interval` | int | 5 | 外部刺激注入间隔（tick） |
+| `--background-current` | float | None | 背景电流（覆盖 TOML 中的 `network.background_current`） |
+| `--spontaneous-spike-rate` | float | None | 自发放电概率（覆盖 TOML 中的 `network.spontaneous_spike_rate`） |
+| `--low-activation-threshold` | int | None | 低激活告警阈值（覆盖 TOML 中的 `network.low_activation_threshold`） |
 | `--output` | str | `outputs` | 输出目录 |
+| `--config` | str | None | TOML 配置路径 |
+| `--debug` | flag | 关闭 | 输出调试级追踪信息 |
 | `--config` | str | None | TOML 配置路径 |
 | `--debug` | flag | 关闭 | 输出调试级追踪信息 |
 
@@ -245,3 +250,77 @@ python -m neurogenesis_lab run --ticks 500 --checkpoint-interval 100 --checkpoin
 # 从 checkpoint 恢复并继续运行
 python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick_500.pkl --ticks 200
 ```
+
+---
+
+## VectorizedNetwork 特有参数
+
+`VectorizedNetwork` 向量化引擎在 v0.6.0 中实现了与标准引擎的功能对齐，以下是其独有的初始化和运行参数。
+
+### 初始化参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `max_neurons` | int | 10000 | 最大神经元容量（预分配数组大小） |
+| `energy_decay` | float | 0.003 | 每 tick 能量自然衰减量 |
+| `energy_cap` | float | 5.0 | 神经元能量上限 |
+| `reproduction_threshold` | float | 2.5 | 繁殖所需最低能量 |
+| `reproduction_share` | float | 0.4 | 繁殖时子代获得的能量比例 |
+| `mutation_scale` | float | 0.05 | 繁殖突变缩放因子 |
+| `corpse_ttl` | int | 50 | 尸体存留 tick 数 |
+| `scavenger_radius` | float | 2.5 | 拾荒搜索半径 |
+| `adaptive_decay` | bool | True | 自适应能量衰减 |
+| `adaptive_reproduction` | bool | True | 自适应繁殖成本 |
+| `endangered_threshold` | int | 10 | 濒危模式阈值 |
+| `input_current_scale` | float | 1.5 | 输入电流缩放 |
+| `move_cost` | float | 0.01 | 移动能量消耗 |
+
+### 多模型参数
+
+`VectorizedNetwork` 通过 `model_type` 整数向量支持混合模型（0=LIF, 1=Izhikevich, 2=AdEx）：
+
+| 参数向量 | 模型 | 说明 |
+|----------|------|------|
+| `izh_a`, `izh_b`, `izh_c`, `izh_d`, `izh_vpeak` | Izhikevich | 恢复变量与放电参数 |
+| `adex_delta_t`, `adex_a`, `adex_b`, `adex_tau_w`, `adex_vpeak` | AdEx | 指数项、适应参数 |
+
+### 连接方式
+
+| 方法 | 说明 |
+|------|------|
+| `connect_radius(radius, weight, delay)` | 空间半径连接 |
+| `connect_knn(k, weight, delay)` | k 近邻连接 |
+
+### 尸体系统向量
+
+| 数组 | 类型 | 说明 |
+|------|------|------|
+| `corpse_mask` | `np.ndarray[bool]` | 当前是否为尸体 |
+| `corpse_timer` | `np.ndarray[int]` | 尸体剩余 TTL |
+| `corpse_energy` | `np.ndarray[float]` | 尸体可回收能量 |
+
+---
+
+## 配置常量参考（config.py）
+
+以下为 `config.py` 中定义的共享常量，用于自适应机制和演化逻辑：
+
+| 常量 | 值 | 说明 |
+|------|------|------|
+| `SCHEMA_VERSION` | `"2.0.0"` | 数据格式版本 |
+| `DENSITY_HIGH_THRESHOLD` | `0.8` | 自适应衰减·高密度阈值 |
+| `DENSITY_LOW_THRESHOLD` | `0.3` | 自适应衰减·低密度阈值 |
+| `DECAY_HIGH_MULTIPLIER` | `1.2` | 高密度时衰减倍率 |
+| `DECAY_LOW_MULTIPLIER` | `0.7` | 低密度时衰减倍率 |
+| `POPULATION_HIGH_THRESHOLD` | `0.8` | 自适应繁殖·高种群阈值 |
+| `POPULATION_LOW_THRESHOLD` | `0.3` | 自适应繁殖·低种群阈值 |
+| `REPRO_SHARE_HIGH_MULTIPLIER` | `1.3` | 高种群繁殖成本倍率 |
+| `REPRO_SHARE_LOW_MULTIPLIER` | `0.7` | 低种群繁殖成本倍率 |
+| `REPRO_SHARE_MAX` | `0.6` | 繁殖份额上限 |
+| `REPRO_SHARE_MIN` | `0.2` | 繁殖份额下限 |
+| `RESCUED_NEURON_ENERGY` | `0.1` | 保护复活后初始能量 |
+| `ENDANGERED_EXIT_MULTIPLIER` | `1.5` | 濒危模式退出乘数 |
+| `ENDANGERED_DECAY_DISCOUNT` | `0.5` | 濒危时衰减折扣 |
+| `CONGESTION_LINK_THRESHOLD` | `10` | 拥塞惩罚连接数阈值 |
+| `PE_SMOOTHING_ALPHA` | `0.3` | 预测误差平滑系数 |
+| `SPATIAL_REBUILD_INTERVAL` | `10` | 空间索引重建间隔（tick） |

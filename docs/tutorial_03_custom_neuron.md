@@ -4,30 +4,31 @@ NeuroGenesis Lab 提供了灵活的神经元接口，允许你轻松实现自定
 
 ## 1. 神经元基类
 
-所有神经元模型都继承自 `src/neurogenesis_lab/neuron.py` 中的 `Neuron` 基类。
+所有神经元模型都继承自 `src/neurogenesis_lab/neuron.py` 中的 `Neuron` 基类。`Neuron` 是一个 `dataclass`，内部采用组件化架构（`NeuronDynamics` / `NeuronEvolution` / `NeuronMemory`）。
 
 建议优先参考现有实现（`LIFNeuron` / `IzhikevichNeuron` / `AdExNeuron`）保持接口一致，尤其是：
 
 - `update(dt, input_current)`：返回是否放电
 - `emit(event, current_tick)`：按连接生成传播事件
 - `spawn(mutation_scale, share)`：繁殖子代
-- `mutate(scale)`：参数扰动
+- `fitness(weights)`：计算加权适应度
 
 ```python
-class Neuron(ABC):
-    def __init__(self, neuron_id: str | None = None, **kwargs):
-        self.id = neuron_id or str(uuid.uuid4())
-        self.v = kwargs.get("v_rest", -65.0)
-        self.energy = kwargs.get("energy_init", 1.0)
-        self.alive = True
-        self.links: dict[str, Synapse] = {}
-        self.pos = kwargs.get("pos", (0.0, 0.0))
-        # ...
+@dataclass
+class Neuron:
+    id: str = ""           # UUID hex
+    pos: tuple = (0.0, 0.0)  # 空间坐标
+    energy: float = 1.0    # 当前能量
+    alive: bool = True     # 是否存活
+    links: dict = ...      # 出边字典
+    states: dict = ...     # 内部状态 (energy/entropy/emotion/novelty)
+    # 内部组件：_dynamics, _evolution, _memory
+    # 通过 __getattr__/__setattr__ 代理访问 v, u, w, v_rest, tau_m 等
 ```
 
 ## 2. 实现自定义模型
 
-要创建一个新的神经元模型，你需要继承 `Neuron` 并实现 `_update_v` 方法。
+要创建一个新的神经元模型，你需要继承 `Neuron`（dataclass）并重写 `update` 方法。
 
 ### 示例：实现一个简单的 Integrate-and-Fire (IF) 神经元
 
@@ -45,7 +46,7 @@ class IFNeuron(Neuron):
         self.r_m = kwargs.get("r_m", 1.0)
         self.input_gain = kwargs.get("input_gain", 0.1)
 
-    def _update_v(self, i_inj: float, dt: float) -> bool:
+    def update(self, dt: float = 1.0, input_current: float = 0.0) -> bool:
         """
         更新膜电位并返回是否放电
         """
@@ -106,6 +107,8 @@ python -m neurogenesis_lab run --ticks 100 --visualize
         if random.random() < scale:
             self.input_gain *= random.uniform(0.9, 1.1)
 ```
+
+> **注意**：v0.6.0 的 `Neuron` 基类采用组件化架构（`NeuronDynamics` / `NeuronEvolution` / `NeuronMemory`），通过 `__getattr__` / `__setattr__` 代理访问。自定义子类的额外字段会保留在子类 `__dict__` 中，不与组件冲突。遗传属性由 `config.py` 中的 `HERITABLE_ATTRS` 常量统一管理。
 
 若需要让自定义模型被 Rust 路径加速，推荐方式是：
 

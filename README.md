@@ -12,7 +12,7 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，旨在模�
 - CLI 重构为 `cli/` 子包（6 个模块），`__main__.py` 精简为兼容存根。
 - CI/CD 管道：GitHub Actions 多平台测试 + lint + 覆盖率 + 文档发布。
 - API 文档：mkdocs-material + mkdocstrings-python 自动生成。
-- 最新测试基线：347 passed, 0 failed, 覆盖率 92.61%（2026-02-25）。
+- 最新测试基线：347 passed, 0 failed, 覆盖率 92.61%（2026-02-28）。
 
 ## 核心特性
 
@@ -166,6 +166,11 @@ mkdocs serve
 | [可观测性指标](docs/metrics.md) | 输出数据字段说明 |
 | [风险清单](docs/risk_list.md) | 当前已知风险与待办事项 |
 | [更新日志](docs/CHANGELOG.md) | 版本变更历史 |
+| [教程 01：快速上手](docs/tutorial_01_first_experiment.md) | 10 分钟运行第一个实验 |
+| [教程 02：参数调优](docs/tutorial_02_parameter_tuning.md) | TOML 配置与调参指南 |
+| [教程 03：自定义神经元](docs/tutorial_03_custom_neuron.md) | 继承 Neuron 基类实现自定义模型 |
+| [案例：演化动力学](docs/case_study_evolution.md) | 长程仿真中的演化现象分析 |
+| [案例：规则涌现](docs/case_study_learning.md) | 学习引擎的规则发现与预测 |
 | [阶段五开发清单](docs/开发清单05_已完成.md) | Rust 混合架构阶段交付状态 |
 | [阶段六开发清单](docs/开发清单06_已完成.md) | 代码质量治理与架构精炼 |
 | [阶段七开发清单](docs/开发清单07.md) | 工程基础设施完善与双引擎功能对齐 |

@@ -29,45 +29,45 @@
     - `_adex_step()` — AdEx 指数自适应动力学（含溢出裁切）。
     - 放电重置按模型类型分别处理（LIF→v_reset, Izh→c+d, AdEx→v_reset+b）。
   - **尸体回收系统**：新增 `corpse_mask` / `corpse_timer` / `corpse_energy` 数组。
-    - `_update_corpses()` — TTL 递减、能量衰减、空间网格内拾荒（最近存活神经元吸收尸体全部剩余能量）。
-    - 死亡神经元→尸体转化：在 `_run_vectorized_evolution()` 中死亡时自动填充尸体数组。
-    - 繁殖时排除尸体槽位（`~self.corpse_mask`），子代清除尸体标记。
-  - **自适应衰减**：新增 `_calculate_adaptive_decay(alive_count)`，使用 `DENSITY_HIGH/LOW_THRESHOLD` 密度阈值调节衰减系数，配合 `ENDANGERED_DECAY_DISCOUNT` 濒危折扣。
-  - **自适应繁殖**：新增 `_calculate_adaptive_reproduction_share(alive_count)`，使用 `POPULATION_HIGH/LOW_THRESHOLD` 种群阈值调节繁殖份额，`REPRO_SHARE_MAX/MIN` 限幅。
-  - **能量上限**：`energy_cap=5.0`，每 tick 演化后裁切存活神经元能量。
-  - **濒危模式**：`endangered_threshold=10`，存活数低于阈值时自动进入濒危模式减缓衰减，超过退出倍数时自动退出。
-  - **Checkpoint 持久化**：`save_checkpoint(path, tick)` / `load_checkpoint(path)` 支持完整网络状态序列化、schema 版本校验、随机数状态恢复。
+    - `_update_corpses()` — TTL 递减、能量衰减、空间网格内拾荒。
+    - 死亡神经元→尸体转化，繁殖时排除尸体槽位。
+  - **自适应衰减**：新增 `_calculate_adaptive_decay(alive_count)`。
+  - **自适应繁殖**：新增 `_calculate_adaptive_reproduction_share(alive_count)`。
+  - **能量上限**：`energy_cap=5.0`，每 tick 演化后裁切。
+  - **濒危模式**：`endangered_threshold=10`。
+  - **Checkpoint 持久化**：`save_checkpoint()` / `load_checkpoint()` 支持完整状态序列化。
   - **模型继承**：繁殖时子代继承父代 `model_type`。
-  - 新增 40+ 个 dataclass 字段（多模型参数、尸体系统、自适应配置）。
 
 - **P3：CLI 模块拆分**
-  - 创建 `src/neurogenesis_lab/cli/` 子包（6 个模块）：
-    - `__init__.py`、`parser.py`、`config_builder.py`、`run.py`、`benchmark.py`、`info.py`。
+  - 创建 `src/neurogenesis_lab/cli/` 子包（6 个模块）。
   - `__main__.py` 精简为 ~20 行兼容存根。
   - `pyproject.toml` 入口点更新为 `neurogenesis_lab.cli:main`。
-  - Benchmark 对照表更新：`neuron_dynamics_model` 标记为 "可比"。
 
 - **P4：API 文档骨架**
   - 新增 `mkdocs.yml` — mkdocs-material + mkdocstrings-python 配置。
-  - 新增 `docs_site/` 目录：API 参考（9 模块）、教程、案例研究、参数/架构/指标文档。
-  - `pyproject.toml` 新增 `[project.optional-dependencies] docs` 组。
+  - 新增 `docs_site/` 目录：API 参考（9 模块）、教程、案例研究。
 
 - **P5：测试基础设施**
-  - 新增 `tests/conftest.py` — 5 个共享 fixture（`sample_config` / `small_network` / `small_vectorized` / `tmp_output_dir` / `sensitive_neurons`）。
+  - 新增 `tests/conftest.py` — 5 个共享 fixture。
 
 - **P6：类型标注收紧**
-  - `vectorized.py`：`_resolve_neuron_index(src_id: Any)` → `int | str`。
-  - `visualization.py`：`on_tick(network: Any)` → `object | None`。
-  - `learning.py`：`calc: callable` → `Callable[[int, int], int]`。
+  - `vectorized.py`、`visualization.py`、`learning.py` 弱类型修复。
 
-- **P7：README / 文档同步**
-  - README 更新：当前状态、核心特性（多模型）、文档表格、路线图。
-  - 新增在线文档构建说明。
+- **P7：文档全面同步**（2026-02-28）
+  - `architecture.md` — 新增 CLI 子包架构、模块清单、VectorizedNetwork 新功能、可视化系统说明，版本标签更新至 v2.0。
+  - `parameters.md` — 补充 `--background-current`/`--spontaneous-spike-rate`/`--low-activation-threshold` CLI 参数；新增 VectorizedNetwork 特有参数节；新增配置常量参考节。
+  - `risk_list.md` — 版本口径更新至 v0.6.x；新增 R8（AutoLearner 向量化集成）、R9（mypy 严格模式）风险项；更新技术债务清单。
+  - `metrics.md` — 新增可视化指标、AutoLearner 指标和 Rust 桥接层状态说明。
+  - `quickstart.md` — 项目结构补充 `cli/` 子包。
+  - `tutorial_01` — 版本号更新至 v0.6.0。
+  - `tutorial_03` — 基类描述更新为 dataclass 组件化架构，方法名 `_update_v` → `update`，新增遗传属性说明。
+  - `docs_site/index.md` — 丰富首页内容，补充完整项目介绍和导航。
+  - `docs_site/api/` — 9 个模块 API 页面补充中文说明和关键类/函数目录。
+  - `README.md` — 路线图更新、测试基线更新。
 
 - **测试**
-  - 新增 37 个 P2 测试（`test_vectorized_p2.py`）：多模型动力学、尸体回收、自适应衰减/繁殖、能量上限、濒危模式、checkpoint、边界条件。
+  - 新增 37 个 P2 测试（`test_vectorized_p2.py`）。
   - 总计：347 passed, 0 failed, 覆盖率 92.61%。
-  - vectorized.py 覆盖率：67% → 97%。
 
 ---
 

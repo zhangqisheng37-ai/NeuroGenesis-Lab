@@ -156,3 +156,51 @@ python examples/decompress_outputs.py --path outputs --recursive
 1. tick=5：神经元 A 放电，向 B 发出传播事件（`src_id=B`, `meta.from=A`, `t=6`）
 2. tick=6：网络队列投递该事件到 B
 3. tick=6：B 的 `receive()` 被触发，进入后续膜电位更新与可能放电
+
+## 可视化指标
+
+当使用 `--visualize` 参数启动仿真或通过 `examples/analyze_experiment.py` 生成离线报告时，`visualization.py` 会绘制以下图表：
+
+| 图表 | 函数 | 数据来源 |
+|------|------|----------|
+| 种群曲线 | `plot_population_curve()` | `metrics.alive_neurons` 时间序列 |
+| 能量分布 | `plot_energy_distribution()` | 存活神经元能量快照 |
+| 学习指标 | `plot_learning_metrics()` | `learning.total_spikes`, `pe_moving_avg` |
+| 放电栅格图 | `plot_spike_raster()` | 各神经元放电时刻 |
+| 网络拓扑 | `plot_network_topology()` | 神经元位置与连接结构 |
+
+`LiveMonitor` 实时监控面板在 `--plot-interval` 指定的间隔更新上述图表。
+
+## AutoLearner 指标
+
+当启用学习引擎时，`AutoLearner.on_tick()` 会向 `TickSnapshot` 注入额外字段：
+
+| 字段名 | 说明 |
+|--------|------|
+| `rule_count` | 当前发现的规则数量 |
+| `prediction_accuracy` | 当前预测准确率 |
+
+`AutoLearner.get_summary()` 返回的摘要包含：
+
+| 字段名 | 说明 |
+|--------|------|
+| `rule_count` | 规则总数 |
+| `prediction_accuracy` | 准确率 |
+| `total_predictions` | 总预测次数 |
+| `correct_predictions` | 正确预测次数 |
+
+## Rust 桥接层状态
+
+`python -m neurogenesis_lab info` 或 `core_bridge.rust_core_status()` 返回的状态信息：
+
+| 字段名 | 类型 | 说明 |
+|--------|------|------|
+| `available` | bool | Rust 扩展是否可用 |
+| `TickSnapshot` | bool | Rust TickSnapshot 结构是否可用 |
+| `EngineSummary` | bool | Rust EngineSummary 结构是否可用 |
+| `LIFCore` | bool | Rust LIF 核心是否可用 |
+| `IzhikevichCore` | bool | Rust Izhikevich 核心是否可用 |
+| `SparseAdjacency` | bool | Rust 稀疏邻接表是否可用 |
+| `EventQueue` | bool | Rust 事件队列是否可用 |
+| `parallel_lif_tick` | bool | Rust 并行 LIF tick 函数是否可用 |
+| `mine_pattern_counts` | bool | Rust 模式挖掘函数是否可用 |

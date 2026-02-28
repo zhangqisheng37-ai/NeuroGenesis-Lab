@@ -38,7 +38,7 @@ python -m neurogenesis_lab run --config experiments/experiment_minimal.toml
 你将看到类似如下的输出：
 
 ```text
-[NeuroGenesis Lab v0.4.0] 运行仿真
+[NeuroGenesis Lab v0.6.0] 运行仿真
   ticks=100, seed=42, schema=2.0.0
   tick 20/100 (global=20): alive=8, PE=0.0000, rules=0, acc=0.000
   tick 40/100 (global=40): alive=8, PE=0.0000, rules=0, acc=0.000

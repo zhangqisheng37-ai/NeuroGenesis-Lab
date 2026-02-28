@@ -60,7 +60,9 @@ nav:
       - learning: api/learning.md
       - encoding: api/encoding.md
       - observability: api/observability.md
+      - visualization: api/visualization.md
       - protocols: api/protocols.md
+      - core_bridge: api/core_bridge.md
       - cli: api/cli.md
   - 架构设计: architecture.md
   - 参数参考: parameters.md
