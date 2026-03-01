@@ -13,6 +13,7 @@ from neurogenesis_lab.config import (
 )
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import Neuron
+from neurogenesis_lab.protocols import TickSnapshot
 
 _logger = logging.getLogger(__name__)
 
@@ -61,7 +62,7 @@ class JsonlWriter:
             for record in records:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def _open(self, mode: str):
+    def _open(self, mode: str) -> Any:
         if self._path.suffix == ".gz":
             return gzip.open(self._path, mode + "t", encoding="utf-8")
         return self._path.open(mode, encoding="utf-8")
@@ -232,7 +233,7 @@ class NetworkObserver:
         self._death_history: list[int] = []
         self._energy_history: list[float] = []
 
-    def get_network_metrics(self, tick: int) -> dict:
+    def get_network_metrics(self, tick: int) -> dict[str, Any]:
         """获取网络级聚合指标。
 
         Args:
@@ -327,7 +328,9 @@ class NetworkObserver:
             "pe_moving_avg": self._network.pe_moving_average(),
         }
 
-    def get_trend_metrics(self, tick: int, snapshot: dict | None = None) -> dict:
+    def get_trend_metrics(
+        self, tick: int, snapshot: TickSnapshot | None = None
+    ) -> dict[str, Any]:
         """获取趋势指标（滑动窗口统计）。
 
         Args:
@@ -416,8 +419,11 @@ class NetworkObserver:
         return debug_info
 
     def generate_report(
-        self, tick: int, include_debug: bool = False, snapshot: dict | None = None
-    ) -> dict:
+        self,
+        tick: int,
+        include_debug: bool = False,
+        snapshot: TickSnapshot | None = None,
+    ) -> dict[str, Any]:
         """生成完整的可观察性报告。
 
         Args:
@@ -522,7 +528,10 @@ class ObservabilityLogger:
         self._writer.append(record)
 
     def log_tick(
-        self, observer: NetworkObserver, tick: int, snapshot: dict | None = None
+        self,
+        observer: NetworkObserver,
+        tick: int,
+        snapshot: TickSnapshot | None = None,
     ) -> None:
         """记录单个 tick 的可观察性报告（受 log_interval 采样控制）。
 
@@ -539,7 +548,7 @@ class ObservabilityLogger:
         )
         self._writer.append(report)
 
-    def log_summary(self, total_ticks: int, final_metrics: dict) -> None:
+    def log_summary(self, total_ticks: int, final_metrics: dict[str, Any]) -> None:
         """记录仿真结束时的总结信息。
 
         Args:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Any
 
 from neurogenesis_lab.config import (
     EvolutionParams,
@@ -14,7 +15,7 @@ from neurogenesis_lab.config import (
 )
 
 
-def load_toml_config(path: Path) -> dict[str, object]:
+def load_toml_config(path: Path) -> dict[str, Any]:
     """加载 TOML 配置文件。
 
     Args:
@@ -24,20 +25,41 @@ def load_toml_config(path: Path) -> dict[str, object]:
         解析后的字典。
     """
     try:
-        import tomllib
+        import tomllib  # type: ignore[import-not-found]
     except ImportError:
-        import tomli as tomllib  # type: ignore[no-redef]
+        import tomli as tomllib  # type: ignore[import-not-found]
     with open(path, "rb") as f:
-        return tomllib.load(f)
+        return dict(tomllib.load(f))
 
 
-def _section(data: dict[str, object], name: str) -> dict[str, object]:
+def _section(data: dict[str, Any], name: str) -> dict[str, Any]:
     """安全获取 TOML 配置文件中的节。"""
     value = data.get(name, {})
     return value if isinstance(value, dict) else {}
 
 
-def _float_map(values: dict[str, object], allowed: set[str]) -> dict[str, float]:
+def _as_int(values: dict[str, Any], key: str, default: int) -> int:
+    value = values.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise TypeError(f"配置项 {key} 必须是 int")
+    return int(value)
+
+
+def _as_float(values: dict[str, Any], key: str, default: float) -> float:
+    value = values.get(key, default)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        raise TypeError(f"配置项 {key} 必须是 float")
+    return float(value)
+
+
+def _as_bool(values: dict[str, Any], key: str, default: bool) -> bool:
+    value = values.get(key, default)
+    if not isinstance(value, bool):
+        raise TypeError(f"配置项 {key} 必须是 bool")
+    return value
+
+
+def _float_map(values: dict[str, Any], allowed: set[str]) -> dict[str, float]:
     """从字典中提取指定键的 float 值。"""
     mapped: dict[str, float] = {}
     for key, val in values.items():
@@ -66,84 +88,84 @@ def build_sim_config(args: argparse.Namespace) -> SimConfig:
         fitness_weights = _section(evolution, "fitness_weights")
 
         cfg = SimConfig(
-            ticks=int(sim.get("ticks", cfg.ticks)),  # type: ignore[arg-type]
-            seed=int(sim.get("seed", cfg.seed)),  # type: ignore[arg-type]
-            dt=float(sim.get("dt", cfg.dt)),  # type: ignore[arg-type]
+            ticks=_as_int(sim, "ticks", cfg.ticks),
+            seed=_as_int(sim, "seed", cfg.seed),
+            dt=_as_float(sim, "dt", cfg.dt),
             neuron=NeuronParams(
-                v_rest=float(neuron.get("v_rest", cfg.neuron.v_rest)),  # type: ignore[arg-type]
-                v_reset=float(neuron.get("v_reset", cfg.neuron.v_reset)),  # type: ignore[arg-type]
-                v_th=float(neuron.get("v_th", cfg.neuron.v_th)),  # type: ignore[arg-type]
-                tau_m=float(neuron.get("tau_m", cfg.neuron.tau_m)),  # type: ignore[arg-type]
-                r_m=float(neuron.get("r_m", cfg.neuron.r_m)),  # type: ignore[arg-type]
-                spike_cost=float(neuron.get("spike_cost", cfg.neuron.spike_cost)),  # type: ignore[arg-type]
-                input_gain=float(neuron.get("input_gain", cfg.neuron.input_gain)),  # type: ignore[arg-type]
-                mem_size=int(neuron.get("mem_size", cfg.neuron.mem_size)),  # type: ignore[arg-type]
+                v_rest=_as_float(neuron, "v_rest", cfg.neuron.v_rest),
+                v_reset=_as_float(neuron, "v_reset", cfg.neuron.v_reset),
+                v_th=_as_float(neuron, "v_th", cfg.neuron.v_th),
+                tau_m=_as_float(neuron, "tau_m", cfg.neuron.tau_m),
+                r_m=_as_float(neuron, "r_m", cfg.neuron.r_m),
+                spike_cost=_as_float(neuron, "spike_cost", cfg.neuron.spike_cost),
+                input_gain=_as_float(neuron, "input_gain", cfg.neuron.input_gain),
+                mem_size=_as_int(neuron, "mem_size", cfg.neuron.mem_size),
             ),
             network=NetworkParams(
-                reproduction_threshold=float(
-                    network.get("reproduction_threshold", cfg.network.reproduction_threshold)  # type: ignore[arg-type]
+                reproduction_threshold=_as_float(
+                    network, "reproduction_threshold", cfg.network.reproduction_threshold
                 ),
-                reproduction_share=float(
-                    network.get("reproduction_share", cfg.network.reproduction_share)  # type: ignore[arg-type]
+                reproduction_share=_as_float(
+                    network, "reproduction_share", cfg.network.reproduction_share
                 ),
-                mutation_scale=float(
-                    network.get("mutation_scale", cfg.network.mutation_scale)  # type: ignore[arg-type]
+                mutation_scale=_as_float(network, "mutation_scale", cfg.network.mutation_scale),
+                energy_decay=_as_float(network, "energy_decay", cfg.network.energy_decay),
+                max_neurons=_as_int(network, "max_neurons", cfg.network.max_neurons),
+                max_links=_as_int(network, "max_links", cfg.network.max_links),
+                corpse_ttl=_as_int(network, "corpse_ttl", cfg.network.corpse_ttl),
+                scavenger_radius=_as_float(
+                    network, "scavenger_radius", cfg.network.scavenger_radius
                 ),
-                energy_decay=float(
-                    network.get("energy_decay", cfg.network.energy_decay)  # type: ignore[arg-type]
+                input_current_scale=_as_float(
+                    network, "input_current_scale", cfg.network.input_current_scale
                 ),
-                max_neurons=int(network.get("max_neurons", cfg.network.max_neurons)),  # type: ignore[arg-type]
-                max_links=int(network.get("max_links", cfg.network.max_links)),  # type: ignore[arg-type]
-                corpse_ttl=int(network.get("corpse_ttl", cfg.network.corpse_ttl)),  # type: ignore[arg-type]
-                scavenger_radius=float(
-                    network.get("scavenger_radius", cfg.network.scavenger_radius)  # type: ignore[arg-type]
+                background_current=_as_float(
+                    network, "background_current", cfg.network.background_current
                 ),
-                input_current_scale=float(
-                    network.get("input_current_scale", cfg.network.input_current_scale)  # type: ignore[arg-type]
+                spontaneous_spike_rate=_as_float(
+                    network, "spontaneous_spike_rate", cfg.network.spontaneous_spike_rate
                 ),
-                background_current=float(
-                    network.get("background_current", cfg.network.background_current)  # type: ignore[arg-type]
+                low_activation_threshold=_as_int(
+                    network, "low_activation_threshold", cfg.network.low_activation_threshold
                 ),
-                spontaneous_spike_rate=float(
-                    network.get("spontaneous_spike_rate", cfg.network.spontaneous_spike_rate)  # type: ignore[arg-type]
+                move_cost=_as_float(network, "move_cost", cfg.network.move_cost),
+                energy_cap=_as_float(network, "energy_cap", cfg.network.energy_cap),
+                adaptive_decay=_as_bool(
+                    network, "adaptive_decay", cfg.network.adaptive_decay
                 ),
-                low_activation_threshold=int(
-                    network.get("low_activation_threshold", cfg.network.low_activation_threshold)  # type: ignore[arg-type]
+                adaptive_reproduction=_as_bool(
+                    network,
+                    "adaptive_reproduction",
+                    cfg.network.adaptive_reproduction,
                 ),
-                move_cost=float(network.get("move_cost", cfg.network.move_cost)),  # type: ignore[arg-type]
-                energy_cap=float(network.get("energy_cap", cfg.network.energy_cap)),  # type: ignore[arg-type]
-                adaptive_decay=bool(
-                    network.get("adaptive_decay", cfg.network.adaptive_decay)
-                ),
-                adaptive_reproduction=bool(
-                    network.get(
-                        "adaptive_reproduction", cfg.network.adaptive_reproduction
-                    )
-                ),
-                endangered_threshold=int(
-                    network.get("endangered_threshold", cfg.network.endangered_threshold)  # type: ignore[arg-type]
+                endangered_threshold=_as_int(
+                    network, "endangered_threshold", cfg.network.endangered_threshold
                 ),
             ),
             evolution=EvolutionParams(
                 fitness_weights={
                     **cfg.evolution.fitness_weights,
                     **_float_map(
-                        fitness_weights,  # type: ignore[arg-type]
+                        fitness_weights,
                         allowed={"propagation", "energy_efficiency", "prediction_hit"},
                     ),
                 },
-                mutation_amplitude=float(
-                    evolution.get("mutation_amplitude", cfg.evolution.mutation_amplitude)  # type: ignore[arg-type]
+                mutation_amplitude=_as_float(
+                    evolution,
+                    "mutation_amplitude",
+                    cfg.evolution.mutation_amplitude,
                 ),
-                energy_budget_per_tick=float(
-                    evolution.get("energy_budget_per_tick", cfg.evolution.energy_budget_per_tick)  # type: ignore[arg-type]
+                energy_budget_per_tick=_as_float(
+                    evolution,
+                    "energy_budget_per_tick",
+                    cfg.evolution.energy_budget_per_tick,
                 ),
-                congestion_penalty=float(
-                    evolution.get("congestion_penalty", cfg.evolution.congestion_penalty)  # type: ignore[arg-type]
+                congestion_penalty=_as_float(
+                    evolution,
+                    "congestion_penalty",
+                    cfg.evolution.congestion_penalty,
                 ),
-                min_neurons=int(
-                    evolution.get("min_neurons", cfg.evolution.min_neurons)  # type: ignore[arg-type]
-                ),
+                min_neurons=_as_int(evolution, "min_neurons", cfg.evolution.min_neurons),
             ),
         )
     # 命令行覆盖

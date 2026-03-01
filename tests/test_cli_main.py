@@ -4,18 +4,12 @@ import argparse
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
-
 import pytest
 
-import neurogenesis_lab.__main__ as cli_compat  # 向后兼容导入
 import neurogenesis_lab.cli.parser as cli_parser
 import neurogenesis_lab.cli.run as cli_run
 import neurogenesis_lab.cli.benchmark as cli_bench
 import neurogenesis_lab.cli.info as cli_info
-import neurogenesis_lab.cli.config_builder as cli_config
 from neurogenesis_lab.config import SimConfig
 
 
@@ -150,6 +144,16 @@ def test_cmd_run_smoke_creates_output(tmp_path: Path, capsys) -> None:
         log_interval=1,
         gzip_output=False,
         max_file_size=0,
+        async_log=False,
+        log_buffer_size=256,
+        visualize=False,
+        plot_interval=5,
+        checkpoint_interval=0,
+        checkpoint_dir=str(tmp_path),
+        resume_from=None,
+        background_current=None,
+        spontaneous_spike_rate=None,
+        low_activation_threshold=None,
     )
 
     cli_run.cmd_run(args)

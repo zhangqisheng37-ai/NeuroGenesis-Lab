@@ -2,14 +2,9 @@
 
 import pickle
 import random
-import sys
 from pathlib import Path
 
 import pytest
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
 
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.network import Network
@@ -65,36 +60,33 @@ def test_checkpoint_schema_major_mismatch_rejected(tmp_path: Path) -> None:
         Network.load_checkpoint(checkpoint)
 
 
-def test_resume_matches_continuous_run(tmp_path: Path) -> None:
-    base = _build_seeded_network(seed=123)
 
-    # 从同一初始状态克隆两条分支
-    baseline: Network = pickle.loads(pickle.dumps(base))
-    resumed_branch: Network = pickle.loads(pickle.dumps(base))
 
-    # 连续运行 200 tick
-    for t in range(1, 201):
-        baseline.tick(t)
+def test_run_checkpoint_resume_summary_consistency(tmp_path: Path) -> None:
+    """端到端链路：run -> checkpoint -> resume 与连续运行摘要一致。"""
+    seed = 2026
 
-    # 运行 100 tick -> 保存 -> 恢复 -> 再运行 100 tick
-    for t in range(1, 101):
-        resumed_branch.tick(t)
-    checkpoint = tmp_path / "resume.pkl"
-    resumed_branch.save_checkpoint(checkpoint, tick=100)
+    continuous = _build_seeded_network(seed=seed)
+    for t in range(1, 301):
+        continuous.tick(t)
+    continuous_summary = continuous.get_summary()
+
+    segmented = _build_seeded_network(seed=seed)
+    for t in range(1, 151):
+        segmented.tick(t)
+
+    checkpoint = tmp_path / "e2e_resume.pkl"
+    segmented.save_checkpoint(checkpoint, tick=150)
 
     restored = Network.load_checkpoint(checkpoint)
-    for t in range(101, 201):
+    for t in range(151, 301):
         restored.tick(t)
-
-    baseline_summary = baseline.get_summary()
     restored_summary = restored.get_summary()
 
-    assert restored.current_tick == 200
-    assert restored_summary["total_neurons"] == baseline_summary["total_neurons"]
-    assert restored_summary["alive_neurons"] == baseline_summary["alive_neurons"]
-    assert restored_summary["total_spikes"] == baseline_summary["total_spikes"]
-    assert (
-        restored_summary["total_propagations"] == baseline_summary["total_propagations"]
-    )
-    assert restored_summary["birth_count"] == baseline_summary["birth_count"]
-    assert restored_summary["death_count"] == baseline_summary["death_count"]
+    assert restored.current_tick == 300
+    assert restored_summary["total_neurons"] == continuous_summary["total_neurons"]
+    assert restored_summary["alive_neurons"] == continuous_summary["alive_neurons"]
+    assert restored_summary["total_spikes"] == continuous_summary["total_spikes"]
+    assert restored_summary["total_propagations"] == continuous_summary["total_propagations"]
+    assert restored_summary["birth_count"] == continuous_summary["birth_count"]
+    assert restored_summary["death_count"] == continuous_summary["death_count"]

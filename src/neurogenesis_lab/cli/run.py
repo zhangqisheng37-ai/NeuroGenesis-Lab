@@ -5,6 +5,10 @@ from __future__ import annotations
 import argparse
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from neurogenesis_lab.visualization import LiveMonitor
 
 from neurogenesis_lab import __version__
 from neurogenesis_lab.cli.config_builder import build_sim_config, validate_run_config
@@ -18,6 +22,7 @@ from neurogenesis_lab.observability import (
     ObservabilityLogger,
     create_experiment_logger,
 )
+from neurogenesis_lab.protocols import EngineSummary
 
 
 def _init_network(cfg: SimConfig, args: argparse.Namespace) -> tuple[Network, int, int]:
@@ -105,7 +110,7 @@ def _init_network(cfg: SimConfig, args: argparse.Namespace) -> tuple[Network, in
 
 def _init_logging(
     cfg: SimConfig, args: argparse.Namespace, network: Network
-) -> tuple[ObservabilityLogger, NetworkObserver, object | None, int, Path]:
+) -> tuple[ObservabilityLogger, NetworkObserver, LiveMonitor | None, int, Path]:
     """初始化日志系统和可视化监控。"""
     output_dir = Path(getattr(args, "output", "outputs") or "outputs")
     logger = create_experiment_logger(
@@ -145,7 +150,7 @@ def _run_simulation_loop(
     cfg: SimConfig,
     logger: ObservabilityLogger,
     observer: NetworkObserver,
-    live_monitor: object | None,
+    live_monitor: LiveMonitor | None,
     run_start_tick: int,
     run_end_tick: int,
     checkpoint_interval: int,
@@ -166,7 +171,7 @@ def _run_simulation_loop(
             cp_path = checkpoint_dir / f"checkpoint_tick_{t}.pkl"
             network.save_checkpoint(cp_path, tick=t)
         if live_monitor is not None:
-            live_monitor.on_tick(t, snapshot, network)  # type: ignore[union-attr]
+            live_monitor.on_tick(t, snapshot, network)
         if local_progress_tick % max(1, total_ticks // 5) == 0:
             alive = snapshot["alive_neurons"]
             pe = snapshot["prediction_error"]
@@ -183,17 +188,17 @@ def _print_summary(
     *,
     elapsed: float,
     output_path: Path,
-    summary: dict[str, object],
-    learn_summary: dict[str, object],
+    summary: EngineSummary,
+    learn_summary: dict[str, Any],
     low_activation_threshold: int,
 ) -> None:
     """打印仿真结果摘要。"""
+    total_spikes = int(summary.get("total_spikes", 0))
+    total_propagations = int(summary.get("total_propagations", 0))
     print(f"\n完成! 用时 {elapsed:.2f}s")
     print(f"  输出: {output_path}")
     print(f"  存活: {summary['alive_neurons']}/{summary['total_neurons']}")
-    print(
-        f"  总放电: {summary['total_spikes']}, 总传播: {summary['total_propagations']}"
-    )
+    print(f"  总放电: {total_spikes}, 总传播: {total_propagations}")
     print(f"  出生: {summary['birth_count']}, 死亡: {summary['death_count']}")
     print(
         f"  规则数: {learn_summary['rule_count']}, "
@@ -203,10 +208,7 @@ def _print_summary(
         f"  预测次数: {learn_summary['total_predictions']}, "
         f"正确: {learn_summary['correct_predictions']}"
     )
-    if (
-        summary["total_spikes"] <= low_activation_threshold
-        or summary["total_propagations"] <= low_activation_threshold
-    ):
+    if total_spikes <= low_activation_threshold or total_propagations <= low_activation_threshold:
         print(
             f"  警告: 低激活（阈值={low_activation_threshold}），"
             f"可提高 --input-weight 或调整 [neuron]/[network] 参数"
@@ -219,7 +221,7 @@ def _finalize_run(
     network: Network,
     observer: NetworkObserver,
     logger: ObservabilityLogger,
-) -> tuple[dict[str, object], Path]:
+) -> tuple[EngineSummary, Path]:
     """收尾运行，写出摘要并关闭日志。"""
     final_metrics = observer.get_network_metrics(run_end_tick)
     summary = network.get_summary()
@@ -252,7 +254,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         checkpoint_dir,
     )
     if live_monitor is not None:
-        live_monitor.finalize()  # type: ignore[union-attr]
+        live_monitor.finalize()
     summary, output_path = _finalize_run(
         run_end_tick=run_end_tick,
         network=network,

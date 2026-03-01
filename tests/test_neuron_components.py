@@ -2,15 +2,12 @@
 
 import pickle
 
-from neurogenesis_lab.config import HERITABLE_ATTRS
 from neurogenesis_lab.neuron import (
     AdExNeuron,
     IzhikevichNeuron,
     LIFNeuron,
     Neuron,
     NeuronDynamics,
-    NeuronEvolution,
-    NeuronMemory,
 )
 
 

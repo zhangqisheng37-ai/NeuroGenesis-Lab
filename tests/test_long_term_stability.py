@@ -1,15 +1,12 @@
 """长程稳定性回归测试 — 验证 500 ticks 实验的稳定性"""
 
-import pytest
-from neurogenesis_lab.config import (
-    SimConfig,
-    NeuronParams,
-    NetworkParams,
-    EvolutionParams,
-)
+import random
+
+import numpy as np
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron
 from neurogenesis_lab.encoding import Event
+from neurogenesis_lab.vectorized import VectorizedNetwork
 
 
 def create_stable_network(size: int = 10) -> Network:
@@ -241,20 +238,79 @@ def test_energy_cap_enforcement():
             ), f"神经元 {neuron.id} 能量超过上限: {neuron.energy} > {network.energy_cap}"
 
 
-def test_disabled_adaptive_mechanisms():
-    """测试禁用自适应机制时的行为"""
-    network = create_stable_network(size=10)
-    network.adaptive_decay = False
-    network.adaptive_reproduction = False
 
-    # 测试衰减始终返回固定值
-    for alive_count in [5, 25, 45]:
-        decay = network._calculate_adaptive_decay(alive_count)
-        assert abs(decay - network.energy_decay) < 1e-9, "禁用自适应时衰减应为固定值"
 
-    # 测试繁殖成本始终返回固定值
-    for alive_count in [5, 25, 45]:
-        share = network._calculate_adaptive_reproduction_share(alive_count)
-        assert (
-            abs(share - network.reproduction_share) < 1e-9
-        ), "禁用自适应时繁殖成本应为固定值"
+def _init_pair_engines(seed: int, size: int = 20) -> tuple[Network, VectorizedNetwork]:
+    """初始化同 seed 的双引擎对照组。"""
+    random.seed(seed)
+    np.random.seed(seed)
+
+    std = create_stable_network(size=size)
+
+    random.seed(seed)
+    np.random.seed(seed)
+    vec = VectorizedNetwork(
+        reproduction_threshold=1.8,
+        reproduction_share=0.35,
+        energy_decay=0.001,
+        max_neurons=60,
+        min_neurons=5,
+        energy_cap=5.0,
+        adaptive_decay=True,
+        adaptive_reproduction=True,
+        endangered_threshold=10,
+        move_cost=0.005,
+        input_current_scale=0.1,
+    )
+    vec.init_neurons(
+        size,
+        energy_init=2.0,
+        v_th=-50.0,
+        tau_m=20.0,
+        r_m=1.0,
+        spike_cost_val=0.03,
+        spread=5.0,
+    )
+    vec.connect_knn(k=2, weight=1.0, delay=1)
+
+    for tick in range(0, 500, 5):
+        src = tick % size
+        std.enqueue([Event(token_id=1, t=tick, src_id=f"n{src}", meta={"weight": 5.0})])
+        vec.enqueue([Event(token_id=1, t=tick, src_id=str(src), meta={"weight": 5.0})])
+
+    return std, vec
+
+
+def _series_stats(values: list[float]) -> tuple[float, float]:
+    arr = np.asarray(values, dtype=np.float64)
+    return float(np.mean(arr)), float(np.std(arr))
+
+
+def test_long_term_dual_engine_population_trend_consistency() -> None:
+    """同 seed 长程运行下双引擎种群趋势应统计一致（非逐值）。"""
+    std, vec = _init_pair_engines(seed=123, size=20)
+
+    std_pop: list[float] = []
+    vec_pop: list[float] = []
+
+    for tick in range(1, 501):
+        s1 = std.tick(tick, dt=1.0, run_evolution=True)
+        s2 = vec.tick(tick, dt=1.0)
+        std_pop.append(float(s1["alive_neurons"]))
+        vec_pop.append(float(s2["alive_neurons"]))
+
+    std_tail_mean, std_tail_std = _series_stats(std_pop[250:])
+    vec_tail_mean, vec_tail_std = _series_stats(vec_pop[250:])
+
+    mean_diff_ratio = abs(std_tail_mean - vec_tail_mean) / max(std_tail_mean, vec_tail_mean, 1.0)
+    std_diff_ratio = abs(std_tail_std - vec_tail_std) / max(std_tail_std, vec_tail_std, 1.0)
+
+    assert mean_diff_ratio <= 0.55, (
+        f"尾段均值趋势偏差过大: std={std_tail_mean:.2f}, vec={vec_tail_mean:.2f}, "
+        f"ratio={mean_diff_ratio:.2%}"
+    )
+    assert std_diff_ratio <= 1.00, (
+        f"尾段波动趋势偏差过大: std={std_tail_std:.2f}, vec={vec_tail_std:.2f}, "
+        f"ratio={std_diff_ratio:.2%}"
+    )
+

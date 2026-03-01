@@ -1,14 +1,8 @@
 """阶段三回归测试 — 动力学激活与引擎可比性"""
 
-import sys
 import random
-from pathlib import Path
 
 import numpy as np
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
 
 from neurogenesis_lab.config import SimConfig, seed_all
 from neurogenesis_lab.encoding import Encoder, Event

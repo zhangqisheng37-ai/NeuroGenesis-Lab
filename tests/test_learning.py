@@ -1,11 +1,5 @@
 """单元测试 — learning 模块"""
 
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
 
 import pytest
 from neurogenesis_lab.encoding import Tokenizer

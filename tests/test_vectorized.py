@@ -1,11 +1,5 @@
 """单元测试 — vectorized 引擎"""
 
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
 
 import numpy as np
 import pytest
@@ -193,7 +187,7 @@ class TestVectorizedNetwork:
         net.init_neurons(5)
         currents = np.array([float("nan"), 0.0, float("inf"), 0.0, -float("inf")])
         # np.nan 进入后 safe 处理
-        snapshot = net.tick(1, input_currents=currents)
+        net.tick(1, input_currents=currents)
         assert np.all(np.isfinite(net.v[net.alive])), "存活神经元不应有 NaN/Inf 电位"
 
     def test_tick_snapshot_sequence_regression(self) -> None:

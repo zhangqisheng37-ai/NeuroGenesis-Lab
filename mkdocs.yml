@@ -1,8 +1,8 @@
 site_name: NeuroGenesis Lab 文档
 site_description: 神经演化仿真框架 — API 参考与教程
-site_url: https://example.github.io/neurogenesis-lab/
-repo_url: https://github.com/example/neurogenesis-lab
-repo_name: neurogenesis-lab
+site_url: https://zhangqisheng37-ai.github.io/NeuroGenesis-Lab/
+repo_url: https://github.com/zhangqisheng37-ai/NeuroGenesis-Lab
+repo_name: NeuroGenesis-Lab
 docs_dir: docs_site
 
 theme:

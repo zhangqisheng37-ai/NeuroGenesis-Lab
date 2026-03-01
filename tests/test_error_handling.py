@@ -6,38 +6,16 @@ RuleStore LRU 淘汰、visualization matplotlib 异常保护等场景。
 
 from __future__ import annotations
 
-import logging
 import time
-import threading
 from collections import OrderedDict
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from neurogenesis_lab.config import RESCUED_NEURON_ENERGY
 from neurogenesis_lab.learning import AutoLearner, RuleDiscovery, RuleStore
-from neurogenesis_lab.network import Network
-from neurogenesis_lab.neuron import LIFNeuron
-from neurogenesis_lab.observability import AsyncJsonlWriter, JsonlWriter
-
-
-# ── 辅助函数 ──────────────────────────────────────────────
-
-
-def _make_network(n: int = 8, **kwargs) -> Network:
-    """创建测试用网络"""
-    neurons = [LIFNeuron() for _ in range(n)]
-    net = Network(
-        neurons={neuron.id: neuron for neuron in neurons},
-        max_neurons=kwargs.pop("max_neurons", 50),
-        energy_cap=kwargs.pop("energy_cap", 5.0),
-        **kwargs,
-    )
-    for i, neuron in enumerate(neurons):
-        target = neurons[(i + 1) % n]
-        net.connect(neuron.id, target.id, weight=1.0, delay=1)
-    return net
+from neurogenesis_lab.observability import AsyncJsonlWriter
 
 
 # ══════════════════════════════════════════════════════════
@@ -166,10 +144,10 @@ class TestAsyncJsonlWriterClose:
 class TestCheckDeathMinNeurons:
     """Network.check_death() 的 min_neurons 保护机制"""
 
-    def test_alive_not_below_min_neurons(self):
+    def test_alive_not_below_min_neurons(self, ring_network_factory):
         """存活数不应低于 min_neurons"""
         min_n = 3
-        net = _make_network(n=6, min_neurons=min_n)
+        net = ring_network_factory(n=6, min_neurons=min_n)
 
         # 让大部分神经元能量耗尽
         for i, neuron in enumerate(net.neurons.values()):
@@ -184,10 +162,10 @@ class TestCheckDeathMinNeurons:
             f"存活数 {alive_count} 不应低于 min_neurons={min_n}"
         )
 
-    def test_rescued_neuron_energy(self):
+    def test_rescued_neuron_energy(self, ring_network_factory):
         """被救回的神经元 energy 应 >= RESCUED_NEURON_ENERGY"""
         min_n = 3
-        net = _make_network(n=6, min_neurons=min_n)
+        net = ring_network_factory(n=6, min_neurons=min_n)
 
         # 让所有神经元能量耗尽
         for neuron in net.neurons.values():
@@ -204,14 +182,14 @@ class TestCheckDeathMinNeurons:
                 f"应 >= RESCUED_NEURON_ENERGY={RESCUED_NEURON_ENERGY}"
             )
 
-    def test_min_neurons_zero_allows_all_death(self):
+    def test_min_neurons_zero_allows_all_death(self, ring_network_factory):
         """min_neurons=0 时允许全部死亡"""
-        net = _make_network(n=4, min_neurons=0)
+        net = ring_network_factory(n=4, min_neurons=0)
 
         for neuron in net.neurons.values():
             neuron.energy = 0.0
 
-        deaths = net.check_death()
+        net.check_death()
         alive_count = sum(1 for n in net.neurons.values() if n.alive)
         assert alive_count == 0, "min_neurons=0 时应允许全部死亡"
 

@@ -1,4 +1,3 @@
-import pytest
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron
 

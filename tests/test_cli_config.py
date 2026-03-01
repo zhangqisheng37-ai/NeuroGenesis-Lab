@@ -1,14 +1,90 @@
 """单元测试 — CLI 配置映射"""
 
-import sys
 from argparse import Namespace
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
+import pytest
 
 from neurogenesis_lab.__main__ import _build_sim_config
+
+
+def test_build_sim_config_missing_sections_uses_defaults(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "minimal.toml"
+    cfg_file.write_text(
+        """
+[simulation]
+ticks = 120
+""",
+        encoding="utf-8",
+    )
+
+    args = Namespace(
+        config=str(cfg_file),
+        ticks=None,
+        seed=None,
+        dt=None,
+        background_current=None,
+        spontaneous_spike_rate=None,
+        low_activation_threshold=None,
+    )
+    cfg = _build_sim_config(args)
+
+    assert cfg.ticks == 120
+    # 缺失 section 应回退默认值
+    assert cfg.neuron.v_rest == -65.0
+    assert cfg.network.max_neurons == 50
+    assert cfg.evolution.min_neurons == 2
+
+
+def test_build_sim_config_nested_override_partial_fitness_weights(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "fitness.toml"
+    cfg_file.write_text(
+        """
+[evolution.fitness_weights]
+propagation = 1.8
+""",
+        encoding="utf-8",
+    )
+
+    args = Namespace(
+        config=str(cfg_file),
+        ticks=None,
+        seed=None,
+        dt=None,
+        background_current=None,
+        spontaneous_spike_rate=None,
+        low_activation_threshold=None,
+    )
+    cfg = _build_sim_config(args)
+
+    assert cfg.evolution.fitness_weights["propagation"] == 1.8
+    # 其余键应保留默认值
+    assert cfg.evolution.fitness_weights["energy_efficiency"] == 0.5
+    assert cfg.evolution.fitness_weights["prediction_hit"] == 0.8
+
+
+def test_build_sim_config_invalid_numeric_value_raises(tmp_path: Path) -> None:
+    cfg_file = tmp_path / "invalid.toml"
+    cfg_file.write_text(
+        """
+[simulation]
+ticks = "abc"
+""",
+        encoding="utf-8",
+    )
+
+    args = Namespace(
+        config=str(cfg_file),
+        ticks=None,
+        seed=None,
+        dt=None,
+        background_current=None,
+        spontaneous_spike_rate=None,
+        low_activation_threshold=None,
+    )
+
+    with pytest.raises((TypeError, ValueError)):
+        _build_sim_config(args)
 
 
 def test_build_sim_config_maps_all_toml_sections(tmp_path: Path) -> None:

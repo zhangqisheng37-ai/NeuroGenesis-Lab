@@ -1,18 +1,12 @@
 """单元测试 — observability 模块"""
 
-import sys
 import gzip
 import json
 import random
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
-
-import pytest
 from neurogenesis_lab.config import SCHEMA_VERSION
-from neurogenesis_lab.encoding import Encoder, Event
+from neurogenesis_lab.encoding import Encoder
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron, IzhikevichNeuron
 from neurogenesis_lab.observability import (
@@ -48,14 +42,14 @@ class TestJsonlWriter:
 
 
 class TestNetworkObserver:
-    def _setup(self) -> tuple[Network, list[LIFNeuron], NetworkObserver]:
-        neurons = [LIFNeuron() for _ in range(3)]
-        net = Network(neurons={n.id: n for n in neurons})
+    def _setup(self, ring_network_factory) -> tuple[Network, list[LIFNeuron], NetworkObserver]:
+        net = ring_network_factory(n=3, min_neurons=0)
+        neurons = list(net.neurons.values())
         observer = NetworkObserver(net, debug_neuron_ids=[neurons[0].id])
         return net, neurons, observer
 
-    def test_get_network_metrics(self) -> None:
-        net, neurons, observer = self._setup()
+    def test_get_network_metrics(self, ring_network_factory) -> None:
+        net, neurons, observer = self._setup(ring_network_factory)
         metrics = observer.get_network_metrics(1)
         assert metrics["tick"] == 1
         assert metrics["total_neurons"] == 3
@@ -64,8 +58,8 @@ class TestNetworkObserver:
         assert "avg_entropy" in metrics
         assert "active_ratio" in metrics
 
-    def test_get_neuron_metrics(self) -> None:
-        net, neurons, observer = self._setup()
+    def test_get_neuron_metrics(self, ring_network_factory) -> None:
+        net, neurons, observer = self._setup(ring_network_factory)
         detail = observer.get_neuron_metrics(neurons[0].id)
         assert detail is not None
         assert detail["neuron_id"] == neurons[0].id
@@ -73,26 +67,26 @@ class TestNetworkObserver:
         assert "spike_count" in detail
         assert "v" in detail
 
-    def test_get_neuron_metrics_unknown(self) -> None:
-        _, _, observer = self._setup()
+    def test_get_neuron_metrics_unknown(self, ring_network_factory) -> None:
+        _, _, observer = self._setup(ring_network_factory)
         assert observer.get_neuron_metrics("nonexistent") is None
 
-    def test_get_learning_metrics(self) -> None:
-        _, _, observer = self._setup()
+    def test_get_learning_metrics(self, ring_network_factory) -> None:
+        _, _, observer = self._setup(ring_network_factory)
         metrics = observer.get_learning_metrics()
         assert "total_spikes" in metrics
         assert "pe_moving_avg" in metrics
 
-    def test_get_trend_metrics(self) -> None:
-        _, _, observer = self._setup()
+    def test_get_trend_metrics(self, ring_network_factory) -> None:
+        _, _, observer = self._setup(ring_network_factory)
         snapshot = {"prediction_error": 0.5, "births": 1, "deaths": 0}
         trends = observer.get_trend_metrics(1, snapshot)
         assert "pe_moving_avg" in trends
         assert "birth_rate" in trends
         assert "death_rate" in trends
 
-    def test_generate_report_has_schema_version(self) -> None:
-        _, _, observer = self._setup()
+    def test_generate_report_has_schema_version(self, ring_network_factory) -> None:
+        _, _, observer = self._setup(ring_network_factory)
         report = observer.generate_report(1)
         assert report["schema_version"] == SCHEMA_VERSION
 
@@ -108,17 +102,16 @@ class TestNetworkObserver:
         tracked_types = [n["type"] for n in debug["tracked_neurons"]]
         assert "IzhikevichNeuron" in tracked_types
 
-    def test_backward_compat_get_tick_metrics(self) -> None:
-        _, _, observer = self._setup()
+    def test_backward_compat_get_tick_metrics(self, ring_network_factory) -> None:
+        _, _, observer = self._setup(ring_network_factory)
         metrics = observer.get_tick_metrics(1)
         assert "tick" in metrics
 
 
 class TestObservabilityLogger:
-    def test_log_tick_and_summary(self, tmp_path: Path) -> None:
+    def test_log_tick_and_summary(self, tmp_path: Path, ring_network_factory) -> None:
         path = tmp_path / "run.jsonl"
-        neurons = [LIFNeuron()]
-        net = Network(neurons={n.id: n for n in neurons})
+        net = ring_network_factory(n=1, min_neurons=0)
         observer = NetworkObserver(net)
         logger = ObservabilityLogger(path, debug_mode=False)
 
@@ -149,10 +142,9 @@ class TestObservabilityLogger:
         )
         assert "exp_001" in str(logger.get_output_path())
 
-    def test_log_interval_sampling(self, tmp_path: Path) -> None:
+    def test_log_interval_sampling(self, tmp_path: Path, ring_network_factory) -> None:
         path = tmp_path / "sampled.jsonl"
-        neurons = [LIFNeuron()]
-        net = Network(neurons={n.id: n for n in neurons})
+        net = ring_network_factory(n=1, min_neurons=0)
         observer = NetworkObserver(net)
         logger = ObservabilityLogger(path, log_interval=2)
 
@@ -168,10 +160,9 @@ class TestObservabilityLogger:
         assert json.loads(lines[1])["metrics"]["tick"] == 4
         assert json.loads(lines[2])["type"] == "summary"
 
-    def test_gzip_output(self, tmp_path: Path) -> None:
+    def test_gzip_output(self, tmp_path: Path, ring_network_factory) -> None:
         path = tmp_path / "run.jsonl.gz"
-        neurons = [LIFNeuron()]
-        net = Network(neurons={n.id: n for n in neurons})
+        net = ring_network_factory(n=1, min_neurons=0)
         observer = NetworkObserver(net)
         logger = ObservabilityLogger(path)
 
@@ -185,10 +176,11 @@ class TestObservabilityLogger:
         assert "metrics" in json.loads(lines[0])
         assert json.loads(lines[1])["type"] == "summary"
 
-    def test_output_rotation_by_max_file_size(self, tmp_path: Path) -> None:
+    def test_output_rotation_by_max_file_size(
+        self, tmp_path: Path, ring_network_factory
+    ) -> None:
         path = tmp_path / "run.jsonl"
-        neurons = [LIFNeuron() for _ in range(2)]
-        net = Network(neurons={n.id: n for n in neurons})
+        net = ring_network_factory(n=2, min_neurons=0)
         observer = NetworkObserver(net)
         logger = ObservabilityLogger(path, max_file_size=200)
 
@@ -201,10 +193,11 @@ class TestObservabilityLogger:
         rotated = sorted(tmp_path.glob("run*.jsonl"))
         assert len(rotated) >= 2, "启用 max_file_size 后应产生轮转文件"
 
-    def test_async_double_buffer_logging(self, tmp_path: Path) -> None:
+    def test_async_double_buffer_logging(
+        self, tmp_path: Path, ring_network_factory
+    ) -> None:
         path = tmp_path / "async.jsonl"
-        neurons = [LIFNeuron()]
-        net = Network(neurons={n.id: n for n in neurons})
+        net = ring_network_factory(n=1, min_neurons=0)
         observer = NetworkObserver(net)
         logger = ObservabilityLogger(path, async_mode=True, log_buffer_size=2)
 

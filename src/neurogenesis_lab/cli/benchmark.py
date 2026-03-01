@@ -11,6 +11,7 @@ import numpy as np
 from neurogenesis_lab.core_bridge import parallel_lif_tick_safe
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron
+from neurogenesis_lab.protocols import EngineSummary
 from neurogenesis_lab.vectorized import VectorizedNetwork
 
 
@@ -102,13 +103,14 @@ def _print_benchmark_results(
     rust_size: int,
     rust_backend: str,
     rust_spikes: int,
-    vec_summary: dict[str, object],
-    orig_summary: dict[str, object],
+    vec_summary: EngineSummary,
+    orig_summary: EngineSummary,
 ) -> None:
     """格式化并输出基准测试结果。"""
 
-    def _fmt_num(value: float | int | None, digits: int = 3) -> str:
-        if value is None:
+    def _fmt_summary_num(summary: EngineSummary, key: str, digits: int = 3) -> str:
+        value = summary.get(key)
+        if not isinstance(value, (int, float)):
             return "-"
         if isinstance(value, float):
             return f"{value:.{digits}f}"
@@ -117,22 +119,22 @@ def _print_benchmark_results(
     comparison_rows = [
         {
             "metric": "alive_neurons",
-            "original": _fmt_num(orig_summary.get("alive_neurons")),
-            "vectorized": _fmt_num(vec_summary.get("alive_neurons")),
+            "original": _fmt_summary_num(orig_summary, "alive_neurons"),
+            "vectorized": _fmt_summary_num(vec_summary, "alive_neurons"),
             "comparable": "可比",
             "note": "存活数量可直接比较",
         },
         {
             "metric": "total_spikes",
-            "original": _fmt_num(orig_summary.get("total_spikes")),
-            "vectorized": _fmt_num(vec_summary.get("total_spikes")),
+            "original": _fmt_summary_num(orig_summary, "total_spikes"),
+            "vectorized": _fmt_summary_num(vec_summary, "total_spikes"),
             "comparable": "可比",
             "note": "总放电次数可比较总体趋势",
         },
         {
             "metric": "mean_energy",
-            "original": _fmt_num(orig_summary.get("mean_energy"), digits=4),
-            "vectorized": _fmt_num(vec_summary.get("mean_energy"), digits=4),
+            "original": _fmt_summary_num(orig_summary, "mean_energy", digits=4),
+            "vectorized": _fmt_summary_num(vec_summary, "mean_energy", digits=4),
             "comparable": "可比",
             "note": "平均能量可比较总体能量态",
         },
@@ -171,7 +173,7 @@ def _print_benchmark_results(
     def _line(parts: list[str]) -> str:
         return " | ".join(parts[i].ljust(widths[i]) for i in range(len(parts)))
 
-    print(f"\n结果:")
+    print("\n结果:")
     print(
         f"  向量化引擎 ({neuron_count} neurons): "
         f"{vec_time:.3f}s ({tick_count / vec_time:.0f} ticks/s)"

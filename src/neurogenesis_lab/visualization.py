@@ -5,13 +5,16 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, TYPE_CHECKING, Mapping
+
+if TYPE_CHECKING:
+    from neurogenesis_lab.network import Network
+    from neurogenesis_lab.vectorized import VectorizedNetwork
 
 _logger = logging.getLogger(__name__)
 
 try:
     import matplotlib.pyplot as plt
-    import matplotlib.animation as animation
     from matplotlib.figure import Figure
 
     # 设置中文字体，解决乱码问题
@@ -430,14 +433,17 @@ class LiveMonitor:
         ax.set_ylabel("Y")
         ax.grid(True, alpha=0.3)
         ax.set_aspect("equal")
-        self._scatter = None
-        self._lines_topology = []
+        self._scatter: Any | None = None
+        self._lines_topology: list[Any] = []
 
-        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
         self._initialized = True
 
     def on_tick(
-        self, tick: int, snapshot: dict[str, Any], network: object | None = None
+        self,
+        tick: int,
+        snapshot: Mapping[str, Any],
+        network: "Network | VectorizedNetwork | None" = None,
     ) -> None:
         """每个 tick 后调用，按间隔更新图表
 
@@ -509,53 +515,89 @@ class LiveMonitor:
         ax = self._axes[3]
         if hasattr(self, "_current_network") and self._current_network is not None:
             network = self._current_network
-            alive = [n for n in network.neurons.values() if n.alive]
 
-            if alive:
-                xs = [n.pos[0] for n in alive]
-                ys = [n.pos[1] for n in alive]
-                energies = [n.energy for n in alive]
+            if hasattr(network, "neurons"):
+                # Network 路径
+                alive = [n for n in network.neurons.values() if n.alive]
+                if alive:
+                    xs = [n.pos[0] for n in alive]
+                    ys = [n.pos[1] for n in alive]
+                    energies = [n.energy for n in alive]
 
-                # 清除旧的连接线
-                for line in self._lines_topology:
-                    line.remove()
-                self._lines_topology.clear()
+                    # 清除旧的连接线
+                    for line in self._lines_topology:
+                        line.remove()
+                    self._lines_topology.clear()
 
-                # 绘制新的连接线
-                for n in alive:
-                    for target_id in n.links:
-                        if (
-                            target_id in network.neurons
-                            and network.neurons[target_id].alive
-                        ):
-                            target = network.neurons[target_id]
-                            (line,) = ax.plot(
-                                [n.pos[0], target.pos[0]],
-                                [n.pos[1], target.pos[1]],
-                                color="#bdc3c7",
-                                alpha=0.3,
-                                linewidth=0.5,
-                            )
-                            self._lines_topology.append(line)
+                    # 绘制新的连接线
+                    for n in alive:
+                        for target_id in n.links:
+                            if (
+                                target_id in network.neurons
+                                and network.neurons[target_id].alive
+                            ):
+                                target = network.neurons[target_id]
+                                (line,) = ax.plot(
+                                    [n.pos[0], target.pos[0]],
+                                    [n.pos[1], target.pos[1]],
+                                    color="#bdc3c7",
+                                    alpha=0.3,
+                                    linewidth=0.5,
+                                )
+                                self._lines_topology.append(line)
 
-                # 更新散点图
-                if self._scatter is None:
-                    self._scatter = ax.scatter(
-                        xs,
-                        ys,
-                        c=energies,
-                        cmap="YlOrRd",
-                        s=50,
-                        alpha=0.8,
-                        edgecolors="black",
-                        linewidth=1,
-                    )
-                else:
-                    self._scatter.set_offsets(list(zip(xs, ys)))
-                    self._scatter.set_array(energies)
+                    # 更新散点图
+                    if self._scatter is None:
+                        self._scatter = ax.scatter(
+                            xs,
+                            ys,
+                            c=energies,
+                            cmap="YlOrRd",
+                            s=50,
+                            alpha=0.8,
+                            edgecolors="black",
+                            linewidth=1,
+                        )
+                    else:
+                        self._scatter.set_offsets(list(zip(xs, ys)))
+                        self._scatter.set_array(energies)
 
-                ax.relim()
-                ax.autoscale_view()
+                    ax.relim()
+                    ax.autoscale_view()
+
+            elif (
+                hasattr(network, "pos")
+                and hasattr(network, "alive")
+                and hasattr(network, "energy")
+            ):
+                # VectorizedNetwork 路径
+                pos = network.pos[network.alive]
+                energies = network.energy[network.alive]
+                if len(pos) > 0:
+                    xs = pos[:, 0]
+                    ys = pos[:, 1]
+
+                    for line in self._lines_topology:
+                        line.remove()
+                    self._lines_topology.clear()
+
+                    if self._scatter is None:
+                        self._scatter = ax.scatter(
+                            xs,
+                            ys,
+                            c=energies,
+                            cmap="YlOrRd",
+                            s=50,
+                            alpha=0.8,
+                            edgecolors="black",
+                            linewidth=1,
+                        )
+                    else:
+                        self._scatter.set_offsets(list(zip(xs, ys)))
+                        self._scatter.set_array(energies)
+
+                    ax.relim()
+                    ax.autoscale_view()
 
         self._fig.canvas.draw_idle()
         self._fig.canvas.flush_events()

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from neurogenesis_lab.config import SimConfig
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron
@@ -19,33 +17,42 @@ from neurogenesis_lab.vectorized import VectorizedNetwork
 # ── 辅助函数 ──────────────────────────────────────────────
 
 
-def _make_network(n: int = 8, **kwargs) -> Network:
-    """创建测试用网络"""
-    neurons = [LIFNeuron() for _ in range(n)]
-    net = Network(
-        neurons={neuron.id: neuron for neuron in neurons},
-        max_neurons=kwargs.pop("max_neurons", max(n * 2, 50)),
-        energy_cap=kwargs.pop("energy_cap", 5.0),
-        **kwargs,
-    )
-    # 环形连接
-    for i, neuron in enumerate(neurons):
-        target = neurons[(i + 1) % n]
-        net.connect(neuron.id, target.id, weight=1.0, delay=1)
-    return net
 
 
-# ══════════════════════════════════════════════════════════
-# 1. Network.tick() 性能基线
-# ══════════════════════════════════════════════════════════
+
+def _run_mixed_model_benchmark(neurons: int = 1000, ticks: int = 100) -> dict[str, float | int | str]:
+    """运行混合模型基准并返回统一基线格式。"""
+    vnet = VectorizedNetwork()
+    vnet.init_neurons(neurons, energy_init=1.0)
+    # 0=LIF, 1=Izh, 2=AdEx，按 1/3 切分
+    third = neurons // 3
+    vnet.model_type[:third] = 0
+    vnet.model_type[third : 2 * third] = 1
+    vnet.model_type[2 * third :] = 2
+    vnet.connect_knn(k=3, weight=1.0, delay=1)
+
+    start = time.time()
+    for t in range(1, ticks + 1):
+        vnet.tick(t, dt=1.0)
+    elapsed = time.time() - start
+    summary = vnet.get_summary()
+
+    return {
+        "scenario": "mixed_model_vectorized_1000x100",
+        "neurons": neurons,
+        "ticks": ticks,
+        "elapsed_s": elapsed,
+        "alive_neurons": int(summary["alive_neurons"]),
+        "total_spikes": int(summary["total_spikes"]),
+    }
 
 
 class TestNetworkTickPerformance:
     """Network.tick() 性能基准"""
 
-    def test_50_neurons_100_ticks_under_5s(self):
+    def test_50_neurons_100_ticks_under_5s(self, ring_network_factory):
         """50 个神经元运行 100 ticks 应在 5 秒内完成"""
-        net = _make_network(n=50)
+        net = ring_network_factory(n=50)
 
         start = time.time()
         for t in range(1, 101):
@@ -56,9 +63,9 @@ class TestNetworkTickPerformance:
             f"50 神经元 100 ticks 耗时 {elapsed:.2f}s，超过 5s 阈值"
         )
 
-    def test_tick_returns_valid_snapshot(self):
+    def test_tick_returns_valid_snapshot(self, ring_network_factory):
         """tick() 返回的 snapshot 包含必要字段"""
-        net = _make_network(n=10)
+        net = ring_network_factory(n=10)
         snapshot = net.tick(1, dt=1.0)
 
         required_keys = [
@@ -156,6 +163,36 @@ class TestConnectByProximityPerformance:
 # ══════════════════════════════════════════════════════════
 
 
+
+
+class TestMixedModelBenchmark:
+    """混合模型基准测试（P2.3.4）。"""
+
+    def test_mixed_1000_neurons_100_ticks_under_15s(self):
+        """1000 混合神经元 100 ticks 应在 15 秒内完成。"""
+        result = _run_mixed_model_benchmark(neurons=1000, ticks=100)
+        assert float(result["elapsed_s"]) < 15.0, (
+            f"混合模型 1000x100 耗时 {float(result['elapsed_s']):.2f}s，超过 15s 阈值"
+        )
+
+    def test_mixed_benchmark_baseline_output_format(self):
+        """基线输出应包含稳定字段，便于后续对比与落库。"""
+        result = _run_mixed_model_benchmark(neurons=1000, ticks=100)
+        expected_keys = {
+            "scenario",
+            "neurons",
+            "ticks",
+            "elapsed_s",
+            "alive_neurons",
+            "total_spikes",
+        }
+        assert expected_keys <= set(result.keys())
+        assert result["scenario"] == "mixed_model_vectorized_1000x100"
+        assert int(result["neurons"]) == 1000
+        assert int(result["ticks"]) == 100
+        assert float(result["elapsed_s"]) >= 0.0
+
+
 class TestSimConfigToDict:
     """SimConfig.to_dict() 使用 asdict 后的正确性"""
 
@@ -164,7 +201,15 @@ class TestSimConfigToDict:
         cfg = SimConfig()
         d = cfg.to_dict()
 
-        expected_keys = {"ticks", "seed", "dt", "neuron", "network", "evolution", "schema_version"}
+        expected_keys = {
+            "ticks",
+            "seed",
+            "dt",
+            "neuron",
+            "network",
+            "evolution",
+            "schema_version",
+        }
         assert expected_keys.issubset(d.keys()), (
             f"缺少顶层键: {expected_keys - d.keys()}"
         )
@@ -174,7 +219,16 @@ class TestSimConfigToDict:
         cfg = SimConfig()
         d = cfg.to_dict()
 
-        neuron_keys = {"v_rest", "v_reset", "v_th", "tau_m", "r_m", "spike_cost", "input_gain", "mem_size"}
+        neuron_keys = {
+            "v_rest",
+            "v_reset",
+            "v_th",
+            "tau_m",
+            "r_m",
+            "spike_cost",
+            "input_gain",
+            "mem_size",
+        }
         assert neuron_keys.issubset(d["neuron"].keys()), (
             f"neuron 子字典缺少键: {neuron_keys - set(d['neuron'].keys())}"
         )
@@ -185,9 +239,15 @@ class TestSimConfigToDict:
         d = cfg.to_dict()
 
         network_keys = {
-            "reproduction_threshold", "reproduction_share", "mutation_scale",
-            "energy_decay", "max_neurons", "max_links", "corpse_ttl",
-            "scavenger_radius", "energy_cap",
+            "reproduction_threshold",
+            "reproduction_share",
+            "mutation_scale",
+            "energy_decay",
+            "max_neurons",
+            "max_links",
+            "corpse_ttl",
+            "scavenger_radius",
+            "energy_cap",
         }
         assert network_keys.issubset(d["network"].keys()), (
             f"network 子字典缺少键: {network_keys - set(d['network'].keys())}"
@@ -218,7 +278,7 @@ class TestSimConfigToDict:
 
     def test_to_dict_with_custom_values(self):
         """自定义配置后 to_dict() 应反映修改"""
-        from neurogenesis_lab.config import NeuronParams, NetworkParams, EvolutionParams
+        from neurogenesis_lab.config import EvolutionParams, NetworkParams, NeuronParams
 
         cfg = SimConfig(
             ticks=200,

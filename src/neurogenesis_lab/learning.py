@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from neurogenesis_lab.config import ASCII_PRINTABLE_MIN, ASCII_PRINTABLE_MAX
 from neurogenesis_lab.core_bridge import mine_pattern_counts_safe
+from neurogenesis_lab.protocols import TickSnapshot
 
 if TYPE_CHECKING:
     from neurogenesis_lab.network import Network
@@ -374,7 +377,8 @@ class RuleDiscovery:
             samples, self.min_support
         )
         return RuleStore(
-            trigram_support=filtered_trigrams, bigram_support=filtered_bigrams
+            trigram_support=OrderedDict(filtered_trigrams),
+            bigram_support=OrderedDict(filtered_bigrams),
         )
 
 
@@ -601,7 +605,7 @@ class AutoLearner:
             return 0.0
         return self.correct_predictions / self.total_predictions
 
-    def on_tick(self, tick: int, snapshot: dict, network: "Network") -> dict:
+    def on_tick(self, tick: int, snapshot: TickSnapshot, network: "Network") -> dict:
         """每 tick 调用 — 采样、学习、预测奖励
 
         Args:
@@ -615,12 +619,22 @@ class AutoLearner:
         self._tick_correct = 0
         self._tick_total = 0
 
-        # 对活跃神经元进行预测验证
-        self._evaluate_predictions(network)
+        is_vectorized = all(
+            hasattr(network, attr)
+            for attr in ("token_memory", "token_mem_len", "token_mem_ptr", "energy")
+        )
 
-        # 按间隔执行学习
-        if tick % self.learn_interval == 0:
-            self._learn_from_neurons(network)
+        if is_vectorized:
+            self._evaluate_predictions_vectorized(network)
+            if tick % self.learn_interval == 0:
+                self._learn_from_vectorized(network)
+        else:
+            # 对活跃神经元进行预测验证
+            self._evaluate_predictions(network)
+
+            # 按间隔执行学习
+            if tick % self.learn_interval == 0:
+                self._learn_from_neurons(network)
 
         report = {
             "rule_count": self.rule_count,
@@ -665,6 +679,57 @@ class AutoLearner:
             self.miner.fit(expressions)
             self.rule_count += len(self.miner.table)
 
+    def _learn_from_vectorized(self, network: Any) -> None:
+        """从向量化引擎 token_memory 中提取样本并更新规则库。"""
+        samples: list[list[int]] = []
+        expressions: list[str] = []
+
+        alive = np.asarray(network.alive, dtype=np.bool_)
+        token_memory = np.asarray(network.token_memory, dtype=np.int32)
+        token_mem_len = np.asarray(network.token_mem_len, dtype=np.int32)
+        token_mem_ptr = np.asarray(network.token_mem_ptr, dtype=np.int32)
+
+        if token_memory.ndim != 2 or token_memory.shape[0] == 0:
+            return
+
+        mem_size = token_memory.shape[1]
+        if mem_size <= 0:
+            return
+
+        for idx in np.where(alive)[0]:
+            length = int(token_mem_len[idx])
+            if length <= 0:
+                continue
+            length = min(length, mem_size)
+            ptr = int(token_mem_ptr[idx] % mem_size)
+            start = (ptr - length) % mem_size
+            row = token_memory[idx]
+            if start + length <= mem_size:
+                seq = row[start : start + length]
+            else:
+                split = mem_size - start
+                seq = np.concatenate((row[start:], row[: length - split]))
+            tokens = [int(x) for x in seq.tolist()]
+            if len(tokens) >= 3:
+                samples.append(tokens)
+            raw_expr = "".join(
+                chr(t) for t in tokens if ASCII_PRINTABLE_MIN <= t < ASCII_PRINTABLE_MAX
+            )
+            if "=" in raw_expr:
+                expressions.append(raw_expr)
+
+        if len(samples) >= self.min_samples:
+            self.store = self.discovery.discover(samples)
+            self.rule_count = len(self.store.trigram_support) + len(
+                self.store.bigram_support
+            )
+            if self.rule_count > self.max_rules:
+                self._prune_rules()
+
+        if expressions:
+            self.miner.fit(expressions)
+            self.rule_count += len(self.miner.table)
+
     def _evaluate_predictions(self, network: "Network") -> None:
         """对每个活跃神经元评估预测并给予奖励/惩罚"""
         if self.rule_count == 0:
@@ -697,6 +762,71 @@ class AutoLearner:
             elif predicted != -1:
                 # 预测错误 — 轻微惩罚
                 neuron.energy = max(0.0, neuron.energy - self.prediction_penalty)
+
+    def _evaluate_predictions_vectorized(self, network: Any) -> None:
+        """对向量化网络评估预测并批量执行奖励/惩罚。"""
+        if self.rule_count == 0:
+            return
+
+        alive = np.asarray(network.alive, dtype=np.bool_)
+        token_memory = np.asarray(network.token_memory, dtype=np.int32)
+        token_mem_len = np.asarray(network.token_mem_len, dtype=np.int32)
+        token_mem_ptr = np.asarray(network.token_mem_ptr, dtype=np.int32)
+
+        if token_memory.ndim != 2 or token_memory.shape[0] == 0:
+            return
+
+        mem_size = token_memory.shape[1]
+        if mem_size <= 0:
+            return
+
+        composer = RuleComposer(store=self.store)
+        hit_indices: list[int] = []
+        miss_indices: list[int] = []
+
+        for idx in np.where(alive)[0]:
+            length = int(token_mem_len[idx])
+            if length < 4:
+                continue
+            length = min(length, mem_size)
+            ptr = int(token_mem_ptr[idx] % mem_size)
+            start = (ptr - length) % mem_size
+            row = token_memory[idx]
+            if start + length <= mem_size:
+                seq = row[start : start + length]
+            else:
+                split = mem_size - start
+                seq = np.concatenate((row[start:], row[: length - split]))
+            tokens = [int(x) for x in seq.tolist()]
+            if len(tokens) < 4:
+                continue
+
+            query_seq = list(tokens[:-1]) + [-1]
+            actual = int(tokens[-1])
+            filled = composer.apply(query_seq, missing_token=-1)
+            predicted = int(filled[-1])
+
+            self._tick_total += 1
+            self.total_predictions += 1
+
+            if predicted == actual and predicted != -1:
+                self._tick_correct += 1
+                self.correct_predictions += 1
+                hit_indices.append(int(idx))
+            elif predicted != -1:
+                miss_indices.append(int(idx))
+
+        if hit_indices:
+            hit_arr = np.asarray(hit_indices, dtype=np.int64)
+            network.energy[hit_arr] = network.energy[hit_arr] + self.prediction_reward
+            network.prediction_hits[hit_arr] = network.prediction_hits[hit_arr] + 1
+
+        if miss_indices:
+            miss_arr = np.asarray(miss_indices, dtype=np.int64)
+            network.energy[miss_arr] = np.maximum(
+                0.0,
+                network.energy[miss_arr] - self.prediction_penalty,
+            )
 
     def _prune_rules(self) -> None:
         """LRU 淘汰低活跃规则，保留 max_rules 以内

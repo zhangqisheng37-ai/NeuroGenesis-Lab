@@ -4,7 +4,7 @@ import math
 import random
 from collections import Counter, deque
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, cast
 from uuid import uuid4
 
 from neurogenesis_lab.config import (
@@ -207,6 +207,9 @@ class Neuron:
         default_factory=list, init=False, repr=False
     )
     _observe_dirty: bool = field(default=True, init=False, repr=False)
+    _dynamics: NeuronDynamics = field(init=False, repr=False)
+    _evolution: NeuronEvolution = field(init=False, repr=False)
+    _memory: NeuronMemory = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         # 构建动力学组件
@@ -238,10 +241,11 @@ class Neuron:
             self.__dict__.pop(fname, None)
 
         # 原有初始化逻辑
-        self._memory.mem = deque(self._memory.mem, maxlen=self._memory.mem_size)
+        memory = cast(NeuronMemory, self._memory)
+        memory.mem = deque(memory.mem, maxlen=memory.mem_size)
         self.states["energy"] = self.energy
         self.last_energy = self.energy
-        self._memory._observe_dirty = True
+        self._observe_dirty = True
 
     def __getattr__(self, name: str) -> object:
         if name in _NEURON_DYNAMICS_FIELDS:

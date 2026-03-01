@@ -1,5 +1,10 @@
 # NeuroGenesis Lab
 
+[![CI](https://github.com/zhangqisheng37-ai/NeuroGenesis-Lab/actions/workflows/python-test.yml/badge.svg)](https://github.com/zhangqisheng37-ai/NeuroGenesis-Lab/actions/workflows/python-test.yml)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen)](https://github.com/zhangqisheng37-ai/NeuroGenesis-Lab/actions/workflows/coverage.yml)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/github/license/zhangqisheng37-ai/NeuroGenesis-Lab)](./LICENSE)
+
 NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，用于研究数字生命的演化、学习与网络动力学。
 
 ## 当前状态
@@ -133,6 +138,7 @@ ruff check src/
 
 ## 文档
 
+- [在线文档（GitHub Pages）](https://zhangqisheng37-ai.github.io/NeuroGenesis-Lab/)
 - [快速开始](docs/quickstart.md)
 - [参数说明](docs/parameters.md)
 - [架构设计](docs/architecture.md)

@@ -12,18 +12,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neurogenesis_lab.vectorized import VectorizedNetwork, SpatialGrid
+from neurogenesis_lab.vectorized import VectorizedNetwork
 from neurogenesis_lab.config import (
-    DENSITY_HIGH_THRESHOLD,
-    DENSITY_LOW_THRESHOLD,
-    DECAY_HIGH_MULTIPLIER,
-    DECAY_LOW_MULTIPLIER,
     ENDANGERED_DECAY_DISCOUNT,
     ENDANGERED_EXIT_MULTIPLIER,
-    POPULATION_HIGH_THRESHOLD,
-    POPULATION_LOW_THRESHOLD,
-    REPRO_SHARE_HIGH_MULTIPLIER,
-    REPRO_SHARE_LOW_MULTIPLIER,
     REPRO_SHARE_MAX,
     REPRO_SHARE_MIN,
     SCHEMA_VERSION,
@@ -126,7 +118,6 @@ class TestMultiModelDynamics:
         net.energy[0] = 100.0  # 确保能繁殖
         # 杀掉一些以腾出槽位
         net.alive[5:] = False
-        old_alive = int(np.sum(net.alive))
         # 运行多次尝试繁殖
         for t in range(1, 20):
             net.tick(t)
@@ -159,9 +150,7 @@ class TestCorpseSystem:
         net.tick(1)
         # 如果确实死亡，corpse_mask 应被设置
         if not net.alive[0]:
-            assert (
-                net.corpse_mask[0] is True or net.corpse_mask[0] == True
-            )  # noqa: E712
+            assert bool(net.corpse_mask[0])
 
     def test_corpse_ttl_decrements(self):
         """尸体 TTL 每 tick 递减。"""
@@ -220,7 +209,6 @@ class TestCorpseSystem:
         net.corpse_energy[9] = 1.0
         net.energy[0] = 100.0
         # 只有 index=9 是空的，但是尸体
-        alive_before = int(np.sum(net.alive))
         net.tick(1)
         # 如果实现正确，则不会使用尸体槽位繁殖
         # (或者 newborn 清除了尸体标记)

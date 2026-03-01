@@ -4,18 +4,30 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-import pytest
-
 from neurogenesis_lab.encoding import Encoder, Event
 from neurogenesis_lab.learning import (
     AutoLearner,
     RuleDiscovery,
     RuleStore,
-    PatternMiner,
-    RuleComposer,
 )
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import LIFNeuron
+
+
+def _make_network(n: int = 8, **kwargs) -> Network:
+    """创建测试用网络"""
+    neurons = [LIFNeuron() for _ in range(n)]
+    net = Network(
+        neurons={neuron.id: neuron for neuron in neurons},
+        max_neurons=kwargs.pop("max_neurons", 50),
+        energy_cap=kwargs.pop("energy_cap", 5.0),
+        **kwargs,
+    )
+    # 环形连接
+    for i, neuron in enumerate(neurons):
+        target = neurons[(i + 1) % n]
+        net.connect(neuron.id, target.id, weight=1.0, delay=1)
+    return net
 
 
 def _make_network(n: int = 8, **kwargs) -> Network:
@@ -91,8 +103,8 @@ class TestAutoLearnerCreation:
 class TestAutoLearnerOnTick:
     """on_tick 集成行为"""
 
-    def test_on_tick_returns_report(self):
-        network = _make_network()
+    def test_on_tick_returns_report(self, ring_network_factory):
+        network = ring_network_factory(n=8, max_neurons=50, energy_cap=5.0)
         auto = AutoLearner(discovery=RuleDiscovery())
         snapshot = network.tick(1, dt=1.0)
         report = auto.on_tick(1, snapshot, network)
@@ -166,7 +178,7 @@ class TestPredictionRewards:
 
         for t in range(1, 101):
             snapshot = network.tick(t, dt=1.0)
-            report = auto.on_tick(t, snapshot, network)
+            auto.on_tick(t, snapshot, network)
 
         acc = auto.prediction_accuracy()
         assert 0.0 <= acc <= 1.0  # 值在合法范围

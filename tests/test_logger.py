@@ -2,12 +2,6 @@
 import io
 import json
 import logging
-import sys
-from pathlib import Path
-
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
 
 from neurogenesis_lab.logger import create_logger, log_tick
 

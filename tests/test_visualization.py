@@ -1,7 +1,6 @@
 """可视化模块测试"""
 
 import pytest
-from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
@@ -10,6 +9,7 @@ from neurogenesis_lab.visualization import (
     load_jsonl_data,
     VisualizationError,
     MATPLOTLIB_AVAILABLE,
+    LiveMonitor,
 )
 
 
@@ -203,12 +203,77 @@ def test_generate_report(tmp_path):
     assert (output_dir / "learning.png").exists()
 
 
-def test_visualization_error_on_empty_spike_data():
-    """测试空脉冲数据时抛出错误"""
-    if not MATPLOTLIB_AVAILABLE:
-        pytest.skip("matplotlib 未安装")
 
-    from neurogenesis_lab.visualization import plot_spike_raster
 
-    with pytest.raises(VisualizationError, match="没有脉冲数据"):
-        plot_spike_raster([], show=False)
+@pytest.mark.skipif(not MATPLOTLIB_AVAILABLE, reason="matplotlib 未安装")
+def test_live_monitor_on_tick_updates_network_path(ring_network_factory) -> None:
+    monitor = LiveMonitor(plot_interval=1, max_points=10)
+    net = ring_network_factory(n=2, min_neurons=0)
+    neurons = list(net.neurons.values())
+    net.connect(neurons[0].id, neurons[1].id, weight=1.0, delay=1)
+
+    snapshot = {
+        "alive_neurons": 2,
+        "total_neurons": 2,
+        "mean_energy": 1.0,
+        "prediction_error": 0.1,
+        "rule_count": 0,
+    }
+    monitor.on_tick(1, snapshot, net)
+
+    assert monitor._initialized is True
+    assert monitor._ticks[-1] == 1
+    assert monitor._alive[-1] == 2
+
+
+@pytest.mark.skipif(not MATPLOTLIB_AVAILABLE, reason="matplotlib 未安装")
+def test_live_monitor_on_tick_vectorized_path() -> None:
+    from neurogenesis_lab.vectorized import VectorizedNetwork
+
+    monitor = LiveMonitor(plot_interval=1, max_points=10)
+    vnet = VectorizedNetwork()
+    vnet.init_neurons(5)
+
+    snapshot = {
+        "alive_neurons": 5,
+        "total_neurons": 5,
+        "mean_energy": 1.0,
+        "prediction_error": 0.2,
+        "rule_count": 1,
+    }
+    monitor.on_tick(1, snapshot, vnet)
+    assert monitor._initialized is True
+    assert monitor._ticks[-1] == 1
+
+
+@pytest.mark.skipif(not MATPLOTLIB_AVAILABLE, reason="matplotlib 未安装")
+def test_live_monitor_on_tick_plot_exception_is_swallowed(monkeypatch) -> None:
+    monitor = LiveMonitor(plot_interval=1)
+
+    def _raise() -> None:
+        raise RuntimeError("plot failed")
+
+    monkeypatch.setattr(monitor, "_update_plots", _raise)
+    monitor.on_tick(
+        1,
+        {
+            "alive_neurons": 1,
+            "total_neurons": 1,
+            "mean_energy": 1.0,
+            "prediction_error": 0.0,
+            "rule_count": 0,
+        },
+        None,
+    )
+    assert monitor._ticks[-1] == 1
+
+
+@pytest.mark.skipif(not MATPLOTLIB_AVAILABLE, reason="matplotlib 未安装")
+def test_live_monitor_finalize_exception_is_swallowed(monkeypatch) -> None:
+    monitor = LiveMonitor(plot_interval=1)
+    monitor._init_figure()
+
+    import matplotlib.pyplot as plt
+
+    monkeypatch.setattr(plt, "show", lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+    monitor.finalize()

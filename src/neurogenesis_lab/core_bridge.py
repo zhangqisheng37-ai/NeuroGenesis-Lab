@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import types
 from typing import Any
+import importlib
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 
+core: types.ModuleType | None
 try:
-    from neurogenesis_lab import _neurogenesis_core as core
+    core = importlib.import_module("neurogenesis_lab._neurogenesis_core")
 
     HAS_RUST_CORE = True
 except Exception:  # pragma: no cover - 依赖本地构建环境
@@ -59,8 +62,9 @@ def parallel_lif_tick_safe(
     if dt <= 0.0 or tau_m <= 0.0:
         raise ValueError("dt and tau_m must be positive")
 
-    if HAS_RUST_CORE and hasattr(core, "parallel_lif_tick"):
-        out_v, spikes = core.parallel_lif_tick(
+    core_mod = core
+    if core_mod is not None and HAS_RUST_CORE and hasattr(core_mod, "parallel_lif_tick"):
+        out_v, spikes = core_mod.parallel_lif_tick(
             voltages,
             v_rest,
             v_reset,
@@ -95,13 +99,16 @@ def mine_pattern_counts_safe(
     if min_support < 1:
         raise ValueError("min_support must be >= 1")
 
-    if HAS_RUST_CORE and hasattr(core, "mine_pattern_counts"):
-        tri_rows, bi_rows = core.mine_pattern_counts(samples, min_support)
-        trigram_support = {
+    core_mod = core
+    if core_mod is not None and HAS_RUST_CORE and hasattr(core_mod, "mine_pattern_counts"):
+        tri_rows, bi_rows = core_mod.mine_pattern_counts(samples, min_support)
+        rust_trigram_support = {
             (int(a), int(b), int(c)): int(support) for a, b, c, support in tri_rows
         }
-        bigram_support = {(int(a), int(b)): int(support) for a, b, support in bi_rows}
-        return trigram_support, bigram_support, "rust"
+        rust_bigram_support = {
+            (int(a), int(b)): int(support) for a, b, support in bi_rows
+        }
+        return rust_trigram_support, rust_bigram_support, "rust"
 
     trigram_support: dict[tuple[int, int, int], int] = {}
     bigram_support: dict[tuple[int, int], int] = {}

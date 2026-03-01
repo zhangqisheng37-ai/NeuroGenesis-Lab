@@ -285,7 +285,7 @@ class Network:
 
     neurons: dict[str, Neuron]
     queue: EventQueue = field(default_factory=EventQueue)
-    replay: list[dict[str, object]] = field(default_factory=list)
+    replay: list[TickSnapshot] = field(default_factory=list)
     expected_state: dict[str, float] | None = None
     corpses: list[Corpse] = field(default_factory=list)
     # 以下字段在 __post_init__ 中转移到组件，保留声明以兼容 dataclass 构造签名

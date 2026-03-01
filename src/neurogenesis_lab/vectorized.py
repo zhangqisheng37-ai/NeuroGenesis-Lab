@@ -14,9 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from scipy.sparse import csr_matrix, lil_matrix, coo_matrix
-from scipy.spatial import cKDTree
-from scipy.spatial.distance import cdist
+from scipy.sparse import csr_matrix, coo_matrix  # type: ignore[import-untyped]
+from scipy.spatial import cKDTree  # type: ignore[import-untyped]
 
 from neurogenesis_lab.config import (
     DECAY_HIGH_MULTIPLIER,
@@ -41,7 +40,6 @@ from neurogenesis_lab.config import (
     SPAWN_LINK_DELAY,
 )
 from neurogenesis_lab.encoding import Event
-from neurogenesis_lab.neuron import safe_float
 from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
 
 
@@ -147,6 +145,18 @@ class VectorizedNetwork:
     alive: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.bool_))
     pos: np.ndarray = field(default_factory=lambda: np.array([], dtype=np.float64))
     spike_count: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    token_memory: np.ndarray = field(
+        default_factory=lambda: np.zeros((0, 0), dtype=np.int32)
+    )
+    token_mem_len: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.int32)
+    )
+    token_mem_ptr: np.ndarray = field(
+        default_factory=lambda: np.array([], dtype=np.int32)
+    )
+    prediction_hits: np.ndarray = field(
         default_factory=lambda: np.array([], dtype=np.int64)
     )
 
@@ -257,6 +267,20 @@ class VectorizedNetwork:
         else:
             self.scheduled_inputs[tick] = currents.copy()
 
+    def _write_token(self, idx: int, token_id: int) -> None:
+        if self.n <= 0 or idx < 0 or idx >= self.n:
+            return
+        if self.token_memory.size == 0:
+            return
+        mem_size = self.token_memory.shape[1]
+        if mem_size <= 0:
+            return
+        ptr = int(self.token_mem_ptr[idx] % mem_size)
+        self.token_memory[idx, ptr] = int(token_id)
+        self.token_mem_ptr[idx] = (ptr + 1) % mem_size
+        if self.token_mem_len[idx] < mem_size:
+            self.token_mem_len[idx] += 1
+
     def enqueue(self, events: list[Event]) -> None:
         """注入外部事件，按 tick 调度到目标神经元输入电流。
 
@@ -268,6 +292,7 @@ class VectorizedNetwork:
             if target_idx is None:
                 continue
             scheduled_tick = max(0, int(event.t))
+            self._write_token(target_idx, int(event.token_id))
             weight = float(event.meta.get("weight", 1.0))
             if not np.isfinite(weight):
                 continue
@@ -310,6 +335,10 @@ class VectorizedNetwork:
         self.alive = np.ones(count, dtype=np.bool_)
         self.pos = np.random.uniform(-spread, spread, (count, 2))
         self.spike_count = np.zeros(count, dtype=np.int64)
+        self.token_memory = np.zeros((count, 64), dtype=np.int32)
+        self.token_mem_len = np.zeros(count, dtype=np.int32)
+        self.token_mem_ptr = np.zeros(count, dtype=np.int32)
+        self.prediction_hits = np.zeros(count, dtype=np.int64)
 
         self.v_rest = np.full(count, v_rest, dtype=np.float64)
         self.v_reset = np.full(count, v_reset, dtype=np.float64)
@@ -395,7 +424,6 @@ class VectorizedNetwork:
         # local_indices 形状 (n_alive, actual_k)
         if local_indices.ndim == 1:
             local_indices = local_indices[:, np.newaxis]
-        n_alive = len(alive_idx)
         # 构建行列索引，排除自身（第 0 列是自身）
         src = np.repeat(alive_idx, actual_k - 1)
         dst = alive_idx[local_indices[:, 1:].ravel()]
@@ -591,6 +619,8 @@ class VectorizedNetwork:
         if len(spike_indices) <= 0:
             return propagation_count
         for spike_idx in spike_indices:
+            if self.weight_matrix is None or self.delay_matrix is None:
+                continue
             row_w = self.weight_matrix.getrow(spike_idx)
             if row_w.nnz <= 0:
                 continue
@@ -605,6 +635,13 @@ class VectorizedNetwork:
             for target, weight in zip(targets, weights):
                 if not self.alive[target]:
                     continue
+                src_mem_len = int(self.token_mem_len[int(spike_idx)])
+                if src_mem_len > 0:
+                    mem_size = self.token_memory.shape[1]
+                    src_ptr = int(self.token_mem_ptr[int(spike_idx)])
+                    src_last = (src_ptr - 1) % mem_size
+                    propagated_token = int(self.token_memory[int(spike_idx), src_last])
+                    self._write_token(int(target), propagated_token)
                 delay = max(0, delay_map.get(int(target), 1))
                 deliver_tick = int(tick) + delay
                 payload = np.zeros(self.n, dtype=np.float64)
@@ -785,6 +822,10 @@ class VectorizedNetwork:
                         -SPAWN_POSITION_JITTER, SPAWN_POSITION_JITTER, 2
                     )
                     self.spike_count[slot] = 0
+                    self.token_memory[slot, :] = 0
+                    self.token_mem_len[slot] = 0
+                    self.token_mem_ptr[slot] = 0
+                    self.prediction_hits[slot] = 0
                     # 继承模型类型
                     self.model_type[slot] = self.model_type[i]
                     self.tau_m[slot] = self.tau_m[i] * (
@@ -873,6 +914,8 @@ class VectorizedNetwork:
             return np.zeros(self.n, dtype=np.float64)
         spike_indices = np.where(spike_mask)[0]
         if len(spike_indices) == 0:
+            return np.zeros(self.n, dtype=np.float64)
+        if self.weight_matrix is None:
             return np.zeros(self.n, dtype=np.float64)
         return np.asarray(self.weight_matrix[spike_indices].sum(axis=0)).ravel()
 

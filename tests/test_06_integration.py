@@ -1,13 +1,6 @@
-import sys
-from pathlib import Path
-import pytest
 import json
 
 # Ensure src is in path for imports to work without package installation
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT / "src") not in sys.path:
-    sys.path.append(str(ROOT / "src"))
-
 from neurogenesis_lab.encoding import Encoder, Event
 from neurogenesis_lab.learning import MemoryBank, PatternMiner, QueryEngine
 from neurogenesis_lab.neuron import AdExNeuron, IzhikevichNeuron, LIFNeuron
