@@ -4,7 +4,7 @@ NeuroGenesis Lab 的学习引擎（`AutoLearner`）通过观察神经元的记�
 
 ## 1. 实验设置
 
-我们使用 `experiment_learning.toml` 配置运行了一个 300 ticks 的实验。该配置启用了学习增强，提高了预测奖励（`prediction_reward`）和惩罚（`prediction_penalty`），鼓励神经元发现规则。
+我们使用 `experiment_learning.toml` 配置运行了一个 300 ticks 的实验。该配置通过提高 `prediction_hit` 适应度权重，增强了对预测能力的选择压力，从而更容易观察到规则涌现。
 
 ```bash
 python -m neurogenesis_lab run --config experiments/experiment_learning.toml --visualize --async-log --log-buffer-size 512

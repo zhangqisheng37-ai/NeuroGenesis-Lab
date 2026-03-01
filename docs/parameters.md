@@ -1,326 +1,166 @@
 # 参数说明
 
-所有参数通过 `SimConfig` 集中管理，也可以通过 TOML 配置文件设置。
+本文档以以下代码为唯一事实来源：
+
+- CLI 参数：`src/neurogenesis_lab/cli/parser.py`
+- CLI→配置构建：`src/neurogenesis_lab/cli/config_builder.py`
+- 默认值与校验：`src/neurogenesis_lab/config.py`
+- 运行时消费：`src/neurogenesis_lab/cli/run.py`、`src/neurogenesis_lab/network.py`
 
 ---
 
-## `[simulation]` — 仿真全局参数
+## 1. 配置层参数（`SimConfig`）
+
+### 1.1 `[simulation]`
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `ticks` | int | 100 | 仿真总步数 |
-| `seed` | int | 42 | 随机种子（影响 random + numpy） |
-| `dt` | float | 1.0 | 时间步长 |
+| `ticks` | int | `100` | 本次运行 tick 数 |
+| `seed` | int | `42` | 随机种子（`random` + `numpy`） |
+| `dt` | float | `1.0` | 时间步长 |
 
----
-
-## `[neuron]` — 神经元动力学参数
+### 1.2 `[neuron]`
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `v_rest` | float | -65.0 | 静息电位 (mV) |
-| `v_reset` | float | -65.0 | 重置电位 (mV) |
-| `v_th` | float | -55.0 | 阈值电位 (mV)，低于此值不放电 |
-| `tau_m` | float | 20.0 | 膜时间常数 (ms)，控制电位衰减速度 |
-| `r_m` | float | 1.0 | 膜电阻 (MΩ)，影响输入电流对电位的影响 |
-| `spike_cost` | float | 0.05 | 每次放电消耗的能量 |
-| `input_gain` | float | 0.05 | 输入事件转换为能量的增益系数 |
-| `mem_size` | int | 64 | 每个神经元的记忆队列容量 |
+| `v_rest` | float | `-65.0` | 静息电位 |
+| `v_reset` | float | `-65.0` | 放电重置电位 |
+| `v_th` | float | `-55.0` | 放电阈值 |
+| `tau_m` | float | `20.0` | 膜时间常数 |
+| `r_m` | float | `1.0` | 膜电阻缩放 |
+| `spike_cost` | float | `0.05` | 每次放电能量消耗 |
+| `input_gain` | float | `0.05` | 输入转能量增益 |
+| `mem_size` | int | `64` | 记忆窗口大小 |
 
-**调参建议**：
-- 降低 `v_th` → 更容易放电 → 更活跃的网络
-- 增大 `spike_cost` → 放电代价高 → 促进选择性放电
-- 增大 `mem_size` → 更长的记忆 → 更多规则可发现
-
----
-
-## `[network]` — 网络级参数
+### 1.3 `[network]`
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `reproduction_threshold` | float | 2.5 | 繁殖所需最低能量 |
-| `reproduction_share` | float | 0.4 | 繁殖时子代获得的能量比例 |
-| `mutation_scale` | float | 0.05 | 繁殖突变缩放因子 |
-| `energy_decay` | float | 0.003 | 每 tick 能量自然衰减量 |
-| `max_neurons` | int | 50 | 网络中同时存在的最大神经元数 |
-| `max_links` | int | 200 | 网络中最大连接数 |
-| `corpse_ttl` | int | 50 | 尸体存留 tick 数 |
-| `scavenger_radius` | float | 2.5 | 拣食者范围 (距尸体的最大距离) |
-| `input_current_scale` | float | 1.5 | 外部输入电流缩放 |
-| `background_current` | float | 0.0 | 每 tick 注入每个神经元的背景基线电流 |
-| `spontaneous_spike_rate` | float | 0.0 | 每神经元每 tick 自发放电概率（范围 [0, 1]） |
-| `low_activation_threshold` | int | 0 | 低激活告警阈值（总放电/总传播任一不超过该值时触发告警，0 = 关闭） |
-| `move_cost` | float | 0.01 | 神经元移动的能量消耗 |
-| `energy_cap` | float | 5.0 | 神经元能量上限（防止无限积累） |
-| `adaptive_decay` | bool | true | 是否按种群密度自适应调整能量衰减 |
-| `adaptive_reproduction` | bool | true | 是否按种群规模自适应调整繁殖成本 |
-| `endangered_threshold` | int | 10 | 濒危模式阈值（低于该值触发保护） |
+| `reproduction_threshold` | float | `2.5` | 繁殖阈值 |
+| `reproduction_share` | float | `0.4` | 繁殖时子代能量占比 |
+| `mutation_scale` | float | `0.05` | 网络层突变幅度（后备） |
+| `energy_decay` | float | `0.003` | 每 tick 基础衰减 |
+| `max_neurons` | int | `50` | 最大神经元数 |
+| `max_links` | int | `200` | 最大连接数 |
+| `corpse_ttl` | int | `50` | 尸体生存 tick |
+| `scavenger_radius` | float | `2.5` | 拾荒半径 |
+| `input_current_scale` | float | `1.5` | 输入电流缩放 |
+| `background_current` | float | `0.0` | 每 tick 背景电流 |
+| `spontaneous_spike_rate` | float | `0.0` | 自发放电概率 `[0,1]` |
+| `low_activation_threshold` | int | `0` | 低激活告警阈值（`0` 关闭） |
+| `move_cost` | float | `0.01` | 移动成本 |
+| `energy_cap` | float | `5.0` | 能量上限 |
+| `adaptive_decay` | bool | `true` | 自适应衰减 |
+| `adaptive_reproduction` | bool | `true` | 自适应繁殖成本 |
+| `endangered_threshold` | int | `10` | 濒危阈值 |
 
-**调参建议**：
-- 降低 `reproduction_threshold` → 更容易繁殖 → 种群扩张
-- 增大 `energy_decay` → 能量流失快 → 适者生存压力增大
-- `max_neurons` 决定种群上限，影响内存占用
-- 适当降低 `energy_cap` 可抑制个体能量垄断
-- `adaptive_decay/adaptive_reproduction` 适合长程实验，建议默认开启
-- `background_current > 0` 可为低激活网络提供持续刺激基线（如 0.5），避免网络沉寂
-- `spontaneous_spike_rate > 0`（如 0.01）可模拟神经噪声，有助于探索动力学空间
-- `low_activation_threshold` 设为非零值（如 5）可在总放电活跃度低时输出告警日志
-
----
-
-## `[evolution]` — 演化系统参数
+### 1.4 `[evolution]`
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `mutation_amplitude` | float | 0.05 | 突变振幅 |
-| `energy_budget_per_tick` | float | 0.0 | 每 tick 能量预算（0 = 不限） |
-| `congestion_penalty` | float | 0.1 | 拥堵惩罚系数（连接数 > 10 时生效） |
-| `min_neurons` | int | 2 | 最小存活神经元数（保底复活机制） |
+| `mutation_amplitude` | float | `0.05` | 演化阶段优先突变幅度 |
+| `energy_budget_per_tick` | float | `0.0` | 每 tick 全局能量预算 |
+| `congestion_penalty` | float | `0.1` | 拥塞惩罚系数 |
+| `min_neurons` | int | `2` | 最小存活数保护阈值 |
 
-### `[evolution.fitness_weights]` — 适应度权重
+#### `[evolution.fitness_weights]`
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `propagation` | 1.0 | 传播次数权重 |
-| `energy_efficiency` | 0.5 | 当前能量权重（能量越高得分越高） |
-| `prediction_hit` | 0.8 | 预测命中权重 |
-
-**适应度公式**：
-```
-fitness = propagation_count * w_prop
-        + energy * w_eff
-        + prediction_hits * w_pred
-```
-
-繁殖时按适应度排序，高适应度优先繁殖。
-
-> 注：`mutation_amplitude` 与 `energy_budget_per_tick` 已进入配置与日志输出，
-> 在当前版本中已直接接入运行时逻辑：
-> - `mutation_amplitude`：用于繁殖阶段的突变幅度（覆盖 network.mutation_scale）。
-> - `energy_budget_per_tick`：每 tick 按存活神经元均分注入能量预算。
-
-### 参数消费矩阵（解析 → 运行时）
-
-| 参数 | 解析入口 | 运行时消费点 | 当前状态 |
-|------|----------|--------------|----------|
-| `simulation.ticks` | `_build_sim_config()` | `cmd_run()` 主循环边界 | ✅ 已消费 |
-| `simulation.seed` | `_build_sim_config()` | `seed_all()` + 引擎初始化 | ✅ 已消费 |
-| `simulation.dt` | `_build_sim_config()` | `network.tick(t, dt=cfg.dt)` | ✅ 已消费 |
-| `network.mutation_scale` | `_build_sim_config()` | `Network.check_reproduction()` 后备突变幅度 | ✅ 已消费 |
-| `evolution.mutation_amplitude` | `_build_sim_config()` | `Network.check_reproduction()` 优先突变幅度 | ✅ 已消费 |
-| `evolution.energy_budget_per_tick` | `_build_sim_config()` | `Network.tick()` 每 tick 能量预算注入 | ✅ 已消费 |
-| `evolution.congestion_penalty` | `_build_sim_config()` | `Network.check_reproduction()` 拥塞惩罚 | ✅ 已消费 |
-| `evolution.min_neurons` | `_build_sim_config()` | `Network.check_death()` 保底机制 | ✅ 已消费 |
-
-**调参建议**：
-- 增大 `prediction_hit` → 奖励预测准确的神经元
-- 增大 `congestion_penalty` → 抑制过度连接
-- `min_neurons` 防止种群灭绝
+| `propagation` | `1.0` | 传播权重 |
+| `energy_efficiency` | `0.5` | 能量效率权重 |
+| `prediction_hit` | `0.8` | 预测命中权重 |
 
 ---
 
-## 配置文件示例
+## 2. CLI 参数（`run`）
 
-```toml
-[simulation]
-ticks = 200
-seed = 42
-
-[neuron]
-v_th = -48.0
-spike_cost = 0.04
-
-[network]
-max_neurons = 80
-energy_decay = 0.003
-
-[evolution]
-min_neurons = 5
-congestion_penalty = 0.15
-
-[evolution.fitness_weights]
-propagation = 1.0
-energy_efficiency = 0.8
-prediction_hit = 1.0
-```
-
-## 命令行覆盖
-
-命令行参数优先级高于 TOML 配置文件：
-
-```bash
-python -m neurogenesis_lab run --config config.toml --ticks 500 --seed 99
-```
-
-上例中 `ticks=500` 和 `seed=99` 会覆盖 TOML 中的值。
-
-### 常用 `run` CLI 参数（补充）
+来源：`src/neurogenesis_lab/cli/parser.py`
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
-| `--neurons` | int | 8 | 初始神经元数量 |
-| `--expr` | str | `1+2=3` | 外部刺激表达式 |
-| `--input-weight` | float | 40.0 | 外部注入事件默认权重 |
-| `--stim-interval` | int | 5 | 外部刺激注入间隔（tick） |
-| `--background-current` | float | None | 背景电流（覆盖 TOML 中的 `network.background_current`） |
-| `--spontaneous-spike-rate` | float | None | 自发放电概率（覆盖 TOML 中的 `network.spontaneous_spike_rate`） |
-| `--low-activation-threshold` | int | None | 低激活告警阈值（覆盖 TOML 中的 `network.low_activation_threshold`） |
+| `--ticks` | int | `None` | 覆盖配置 `simulation.ticks` |
+| `--seed` | int | `None` | 覆盖配置 `simulation.seed` |
+| `--dt` | float | `None` | 覆盖配置 `simulation.dt` |
+| `--neurons` | int | `8` | 初始神经元数 |
+| `--expr` | str | `1+2=3` | 输入表达式 |
+| `--input-weight` | float | `40.0` | 外部注入事件权重 |
+| `--stim-interval` | int | `5` | 外部刺激注入间隔 |
+| `--background-current` | float | `None` | 覆盖 `network.background_current` |
+| `--spontaneous-spike-rate` | float | `None` | 覆盖 `network.spontaneous_spike_rate` |
+| `--low-activation-threshold` | int | `None` | 覆盖 `network.low_activation_threshold` |
 | `--output` | str | `outputs` | 输出目录 |
-| `--config` | str | None | TOML 配置路径 |
-| `--debug` | flag | 关闭 | 输出调试级追踪信息 |
-| `--config` | str | None | TOML 配置路径 |
-| `--debug` | flag | 关闭 | 输出调试级追踪信息 |
-
----
-
-## 输出治理参数（CLI）
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--log-interval` | int | 1 | 日志采样间隔（每 N tick 记录一次） |
-| `--gzip-output` | flag | 关闭 | 输出为 `.jsonl.gz` 压缩文件 |
-| `--max-file-size` | int | 0 | 单文件最大字节数，`>0` 时启用自动轮转 |
-| `--async-log` | flag | 关闭 | 启用异步双缓冲日志写入 |
-| `--log-buffer-size` | int | 256 | 异步双缓冲阈值（记录条数） |
-
-示例：
-
-```bash
-python -m neurogenesis_lab run --ticks 500 --log-interval 10 --gzip-output --max-file-size 5000000
-```
-
-该命令会每 10 tick 采样一次日志，输出为压缩 JSONL，并在单文件超过 5MB 时自动轮转为分段文件。
-
-高频记录建议：
-
-```bash
-python -m neurogenesis_lab run --ticks 500 --log-interval 1 --async-log --log-buffer-size 512
-```
-
-该配置可降低主循环被 I/O 阻塞的概率。
-
----
-
-## 可视化参数（CLI）
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--visualize` | flag | 关闭 | 启动实时可视化监控面板 |
-| `--plot-interval` | int | 5 | 图表更新间隔（每 N tick） |
-
-示例：
-
-```bash
-python -m neurogenesis_lab run --visualize --plot-interval 10
-```
-
----
-
-## 基准参数（CLI）
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--neurons` | int | 1000 | 基准主规模（用于原始/向量化对照） |
-| `--ticks` | int | 100 | 基准步数 |
-| `--seed` | int | 42 | 随机种子 |
-| `--rust-size` | int | 10000 | Rust 并行 LIF 微基准神经元数量 |
-
-示例：
-
-```bash
-python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 20000
-```
-
----
-
-## 持久化与恢复参数（CLI）
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `--checkpoint-interval` | int | 0 | 每 N 个本次运行 tick 保存一次 checkpoint，0=禁用 |
+| `--config` | str | `None` | TOML 路径 |
+| `--debug` | flag | `False` | debug 记录 |
+| `--log-interval` | int | `1` | 每 N tick 记录一次 |
+| `--gzip-output` | flag | `False` | 输出 `.jsonl.gz` |
+| `--max-file-size` | int | `0` | >0 开启轮转 |
+| `--async-log` | flag | `False` | 异步双缓冲写盘 |
+| `--log-buffer-size` | int | `256` | 异步缓冲阈值 |
+| `--visualize` | flag | `False` | 启动实时可视化 |
+| `--plot-interval` | int | `5` | 可视化更新间隔 |
+| `--checkpoint-interval` | int | `0` | 每 N 个本次运行 tick 保存 checkpoint |
+| `--resume-from` | str | `None` | 从 checkpoint 恢复 |
 | `--checkpoint-dir` | str | `outputs` | checkpoint 输出目录 |
-| `--resume-from` | str | None | 从指定 checkpoint 文件恢复运行 |
+
+---
+
+## 3. CLI 参数（`benchmark`）
+
+来源：`src/neurogenesis_lab/cli/parser.py`
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `--neurons` | int | `1000` | 基准神经元规模 |
+| `--ticks` | int | `100` | 基准 tick 数 |
+| `--seed` | int | `42` | 随机种子 |
+| `--rust-size` | int | `10000` | Rust 并行 LIF 微基准规模 |
+
+---
+
+## 4. 参数优先级（重要）
+
+来源：`build_sim_config()`（`src/neurogenesis_lab/cli/config_builder.py`）
+
+优先级：
+
+1. CLI 显式传入值（最高）
+2. TOML 配置值（`--config`）
+3. `SimConfig` / 子配置 dataclass 默认值（最低）
 
 示例：
 
 ```bash
-# 自动保存 checkpoint
-python -m neurogenesis_lab run --ticks 500 --checkpoint-interval 100 --checkpoint-dir outputs/checkpoints
-
-# 从 checkpoint 恢复并继续运行
-python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick_500.pkl --ticks 200
+python -m neurogenesis_lab run --config experiments/experiment_stable.toml --ticks 500 --seed 99
 ```
 
----
-
-## VectorizedNetwork 特有参数
-
-`VectorizedNetwork` 向量化引擎在 v0.6.0 中实现了与标准引擎的功能对齐，以下是其独有的初始化和运行参数。
-
-### 初始化参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `max_neurons` | int | 10000 | 最大神经元容量（预分配数组大小） |
-| `energy_decay` | float | 0.003 | 每 tick 能量自然衰减量 |
-| `energy_cap` | float | 5.0 | 神经元能量上限 |
-| `reproduction_threshold` | float | 2.5 | 繁殖所需最低能量 |
-| `reproduction_share` | float | 0.4 | 繁殖时子代获得的能量比例 |
-| `mutation_scale` | float | 0.05 | 繁殖突变缩放因子 |
-| `corpse_ttl` | int | 50 | 尸体存留 tick 数 |
-| `scavenger_radius` | float | 2.5 | 拾荒搜索半径 |
-| `adaptive_decay` | bool | True | 自适应能量衰减 |
-| `adaptive_reproduction` | bool | True | 自适应繁殖成本 |
-| `endangered_threshold` | int | 10 | 濒危模式阈值 |
-| `input_current_scale` | float | 1.5 | 输入电流缩放 |
-| `move_cost` | float | 0.01 | 移动能量消耗 |
-
-### 多模型参数
-
-`VectorizedNetwork` 通过 `model_type` 整数向量支持混合模型（0=LIF, 1=Izhikevich, 2=AdEx）：
-
-| 参数向量 | 模型 | 说明 |
-|----------|------|------|
-| `izh_a`, `izh_b`, `izh_c`, `izh_d`, `izh_vpeak` | Izhikevich | 恢复变量与放电参数 |
-| `adex_delta_t`, `adex_a`, `adex_b`, `adex_tau_w`, `adex_vpeak` | AdEx | 指数项、适应参数 |
-
-### 连接方式
-
-| 方法 | 说明 |
-|------|------|
-| `connect_radius(radius, weight, delay)` | 空间半径连接 |
-| `connect_knn(k, weight, delay)` | k 近邻连接 |
-
-### 尸体系统向量
-
-| 数组 | 类型 | 说明 |
-|------|------|------|
-| `corpse_mask` | `np.ndarray[bool]` | 当前是否为尸体 |
-| `corpse_timer` | `np.ndarray[int]` | 尸体剩余 TTL |
-| `corpse_energy` | `np.ndarray[float]` | 尸体可回收能量 |
+上例中，`ticks` 和 `seed` 以 CLI 为准。
 
 ---
 
-## 配置常量参考（config.py）
+## 5. 运行时消费映射（关键字段）
 
-以下为 `config.py` 中定义的共享常量，用于自适应机制和演化逻辑：
+| 字段 | 消费位置 | 行为 |
+|------|----------|------|
+| `simulation.ticks` | `cli/run.py:_init_network()` + 主循环 | 决定运行边界 |
+| `simulation.seed` | `cli/run.py:cmd_run()` | `seed_all()` |
+| `simulation.dt` | `cli/run.py:_run_simulation_loop()` | 传入 `network.tick(t, dt=...)` |
+| `network.*` | `cli/run.py:_init_network()` | 构造 `Network` 参数 |
+| `evolution.mutation_amplitude` | `Network(..., evolution_mutation_amplitude=...)` | 繁殖突变幅度优先值 |
+| `evolution.energy_budget_per_tick` | `Network(..., energy_budget_per_tick=...)` | 每 tick 预算注入 |
+| `--log-interval` / `--gzip-output` / `--max-file-size` / `--async-log` / `--log-buffer-size` | `cli/run.py:_init_logging()` → `create_experiment_logger()` | 输出治理与写盘模式 |
+| `--checkpoint-interval` / `--checkpoint-dir` | `cli/run.py:_run_simulation_loop()` | 定期保存 checkpoint |
+| `--resume-from` | `cli/run.py:_init_network()` | `Network.load_checkpoint()` 恢复 |
 
-| 常量 | 值 | 说明 |
-|------|------|------|
-| `SCHEMA_VERSION` | `"2.0.0"` | 数据格式版本 |
-| `DENSITY_HIGH_THRESHOLD` | `0.8` | 自适应衰减·高密度阈值 |
-| `DENSITY_LOW_THRESHOLD` | `0.3` | 自适应衰减·低密度阈值 |
-| `DECAY_HIGH_MULTIPLIER` | `1.2` | 高密度时衰减倍率 |
-| `DECAY_LOW_MULTIPLIER` | `0.7` | 低密度时衰减倍率 |
-| `POPULATION_HIGH_THRESHOLD` | `0.8` | 自适应繁殖·高种群阈值 |
-| `POPULATION_LOW_THRESHOLD` | `0.3` | 自适应繁殖·低种群阈值 |
-| `REPRO_SHARE_HIGH_MULTIPLIER` | `1.3` | 高种群繁殖成本倍率 |
-| `REPRO_SHARE_LOW_MULTIPLIER` | `0.7` | 低种群繁殖成本倍率 |
-| `REPRO_SHARE_MAX` | `0.6` | 繁殖份额上限 |
-| `REPRO_SHARE_MIN` | `0.2` | 繁殖份额下限 |
-| `RESCUED_NEURON_ENERGY` | `0.1` | 保护复活后初始能量 |
-| `ENDANGERED_EXIT_MULTIPLIER` | `1.5` | 濒危模式退出乘数 |
-| `ENDANGERED_DECAY_DISCOUNT` | `0.5` | 濒危时衰减折扣 |
-| `CONGESTION_LINK_THRESHOLD` | `10` | 拥塞惩罚连接数阈值 |
-| `PE_SMOOTHING_ALPHA` | `0.3` | 预测误差平滑系数 |
-| `SPATIAL_REBUILD_INTERVAL` | `10` | 空间索引重建间隔（tick） |
+---
+
+## 6. 版本与 Schema
+
+- 代码版本：`0.6.0`（`src/neurogenesis_lab/__init__.py`）
+- 数据 Schema：`2.0.0`（`src/neurogenesis_lab/config.py`）
+
+可通过以下命令查看当前运行时口径：
+
+```bash
+python -m neurogenesis_lab info
+```

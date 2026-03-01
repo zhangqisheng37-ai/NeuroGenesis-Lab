@@ -118,12 +118,13 @@ python -m neurogenesis_lab run --ticks 100 --visualize
 
 ## 5. 总结
 
-通过继承 `Neuron` 类，你可以实现各种复杂的神经元模型（如 Hodgkin-Huxley、FitzHugh-Nagumo 等），并无缝集成到 NeuroGenesis Lab 的演化和学习框架中。
+通过继承 `Neuron` 类，你可以实现各种复杂的神经元模型（如 Hodgkin-Huxley、FitzHugh-Nagumo 等），并接入 NeuroGenesis Lab 的仿真与观测框架。
 
 完成模型接入后，建议使用以下闭环检查：
 
 ```bash
 python -m neurogenesis_lab info
+python -m neurogenesis_lab run --ticks 100 --seed 42
 python -m neurogenesis_lab benchmark --neurons 1000 --ticks 50 --rust-size 5000
 pytest
 ```

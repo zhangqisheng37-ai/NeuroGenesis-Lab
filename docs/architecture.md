@@ -1,392 +1,104 @@
-# 系统架构 (System Architecture)
+# 系统架构（Architecture）
 
-本文档详细描述 NeuroGenesis Lab v0.6.0 的核心架构与设计原理。系统旨在构建一个基于生物动力学约束的数字生命演化平台。
+本文档描述当前代码基线（v0.6.0）下的真实架构。
 
-## 1. 核心设计理念
+## 1. 总览
 
-系统遵循以下核心设计原则：
+NeuroGenesis Lab 采用「CLI + 配置 + 双引擎 + 可观测性」分层：
 
-1.  **事件驱动 (Event-Driven)**：所有信息交互通过离散的 `Event` 对象进行，支持精确的时序控制与延迟模拟。
-2.  **能量约束 (Energy Constraint)**：任何活动（放电、移动、繁殖）都消耗能量，能量是生存与演化的核心货币。
-3.  **双重动力学 (Dual Dynamics)**：
-    -   **快系统 (Fast)**：毫秒级的膜电位变化 (LIF / Izhikevich / AdEx 多模型) 与脉冲传播。
-    -   **慢系统 (Slow)**：代际的突变、选择与神经网络结构的重组。
-4.  **可观测性 (Observability)**：系统内部状态对外部完全透明，支持"白盒"实验分析。
-5.  **双引擎对等 (Dual Engine Parity)**：标准引擎 `Network` 与向量化引擎 `VectorizedNetwork` 遵循统一 `SimEngine` 协议，功能高度对齐。
+1. CLI 解析参数并构建 `SimConfig`
+2. `run` 命令初始化 `Network` 并驱动 tick 循环
+3. `Network` / `VectorizedNetwork` 通过 `SimEngine` 协议统一接口
+4. `NetworkObserver` + `ObservabilityLogger` 负责 JSONL 观测输出
 
-## 2. 系统全景图
+## 2. 关键模块
 
-```mermaid
-graph TD
-    User[用户/实验脚本] --> CLI[CLI 子包 cli/]
-    CLI --> Config[SimConfig]
-    Config --> Network[Network (标准引擎)]
-    Config --> VecNet[VectorizedNetwork (向量化引擎)]
-    
-    subgraph "Simulation Loop (Tick)"
-        Network --> Queue[EventQueue (优先队列)]
-        Queue --> |Pop Events| Neurons[Neuron Population]
-        Neurons --> |Spike/Emit| Queue
-        
-        Network --> |Evolution| Scavenger[尸体回收]
-        Network --> |Evolution| Reproduction[繁殖系统]
-        Network --> |Spatial| Migration[空间迁移]
-        Network --> |Learning| AutoLearner[自动学习引擎]
-    end
-    
-    Neurons --> |State| Observability[Observability System]
-    Observability --> |JSONL| Storage[磁盘存储]
-    Observability --> |Live| Visualization[实时监控面板 visualization.py]
-    
-    subgraph "Vectorized Loop (Tick)"
-        VecNet --> |NumPy| VecDynamics[向量化动力学 LIF/Izh/AdEx]
-        VecNet --> |sparse| VecProp[稀疏矩阵传播]
-        VecNet --> |Evolution| VecEvo[向量化演化+尸体回收]
-    end
-    
-    Network --> |SimEngine| Protocols[protocols.py]
-    VecNet --> |SimEngine| Protocols
-    
-    subgraph "Neuron Internals"
-        LIF[LIF 动力学]
-        Izh[Izhikevich 动力学]
-        AdEx[AdEx 动力学]
-        Memory[短期记忆 (Deque)]
-        RuleDiscovery[规则发现 (Learning)]
-    end
-    
-    subgraph "Rust 加速层 (可选)"
-        RustBridge[core_bridge.py]
-        RustCore[neurogenesis_core (PyO3)]
-    end
-```
-
-### 2.1 模块清单
-
-```
+```text
 src/neurogenesis_lab/
-├── __init__.py          # 包入口，导出 __version__ = "0.6.0"
-├── __main__.py          # CLI 向后兼容存根
-├── protocols.py         # SimEngine 协议（TickSnapshot, EngineSummary）
-├── config.py            # 配置系统（SimConfig, NeuronParams, NetworkParams, EvolutionParams）
-├── neuron.py            # 神经元模型（LIF, Izhikevich, AdEx + 组件化架构）
-├── encoding.py          # Token/Event 编码系统
-├── network.py           # 标准仿真引擎（Network + NetworkConfig + NetworkState）
-├── learning.py          # 学习引擎（RuleDiscovery, AutoLearner, QueryEngine）
-├── observability.py     # 可观测性（JsonlWriter, AsyncJsonlWriter, NetworkObserver）
-├── vectorized.py        # 向量化仿真引擎（VectorizedNetwork + SpatialGrid）
-├── visualization.py     # 可视化系统（LiveMonitor + 离线报告生成）
-├── core_bridge.py       # Rust 桥接层（可用性探测 + Python fallback）
-├── logger.py            # 日志工具
-├── py.typed             # PEP 561 typing marker
+├── __init__.py                 # __version__ = 0.6.0
+├── __main__.py                 # 向后兼容入口，转发到 cli.main
+├── config.py                   # SCHEMA_VERSION=2.0.0, SimConfig/Params
+├── protocols.py                # TickSnapshot / EngineSummary / SimEngine
+├── neuron.py                   # LIF/Izhikevich/AdEx 神经元
+├── network.py                  # 标准引擎（run 命令当前默认）
+├── vectorized.py               # 向量化引擎（benchmark 主要使用）
+├── learning.py                 # AutoLearner / RuleDiscovery
+├── observability.py            # 观测采集 + 写盘
+├── core_bridge.py              # Rust 桥接与 fallback
 └── cli/
-    ├── __init__.py      # 导出 main
-    ├── parser.py        # argparse 定义
-    ├── config_builder.py # TOML→SimConfig
-    ├── run.py           # run 命令
-    ├── benchmark.py     # benchmark 命令
-    └── info.py          # info 命令
+    ├── parser.py               # CLI 参数定义
+    ├── config_builder.py       # TOML + CLI -> SimConfig
+    ├── run.py                  # run 子命令
+    ├── benchmark.py            # benchmark 子命令
+    └── info.py                 # info 子命令
 ```
 
-## 3. 核心组件详解
+## 3. CLI 运行路径（run）
 
-### 3.1 仿真循环 (The Simulation Loop)
+`src/neurogenesis_lab/cli/run.py` 中，`cmd_run()` 流程如下：
 
-`Network` 类采用配置/状态分离的组件化架构（Phase 6）：
+1. `build_sim_config(args)` 构建配置
+2. `validate_run_config(cfg)` 校验
+3. `seed_all(cfg.seed)` 统一随机种子
+4. `_init_network()`：新建或 `--resume-from` 恢复 `Network`
+5. `_init_logging()`：初始化 logger / observer / 可视化
+6. `_run_simulation_loop()`：
+   - `network.tick(t, dt=cfg.dt)`
+   - `AutoLearner.on_tick(...)`
+   - `logger.log_tick(...)`
+   - checkpoint 条件保存
+7. `_finalize_run()` 写 summary
 
-- **`NetworkConfig`**：所有配置参数（22 个字段，含 `corpse_pool_max_size`）
-- **`NetworkState`**：运行时统计状态（`birth_count`, `death_count`, `total_spikes`, `total_propagations`, `current_tick`, `_pe_history`, `_endangered_mode`）
+## 4. 双引擎与统一协议
 
-通过 `__getattr__`/`__setattr__` 属性代理，外部 API 完全兼容。自适应衰减/繁殖机制中的阈值通过 `config.py` 中的命名常量（`DENSITY_HIGH_THRESHOLD`, `REPRO_SHARE_MAX` 等）统一管理。
+统一协议定义于 `src/neurogenesis_lab/protocols.py`：
 
-仿真以离散时间步 `tick` 为单位推进。每个 `tick` (默认 dt=1.0ms) 包含以下阶段：
+- `TickSnapshot`（每 tick 快照）
+- `EngineSummary`（运行摘要）
+- `SimEngine`（协议，约束 `tick()` + `get_summary()`）
 
-1.  **事件分发 (Event Dispatch)**：
-    -   从 `EventQueue` 中取出所有 `t <= current_tick` 的事件。
-    -   将事件路由到目标神经元。
-2.  **神经元更新 (Neuron Update)**：
-    -   计算膜电位变化 `dv/dt` (LIF 公式)。
-    -   判断是否达到阈值 `v_th`。
-    -   如果放电 (Spike)，生成新的输出事件。
-3.  **网络演化 (Network Evolution)**：
-    -   **能量衰减**：全局扣除基础代谢能量。
-    -   **死亡判定**：能量 <= 0 的神经元转化为 `Corpse`。
-    -   **繁殖判定**：能量 > `reproduction_threshold` 的神经元进行分裂。
-    -   **尸体回收**：存活神经元若在尸体 `scavenger_radius` 范围内，可回收部分能量。
-4.  **数据采集 (Observability)**：
-    -   收集全网快照（存活数、总能量、预测误差等）。
-    -   写入日志。
+### 4.1 Network（标准引擎）
 
-### 3.2 神经元模型 (Neuron Model)
+`src/neurogenesis_lab/network.py`：
 
-系统基类为 `Neuron`，提供能量、记忆、位移与适应度机制，三种具体放电模型均继承自此基类。
+- 事件队列驱动（`ready_events`）
+- 演化：繁殖、死亡、尸体回收
+- 自适应机制：`adaptive_decay` / `adaptive_reproduction`
+- 摘要额外字段：`corpse_pool_free`、`corpse_pool_reused`
 
-#### 3.2.0 组件化架构（Phase 6）
+### 4.2 VectorizedNetwork（向量化引擎）
 
-`Neuron` 类采用组件化设计，内部状态拆分为三个独立的 dataclass 组件：
+`src/neurogenesis_lab/vectorized.py`：
 
-- **`NeuronDynamics`**：动力学参数（`v`, `u`, `w`, `v_rest`, `v_reset`, `v_th`, `tau_m`, `r_m`, `spike_cost`, `input_gain`, `move_cost`）
-- **`NeuronEvolution`**：演化统计（`spike_count`, `propagation_count`, `prediction_hits`）
-- **`NeuronMemory`**：记忆管理（`mem_size`, `mem`, `transitions`, `_observe_cache`, `_observe_dirty`）
+- NumPy + SciPy 稀疏矩阵路径
+- 多模型分组动力学（LIF/Izhikevich/AdEx）
+- 同样返回 `TickSnapshot` / `EngineSummary`
+- 支持独立 checkpoint（`save_checkpoint` / `load_checkpoint`）
 
-通过 `__getattr__`/`__setattr__` 属性代理，外部 API 完全兼容——访问 `neuron.tau_m` 等价于 `neuron._dynamics.tau_m`。子类（IzhikevichNeuron/AdExNeuron）的额外字段（`a`, `b`, `c`, `d`, `v_peak`, `delta_t`, `tau_w`）保留在子类 `__dict__` 中，不放入组件。
+## 5. 可观测性架构
 
-遗传属性列表通过 `config.py` 中的 `HERITABLE_ATTRS` 常量统一管理。
+`src/neurogenesis_lab/observability.py`：
 
-#### 3.2.1 LIFNeuron — Leaky Integrate-and-Fire
+- `NetworkObserver`：采集 `metrics` / `learning` / `trends`
+- `ObservabilityLogger`：写入 `config` / tick 报告 / `summary`
+- `JsonlWriter`：同步写盘
+- `AsyncJsonlWriter`：异步双缓冲写盘
+- `create_experiment_logger()`：自动生成实验目录
 
-最常用的计算神经科学模型，计算开销最低。
+输出治理能力由 run CLI 参数启用：
 
-$$ \tau_m \frac{dV}{dt} = -(V - V_{rest}) + R_m I(t) $$
+- 采样：`--log-interval`
+- 压缩：`--gzip-output`
+- 轮转：`--max-file-size`
+- 异步：`--async-log` + `--log-buffer-size`
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `v_rest` | -65.0 | 静息电位 (mV) |
-| `v_reset` | -65.0 | 放电后重置电位 (mV) |
-| `v_th` | -55.0 | 触发放电的阈值电位 (mV) |
-| `tau_m` | 20.0 | 膜时间常数 (ms) |
-| `r_m` | 1.0 | 膜电阻 (MΩ) |
+## 6. 版本与 Schema
 
-- **输入电流 $I(t)$**：来自外部输入事件和突触前神经元的脉冲。
-- **不应期**：放电后电位重置为 $V_{reset}$。
+- 版本：`0.6.0`（`src/neurogenesis_lab/__init__.py`）
+- Schema：`2.0.0`（`src/neurogenesis_lab/config.py`）
 
-#### 3.2.2 IzhikevichNeuron — Izhikevich 模型
+## 7. 说明
 
-可模拟多种皮层神经元放电模式（常规放电、爆发、快速放电等），计算效率高于 HH 模型。
-
-$$
-\frac{dV}{dt} = 0.04V^2 + 5V + 140 - u + I
-$$
-$$
-\frac{du}{dt} = a(bV - u)
-$$
-
-放电条件：$V \ge V_{peak}$，随后 $V \leftarrow c$，$u \leftarrow u + d$
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `a` | 0.02 | 恢复变量时间尺度 |
-| `b` | 0.2 | 恢复变量对膜电位的耦合强度 |
-| `c` | -65.0 | 放电后膜电位重置值 (mV) |
-| `d` | 8.0 | 放电后恢复变量增量 |
-| `v_peak` | 30.0 | 放电检测阈值 (mV) |
-
-#### 3.2.3 AdExNeuron — Adaptive Exponential Integrate-and-Fire
-
-在 LIF 基础上增加指数项与适应电流 $w$，可更精准地重现神经元放电适应性。
-
-$$
-\tau_m \frac{dV}{dt} = -(V - V_{rest}) + \Delta_T e^{\frac{V - V_{th}}{\Delta_T}} - w + I
-$$
-$$
-\tau_w \frac{dw}{dt} = a(V - V_{rest}) - w
-$$
-
-放电条件：$V \ge V_{peak}$，随后 $V \leftarrow V_{reset}$，$w \leftarrow w + b$
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `delta_t` | 2.0 | 指数斜坡因子 (mV) |
-| `a` | 1.0 | 亚阈值适应耦合 |
-| `b` | 0.5 | 放电触发适应增量 |
-| `tau_w` | 80.0 | 适应电流时间常数 (ms) |
-| `v_peak` | -40.0 | 放电检测阈值 (mV) |
-
-#### 3.2.4 能量层 (Energy)
-
-三种模型共享以下能量动力学（由基类 `Neuron` 提供）：
-
-$$ E(t+1) = E(t) - E_{decay} - E_{spike} \cdot \mathbb{I}(spike) + E_{gain} \cdot I_{in} $$
-
-- 能量耗尽导致死亡。
-- 能量富余触发繁殖。
-
-#### 3.2.5 认知层 (Cognition)
-- **Memory**：维护一个固定长度的 `Event` 队列，记录最近接收到的 Token 序列。
-- **Transitions**：统计 Token 转移概率（如 A -> B），用于简单的预测与规则学习。
-- **Novelty**：基于短期记忆计算输入的新颖性，作为内在奖励信号。
-
-### 3.3 事件系统与时间语义 (Event System & Time Semantics)
-
-为保证仿真的严谨性，系统定义了明确的时间语义：
-
-1.  **Current Tick ($t$)**：仿真器的当前离散时刻。
-2.  **Event Time ($t_{event}$)**：事件发生的时刻。
-3.  **Propagation Delay ($d$)**：信号传输的耗时。
-
-**时序约束**：
-- **输入事件**：外部输入事件可提前入队；当仿真时钟满足 `current_tick >= t_event` 时会被消费。
-- **传播机制**：
-    - 源神经元在 $t$ 时刻放电。
-    - 产生输出事件 $E$。
-    - $E.t = t + d$。
-    - 事件 $E$ 被插入优先队列，只有当仿真时钟推进到 $t + d$ 时，目标神经元才会收到该事件。
-    - 若 $d=0$，则事件在 **下一个** tick ($t+1$) 处理（模拟最小突触延迟），防止因果循环。
-
-事件是网络中信息传递的唯一载体：
-
-```python
-@dataclass
-class Event:
-    token_id: int   # 携带的信息 (Token)
-    t: int          # 发生时间 (Tick)
-    src_id: str     # 路由目标神经元 ID
-    meta: dict      # 附加信息（可包含来源 from / 权重 weight）
-```
-
-支持 **延迟 (Delay)**：
-- 当神经元 A 在 $t$ 时刻向 B 发送脉冲，且连接延迟为 $d$。
-- 事件会被插入队列的 $t + d$ 时刻。
-- 这种机制允许模拟长程连接和时序逻辑。
-
-## 4. 演化机制 (Evolutionary Mechanics)
-
-系统通过局部相互作用实现全局演化：
-
-### 4.1 繁殖 (Reproduction)
-- **触发**：神经元能量累积超过阈值。
-- **过程**：
-    - 母体消耗能量。
-    - 创建子代神经元，位置在母体附近。
-    - **参数遗传**：子代继承母体参数（如 `v_th`, `tau_m`），并叠加高斯噪声突变。
-    - **连接继承**：子代以一定概率继承母体的连接结构。
-
-### 4.2 尸体回收 (Scavenging)
-- 死亡神经元变成 `Corpse` 对象，保留剩余能量的一小部分。
-- 尸体能量随时间衰减。
-- 附近的存活神经元可以“吞噬”尸体能量，模拟生态系统中的能量循环。
-
-## 5. 学习与规则发现 (Learning)
-
-NeuroGenesis Lab 探索“从脉冲到符号”的涌现：
-
-1.  **Tokenization**：外部输入被编码为离散 Token。
-2.  **Pattern Mining**：神经元记录 Token 共现频率。
-3.  **Rule Formation**：高频转移（如 Token 1 总是跟随 Token 2）被固化为规则。
-4.  **Prediction**：神经元尝试预测下一个 Token，预测准确度 (Prediction Hit) 是适应度函数的一部分，奖励具有预测能力的神经元。
-
-## 6. 向量化引擎 (Vectorized Engine)
-
-为了支持大规模实验与性能基准测试，系统引入了基于 NumPy + scipy.sparse 的向量化引擎：
-
-- **VectorizedNetwork**：使用矩阵运算替代面向对象的逐个更新。
-- **稀疏矩阵**：连接权重使用 `scipy.sparse.csr_matrix` 存储，万级神经元时内存占用从 ~800MB (N×N 密集) 降至数 MB 级别。
-- **向量化传播**：放电传播通过稀疏矩阵行切片 (`nnz`) 一次性计算，消除 Python for 循环。
-- **向量化连接构建**：`connect_radius` 使用 `scipy.spatial.distance.cdist` 批量计算距离矩阵，通过 `lil_matrix` 构建后转 `csr_matrix`。
-- **多模型动力学（v0.6.0 新增）**：
-    - 引入 `model_type` 整数向量（0=LIF, 1=Izhikevich, 2=AdEx），分组计算不同动力学方程。
-    - `_vectorized_dynamics_step()` 统一调度器按掩码分组调用 `_lif_step()` / `_izh_step()` / `_adex_step()`。
-    - 放电重置按模型类型分别处理（LIF→v_reset, Izh→c+d, AdEx→v_reset+b）。
-- **尸体回收系统（v0.6.0 新增）**：
-    - `corpse_mask` / `corpse_timer` / `corpse_energy` 向量化尸体数组。
-    - TTL 递减、能量衰减、空间网格内拾荒。
-    - 死亡→尸体、繁殖时排除尸体槽位等完整生命周期。
-- **自适应机制（v0.6.0 新增）**：
-    - 自适应能量衰减：`_calculate_adaptive_decay()` 按种群密度调节。
-    - 自适应繁殖成本：`_calculate_adaptive_reproduction_share()` 按种群规模调节。
-    - 濒危保护模式、能量上限 (`energy_cap`)。
-- **Checkpoint 持久化（v0.6.0 新增）**：`save_checkpoint()` / `load_checkpoint()` 支持完整状态序列化与恢复。
-- **性能优势**：在纯计算场景下比原始引擎快 10-50 倍。
-- **用途**：用于快速验证动力学参数、大规模统计特性分析以及作为原始引擎的对照组。
-
-## 7. 统一引擎接口 (Unified Engine Protocol)
-
-两个引擎通过 `protocols.py` 中定义的 `SimEngine` 协议实现接口统一：
-
-- **`TickSnapshot`**：`tick()` 方法返回的统一快照类型，包含 `propagation_count`、`mean_energy` 等字段。
-- **`EngineSummary`**：`get_summary()` 方法返回的统一摘要类型，包含 `total_propagations`、`active_ratio`、`mean_energy` 等字段。
-- **`SimEngine`**：`runtime_checkable` 协议，约束两个引擎必须实现 `tick()` 和 `get_summary()` 方法。
-
-上层代码（CLI、可观测性、可视化）可通过统一类型处理两个引擎的输出，无需区分具体实现。
-
-## 8. Rust + Python 混合架构 (Phase 5)
-
-为突破 Python GIL 与复杂逻辑向量化瓶颈，Phase 5 引入了 Rust 扩展模块 `neurogenesis_core`，并通过 PyO3 暴露给 Python：
-
-- **构建链路**：`pyproject.toml` 新增 `tool.maturin` 配置，Rust crate 位于 `rust_src/neurogenesis_core`。
-- **核心模块（Rust）**：
-    - `TickSnapshot` / `EngineSummary`（底层快照与摘要数据结构）
-    - `LIFCore` / `IzhikevichCore`（核心状态更新方程）
-    - `SparseAdjacency`（邻接表结构）
-    - `EventQueue`（事件队列）
-    - `parallel_lif_tick`（基于 Rayon 的并行 Tick 更新示例）
-    - `mine_pattern_counts`（N-gram 模式挖掘）
-- **Python 桥接层**：`src/neurogenesis_lab/core_bridge.py` 提供扩展可用性探测和降级能力，确保未编译 Rust 扩展时 Python 端仍可运行。
-
-### 桥接层 API
-
-| 函数 | 说明 |
-|------|------|
-| `rust_core_status()` | 返回 Rust 8 组件可用性字典 |
-| `parallel_lif_tick_safe(...)` | 并行 LIF 更新，返回 backend 标识 |
-| `mine_pattern_counts_safe(...)` | N-gram 模式挖掘，返回 backend 标识 |
-
-## 9. CLI 子包架构 (Phase 7)
-
-Phase 7 将原 `__main__.py`（732 行）拆分为 `cli/` 子包，每个模块职责单一：
-
-```
-src/neurogenesis_lab/cli/
-├── __init__.py      # 导出 main() 入口
-├── parser.py        # argparse 参数定义 (_build_parser)
-├── config_builder.py # TOML 解析与 SimConfig 构建
-├── run.py           # run 命令实现 (cmd_run)
-├── benchmark.py     # benchmark 命令实现 (cmd_benchmark)
-└── info.py          # info 命令实现 (cmd_info)
-```
-
-`__main__.py` 精简为 ~20 行兼容存根，保留旧路径导入兼容（`main`, `_build_sim_config`, `cmd_run` 等）。`pyproject.toml` 入口点更新为 `neurogenesis_lab.cli:main`。
-
-### CLI 命令结构
-
-| 命令 | 模块 | 说明 |
-|------|------|------|
-| `run` | `cli/run.py` | 仿真运行（含 checkpoint/可视化/异步日志） |
-| `benchmark` | `cli/benchmark.py` | 性能基准测试（向量化/原始/Rust 对照） |
-| `info` | `cli/info.py` | 显示版本、schema、Rust 状态和默认配置 |
-
-## 10. 可视化系统 (Visualization)
-
-`visualization.py` 提供实时监控和离线分析能力：
-
-- **实时监控**：`LiveMonitor` 类在仿真运行时实时绘制种群、能量、学习指标和空间拓扑图。
-- **离线分析**：`generate_report()` 从 JSONL 数据生成完整图表报告。
-- **绘图函数**：
-    - `plot_population_curve()` — 种群数量曲线
-    - `plot_energy_distribution()` — 能量分布直方图
-    - `plot_learning_metrics()` — 学习指标趋势
-    - `plot_spike_raster()` — 放电栅格图
-    - `plot_network_topology()` — 网络拓扑可视化
-- **依赖**：可选 `matplotlib>=3.5`，通过 `pip install -e ".[viz]"` 安装。
-
-## 11. 异步观测与双缓冲 I/O
-
-`observability.py` 已支持可选异步双缓冲写盘：
-
-- 主线程持续写入活动缓冲区（Buffer A）。
-- 后台线程刷写待落盘缓冲区（Buffer B）。
-- 通过 CLI 参数 `--async-log` 与 `--log-buffer-size` 启用与调优。
-
-默认仍为同步写盘，保持既有行为与测试兼容。
-
-## 12. 编译与 CI 指南
-
-- **本地构建 Rust 扩展**：
-    - 安装依赖：`pip install -e .[rust]`
-    - 开发安装：`maturin develop --release`
-    - 构建 wheel：`maturin build --release --manifest-path rust_src/neurogenesis_core/Cargo.toml`
-    - 可用性自检：`python -m neurogenesis_lab info`（应显示 `Rust Core: available`）
-- **CI 工作流（Phase 7 新增）**：
-    - `python-test.yml`：多平台 (Ubuntu/Windows) × 多版本 (3.10/3.11/3.12) 测试矩阵
-    - `lint.yml`：ruff check + ruff format --check + mypy
-    - `coverage.yml`：PR 覆盖率报告
-    - `docs.yml`：推送到 main 时自动构建部署 API 文档
-    - `rust-wheel.yml`：Windows/Linux/macOS 三平台构建并上传 wheel 产物
-- **文档构建**：
-    - 安装：`pip install -e ".[docs]"`
-    - 本地预览：`mkdocs serve`
-    - 构建正式版：`mkdocs build`
-
----
-
-*设计文档版本：v2.0 (对应代码 v0.6.0 / Phase 7，347 tests，92.61% 覆盖率)*
+- 当前 `run` 命令路径使用 `Network`（标准引擎）。
+- `benchmark` 同时执行 `VectorizedNetwork`、`Network` 与 Rust 并行 LIF 微基准。
+- 架构叙事以代码实现为准，不引入无代码证据的设计假设。

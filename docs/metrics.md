@@ -1,206 +1,128 @@
-# 可观测性指标 (Observability Metrics)
+# 可观测性指标（Metrics）
 
-NeuroGenesis Lab 提供了全链路的数据观测能力。所有实验数据以 JSONL (JSON Lines) 格式流式写入磁盘，支持实时分析与离线回放。
+本文档基于以下代码事实：
 
-## 数据结构
+- `src/neurogenesis_lab/protocols.py`
+- `src/neurogenesis_lab/network.py`
+- `src/neurogenesis_lab/vectorized.py`
+- `src/neurogenesis_lab/observability.py`
 
-每行日志记录代表一个 Tick 的完整状态快照，包含以下核心字段：
+## 1) TickSnapshot（引擎统一快照）
 
-```json
-{
-  "schema_version": "2.0.0",
-  "metrics": { ... },    // 网络级指标
-  "learning": { ... },   // 学习与预测指标
-  "trends": { ... },     // 趋势与统计
-  "debug": { ... }       // 详细追踪（可选）
-}
-```
+`tick()` 返回统一快照（`TickSnapshot`）。核心字段：
 
-## 0. Tick 快照 (TickSnapshot)
-
-`tick()` 方法返回的统一快照类型（`Network` 和 `VectorizedNetwork` 共用），定义于 `protocols.py`：
-
-| 字段名 | 说明 |
-|--------|------|
-| `schema_version` | 数据格式版本 |
-| `tick` | 当前 tick 编号 |
+| 字段 | 说明 |
+|------|------|
+| `schema_version` | Schema 版本 |
+| `tick` | 当前 tick |
 | `alive_neurons` | 存活神经元数 |
 | `total_neurons` | 总神经元数 |
-| `tick_spikes` | 本 tick 放电次数 |
-| `propagation_count` | 本 tick 传播事件数 |
+| `tick_spikes` | 本 tick 放电数 |
+| `propagation_count` | 本 tick 传播数 |
 | `births` | 本 tick 出生数 |
 | `deaths` | 本 tick 死亡数 |
 | `prediction_error` | 本 tick 预测误差 |
 | `mean_energy` | 存活神经元平均能量 |
-| `ready_events` | 本 tick 从队列取出的就绪事件数（Network 引擎） |
-| `rule_count` | (可选) 当前发现的规则数量，由 `AutoLearner.on_tick()` 在 `tick()` 调用后注入 |
-| `prediction_accuracy` | (可选) 当前预测准确率，由 `AutoLearner.on_tick()` 在 `tick()` 调用后注入 |
-| `corpse_pool_free` | (可选) 对象池中可复用尸体对象数（Network 引擎） |
-| `corpse_pool_reused` | (可选) 对象池复用累计次数（Network 引擎） |
+| `ready_events` | 就绪事件数（两引擎均可提供） |
+| `rule_count` | 可选，`AutoLearner` 注入 |
+| `prediction_accuracy` | 可选，`AutoLearner` 注入 |
 
-> 注：`rule_count` / `prediction_accuracy` 不由引擎的 `tick()` 本身填充，仅在使用 `AutoLearner` 时才会出现在快照中（`__main__.py` 的主循环会显式写入）。
+## 2) EngineSummary（引擎统一摘要）
 
-## 0.1 引擎摘要 (EngineSummary)
+`get_summary()` 返回统一摘要（`EngineSummary`）。
 
-`get_summary()` 方法返回的统一摘要类型：
-
-| 字段名 | 说明 |
-|--------|------|
-| `schema_version` | 数据格式版本 |
+| 字段 | 说明 |
+|------|------|
+| `schema_version` | Schema 版本 |
 | `total_neurons` | 总神经元数 |
 | `alive_neurons` | 存活神经元数 |
-| `total_spikes` | 累计放电次数 |
-| `total_propagations` | 累计传播事件数 |
+| `total_spikes` | 累计放电数 |
+| `total_propagations` | 累计传播数 |
 | `birth_count` | 累计出生数 |
 | `death_count` | 累计死亡数 |
-| `pe_moving_avg` | 预测误差滑动均值 |
-| `active_ratio` | 活跃比例 (Alive / Total) |
-| `mean_energy` | 存活神经元平均能量 |
-| `corpse_pool_free` | (Network 专属) 对象池中可复用尸体对象数 |
-| `corpse_pool_reused` | (Network 专属) 对象池复用累计次数 |
+| `pe_moving_avg` | PE 滑动均值 |
+| `active_ratio` | 活跃占比 |
+| `mean_energy` | 平均能量 |
+| `corpse_pool_free` | 仅 `Network` |
+| `corpse_pool_reused` | 仅 `Network` |
 
-> 注：`rule_count` / `prediction_accuracy` 由 `AutoLearner.get_summary()` 单独提供，不在引擎 `get_summary()` 中。
+## 3) JSONL 报告结构（observer/logger）
 
-## 1. 网络指标 (Network Metrics)
+`NetworkObserver.generate_report()` 生成结构：
 
-位于 `metrics` 字段，反映种群的宏观状态：
-
-| 字段名 | 说明 |
-|--------|------|
-| `total_neurons` | 总神经元数（含刚死亡未清理的） |
-| `alive_neurons` | 存活神经元数 |
-| `dead_neurons` | 死亡神经元数（不含已清理尸体） |
-| `total_connections` | 全网突触连接总数 |
-| `avg_connections` | 平均每个神经元的连接数 |
-| `mean_energy` | 存活神经元的平均能量 |
-| `avg_novelty` | 平均新颖性 (0.0~1.0)，反映输入的多样性 |
-| `avg_entropy` | 平均信息熵，反映状态复杂度 |
-| `avg_emotion` | 平均情感值 (保留字段) |
-| `active_ratio` | 活跃比例 (Alive / Total) |
-| `queue_size` | 事件队列中的待处理事件数 |
-| `corpse_count` | 场景中存在的尸体数量 |
-
-## 2. 学习指标 (Learning Metrics)
-
-位于 `learning` 字段，反映系统的认知与计算能力：
-
-| 字段名 | 说明 |
-|--------|------|
-| `total_spikes` | 累计放电次数 |
-| `total_propagations` | 累计成功传播的事件数 |
-| `pe_moving_avg` | 预测误差 (Prediction Error) 的滑动均值 |
-
-## 3. 趋势指标 (Trend Metrics)
-
-位于 `trends` 字段，用于分析演化动力学：
-
-| 字段名 | 说明 |
-|--------|------|
-| `birth_rate` | 最近 N 个 tick 的平均出生率 |
-| `death_rate` | 最近 N 个 tick 的平均死亡率 |
-| `effective_propagation_rate` | 有效传播率 (Total Propagations / Total Spikes) |
-| `alive_trend` | 最近 N 个 tick 的存活数序列 |
-
-## 4. 神经元详情 (Neuron Detail)
-
-当开启 Debug 模式或指定追踪 ID 时，`debug.tracked_neurons` 列表会包含详细的神经元状态：
-
-| 字段名 | 说明 |
-|--------|------|
-| `neuron_id` | 唯一标识符 (UUID) |
-| `pos` | 坐标 (x, y) |
-| `energy` | 当前能量 |
-| `v` | 当前膜电位 |
-| `spike_count` | 累计放电次数 |
-| `recent_tokens` | 短期记忆中的 Token 序列 |
-| `top_transitions` | 观测到的高频 Token 转移 (Pattern) |
-| `states` | 内部状态字典 (novelty, entropy 等) |
-
-## 输出文件
-
-默认情况下，实验数据输出至 `outputs/<experiment_id>/run.jsonl`。
-
-当启用输出治理参数时：
-
-- `--gzip-output`：输出为 `run.jsonl.gz`
-- `--max-file-size N`（N>0）：超过阈值后自动轮转为 `run_0001.jsonl(.gz)`, `run_0002.jsonl(.gz)` ...
-- `--log-interval N`：每 N tick 记录一次 tick 报告（`config` 与 `summary` 仍会记录）
-- `--async-log`：启用异步双缓冲写盘（可配合 `--log-buffer-size`）
-
-可以使用 `examples/observe_jsonl.py` 或自定义脚本对 JSONL 文件进行解析与可视化。
-
-若文件为 `.jsonl.gz`，可使用：
-
-```bash
-python examples/decompress_outputs.py --path outputs --recursive
+```json
+{
+  "schema_version": "2.0.0",
+  "metrics": {...},
+  "learning": {...},
+  "trends": {...},
+  "debug": {...}
+}
 ```
 
-将压缩结果批量解压为同目录下的 `.jsonl` 文本文件。
+### 3.1 `metrics` 字段
 
-## 事件字段语义（Event）
+来源：`NetworkObserver.get_network_metrics()`
 
-编码器和网络内部事件都使用 `Event(token_id, t, src_id, meta)` 结构。
+- `total_neurons`
+- `alive_neurons`
+- `dead_neurons`
+- `total_connections`
+- `avg_connections`
+- `mean_energy`
+- `queue_size`
+- `avg_novelty`
+- `avg_emotion`
+- `avg_entropy`
+- `active_ratio`
+- `corpse_count`
 
-| 字段名 | 语义 |
-|--------|------|
-| `token_id` | 当前脉冲携带的符号 ID |
-| `t` | 事件计划投递的 tick |
-| `src_id` | **本次事件要投递到的目标神经元 ID** |
-| `meta.from` | 传播来源神经元 ID（仅网络传播事件有） |
-| `meta.weight` | 突触权重或外部注入权重 |
+### 3.2 `learning` 字段
 
-> 注意：当前实现中 `src_id` 是“目标路由 ID”，不是“发送方 ID”。发送方通过 `meta.from` 记录。
+来源：`NetworkObserver.get_learning_metrics()`
 
-### 时序示例（delay=1）
+- `total_spikes`
+- `total_propagations`
+- `pe_moving_avg`
 
-1. tick=5：神经元 A 放电，向 B 发出传播事件（`src_id=B`, `meta.from=A`, `t=6`）
-2. tick=6：网络队列投递该事件到 B
-3. tick=6：B 的 `receive()` 被触发，进入后续膜电位更新与可能放电
+### 3.3 `trends` 字段
 
-## 可视化指标
+来源：`NetworkObserver.get_trend_metrics()`
 
-当使用 `--visualize` 参数启动仿真或通过 `examples/analyze_experiment.py` 生成离线报告时，`visualization.py` 会绘制以下图表：
+- `pe_moving_avg`
+- `birth_rate`
+- `death_rate`
+- `alive_trend`
+- `effective_propagation_rate`
 
-| 图表 | 函数 | 数据来源 |
-|------|------|----------|
-| 种群曲线 | `plot_population_curve()` | `metrics.alive_neurons` 时间序列 |
-| 能量分布 | `plot_energy_distribution()` | 存活神经元能量快照 |
-| 学习指标 | `plot_learning_metrics()` | `learning.total_spikes`, `pe_moving_avg` |
-| 放电栅格图 | `plot_spike_raster()` | 各神经元放电时刻 |
-| 网络拓扑 | `plot_network_topology()` | 神经元位置与连接结构 |
+## 4) 输出文件约定
 
-`LiveMonitor` 实时监控面板在 `--plot-interval` 指定的间隔更新上述图表。
+`ObservabilityLogger` + `create_experiment_logger()`：
 
-## AutoLearner 指标
+- 默认主文件：`run.jsonl`
+- gzip：`run.jsonl.gz`（`--gzip-output`）
+- 轮转：`run_0001.jsonl(.gz)`、`run_0002.jsonl(.gz)`（`--max-file-size > 0`）
+- 采样：仅每 `N` tick 记录（`--log-interval N`）
+- 异步写盘：`--async-log` + `--log-buffer-size`
 
-当启用学习引擎时，`AutoLearner.on_tick()` 会向 `TickSnapshot` 注入额外字段：
+说明：
 
-| 字段名 | 说明 |
-|--------|------|
-| `rule_count` | 当前发现的规则数量 |
-| `prediction_accuracy` | 当前预测准确率 |
+- `config` 记录与 `summary` 记录不受 tick 采样跳过影响。
+- 输出目录默认由 `run` 命令创建在 `outputs/` 下时间戳实验目录。
 
-`AutoLearner.get_summary()` 返回的摘要包含：
+## 5) checkpoint 文件约定
 
-| 字段名 | 说明 |
-|--------|------|
-| `rule_count` | 规则总数 |
-| `prediction_accuracy` | 准确率 |
-| `total_predictions` | 总预测次数 |
-| `correct_predictions` | 正确预测次数 |
+`run` 命令按间隔输出：
 
-## Rust 桥接层状态
+- `checkpoint_tick_<global_tick>.pkl`
 
-`python -m neurogenesis_lab info` 或 `core_bridge.rust_core_status()` 返回的状态信息：
+由 `--checkpoint-interval` 与 `--checkpoint-dir` 控制，`--resume-from` 恢复。
 
-| 字段名 | 类型 | 说明 |
-|--------|------|------|
-| `available` | bool | Rust 扩展是否可用 |
-| `TickSnapshot` | bool | Rust TickSnapshot 结构是否可用 |
-| `EngineSummary` | bool | Rust EngineSummary 结构是否可用 |
-| `LIFCore` | bool | Rust LIF 核心是否可用 |
-| `IzhikevichCore` | bool | Rust Izhikevich 核心是否可用 |
-| `SparseAdjacency` | bool | Rust 稀疏邻接表是否可用 |
-| `EventQueue` | bool | Rust 事件队列是否可用 |
-| `parallel_lif_tick` | bool | Rust 并行 LIF tick 函数是否可用 |
-| `mine_pattern_counts` | bool | Rust 模式挖掘函数是否可用 |
+## 6) Rust 状态观测（info）
+
+`python -m neurogenesis_lab info` 输出：
+
+- `Rust Core: available|unavailable`
+- 可用组件列表（来自 `core_bridge.rust_core_status()`）
+
+用于确认 Rust 路径是否可用（特别是 benchmark 对照时）。
