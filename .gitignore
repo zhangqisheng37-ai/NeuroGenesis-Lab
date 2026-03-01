@@ -135,3 +135,6 @@ cython_debug/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code
+.claude/
