@@ -138,3 +138,6 @@ cython_debug/
 
 # Claude Code
 .claude/
+
+# Pytest temporary files
+.pytest_tmp/
