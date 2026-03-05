@@ -8,21 +8,64 @@
 
 ---
 
-## 未发布（文档同步批次，2026-03-01）
+## v0.6.0（2026-03-05）
 
-### 文档与代码事实对齐
+### 工程基础设施完善（Phase 7 完成）
 
+#### CI/CD 管道
+- 新增 `.github/workflows/python-test.yml`：多平台（Ubuntu/Windows）× 多版本（3.10/3.11/3.12）矩阵测试，覆盖率≥90%。
+- 新增 `.github/workflows/lint.yml`：ruff check + format + mypy 类型检查。
+- 新增 `.github/workflows/coverage.yml`：PR 覆盖率报告自动评论。
+- 新增 `.github/workflows/docs.yml`：自动构建并部署 API 文档到 GitHub Pages。
+- 新增 `.github/BRANCH_PROTECTION_GUIDE.md`：分支保护规则配置指南。
+
+#### 双引擎功能对齐
+- `VectorizedNetwork` 新增尸体回收系统（`corpse_mask`、`corpse_timer`、空间索引加速）。
+- `VectorizedNetwork` 新增自适应衰减与繁殖机制（动态调整 `energy_decay` 和 `reproduction_share`）。
+- `VectorizedNetwork` 新增多模型支持（LIF + Izhikevich + AdEx 向量化）。
+- `VectorizedNetwork` 新增学习集成（`AutoLearner` + 预测奖励机制）。
+- `VectorizedNetwork` 新增 checkpoint 持久化（`save_checkpoint` / `load_checkpoint`）。
+
+#### CLI 模块化
+- 将 `__main__.py`（732 行）拆分为 `cli/` 子包：
+  - `cli/parser.py`：参数定义
+  - `cli/config_builder.py`：配置构建与 TOML 解析
+  - `cli/run.py`：仿真运行逻辑
+  - `cli/benchmark.py`：性能基准
+  - `cli/info.py`：版本信息
+- `__main__.py` 精简为入口存根（<10 行）。
+
+#### API 文档自动生成
+- 集成 mkdocs-material + mkdocstrings-python。
+- 自动生成 9 个核心模块的 API 文档。
+- 整合教程、案例研究到统一导航。
+- GitHub Actions 自动部署到 GitHub Pages。
+
+#### 测试基础设施
+- 新增 `tests/conftest.py`：共享 fixture（`sample_config`、`small_network`、`small_vectorized`、`tmp_output_dir`）。
+- 新增 30+ 测试用例，覆盖率从 90% 提升至 92.61%。
+- 新增端到端测试：run → checkpoint → resume → 结果对比。
+
+#### 类型标注收紧
+- 修复 `vectorized.py`、`visualization.py`、`learning.py` 的弱类型标注。
+- 启用 mypy 严格模式（`disallow_untyped_defs`、`warn_return_any`）。
+- 集成 mypy 到 lint CI 工作流。
+
+#### 项目发布准备
+- 新增 `LICENSE`（MIT）。
+- 新增 `CONTRIBUTING.md`：开发环境、分支策略、提交规范。
+- 新增 `src/neurogenesis_lab/py.typed`（PEP 561 类型标记）。
+- README 新增徽章（CI 状态、覆盖率、Python 版本、License）。
+
+#### 文档同步
 - 全量校对 `README.md`、`docs/parameters.md`、`docs/quickstart.md`。
-- 统一 `run / benchmark / info` 参数口径（名称、默认值、帮助语义）。
-- 明确输出治理能力：`--log-interval`、`--gzip-output`、`--max-file-size`。
-- 明确异步日志能力：`--async-log`、`--log-buffer-size`。
-- 明确 checkpoint 运行语义：`--checkpoint-interval`、`--checkpoint-dir`、`--resume-from`。
-- 同步双引擎协议叙事：`SimEngine` / `TickSnapshot` / `EngineSummary`。
-- 更新教程/案例命令，确保在当前 CLI 下可解析。
+- 统一 `run / benchmark / info` 参数口径。
+- 更新架构文档、风险清单至 v0.6.x 口径。
+- 开发清单 07 标记为已完成。
 
 ---
 
-## v0.6.0
+## v0.5.0（历史）
 
 ### 已落地能力（当前主线）
 
