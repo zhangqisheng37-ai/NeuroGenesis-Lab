@@ -11,6 +11,7 @@ __all__ = [
     "visualization",
     "protocols",
     "core_bridge",
+    "SCHEMA_VERSION",
 ]
 
 from neurogenesis_lab.config import SCHEMA_VERSION

@@ -103,4 +103,4 @@ NeuroGenesis Lab 配置了以下 CI 工作流：
 
 - [GitHub 分支保护文档](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches)
 - [NeuroGenesis Lab CONTRIBUTING.md](../CONTRIBUTING.md)
-- [开发清单07](../docs/开发清单07.md)
+- [开发清单07](../docs/开发清单07_已完成.md)

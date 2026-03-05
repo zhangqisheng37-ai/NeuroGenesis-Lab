@@ -9,9 +9,6 @@
 
 # --- 向后兼容：保留旧导入路径 ---
 from neurogenesis_lab.cli import main  # noqa: F401
-from neurogenesis_lab.cli.config_builder import (
-    build_sim_config as _build_sim_config,
-)  # noqa: F401
 from neurogenesis_lab.cli.run import cmd_run  # noqa: F401
 from neurogenesis_lab.cli.benchmark import cmd_benchmark  # noqa: F401
 from neurogenesis_lab.cli.info import cmd_info  # noqa: F401
