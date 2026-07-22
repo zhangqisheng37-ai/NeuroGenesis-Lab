@@ -177,9 +177,7 @@ class AsyncJsonlWriter:
 
                     pending_idx = self._pending_idx
                     self._pending_idx = None
-                    batch = (
-                        self._buffers[pending_idx] if pending_idx is not None else []
-                    )
+                    batch = self._buffers[pending_idx] if pending_idx is not None else []
                     if pending_idx is not None:
                         self._buffers[pending_idx] = []
                     self._cond.notify_all()
@@ -247,9 +245,7 @@ class NetworkObserver:
 
         total_connections = sum(len(n.links) for n in neurons)
         avg_energy = (
-            sum(n.energy for n in alive_neurons) / len(alive_neurons)
-            if alive_neurons
-            else 0.0
+            sum(n.energy for n in alive_neurons) / len(alive_neurons) if alive_neurons else 0.0
         )
         avg_novelty = (
             sum(n.states["novelty"] for n in alive_neurons) / len(alive_neurons)
@@ -328,9 +324,7 @@ class NetworkObserver:
             "pe_moving_avg": self._network.pe_moving_average(),
         }
 
-    def get_trend_metrics(
-        self, tick: int, snapshot: TickSnapshot | None = None
-    ) -> dict[str, Any]:
+    def get_trend_metrics(self, tick: int, snapshot: TickSnapshot | None = None) -> dict[str, Any]:
         """获取趋势指标（滑动窗口统计）。
 
         Args:
@@ -485,9 +479,7 @@ class ObservabilityLogger:
 
     def _create_writer(self) -> JsonlWriter | AsyncJsonlWriter:
         if self._async_mode:
-            return AsyncJsonlWriter(
-                self._output_path, buffer_size=self._log_buffer_size
-            )
+            return AsyncJsonlWriter(self._output_path, buffer_size=self._log_buffer_size)
         return JsonlWriter(self._output_path)
 
     def _close_writer(self) -> None:
@@ -501,9 +493,7 @@ class ObservabilityLogger:
         name = self._base_output_path.name
         if name.endswith(".jsonl.gz"):
             stem = name[:-9]
-            return self._base_output_path.with_name(
-                f"{stem}_{segment_index:04d}.jsonl.gz"
-            )
+            return self._base_output_path.with_name(f"{stem}_{segment_index:04d}.jsonl.gz")
         if name.endswith(".jsonl"):
             stem = name[:-6]
             return self._base_output_path.with_name(f"{stem}_{segment_index:04d}.jsonl")
@@ -543,9 +533,7 @@ class ObservabilityLogger:
         if tick % self._log_interval != 0:
             return
         self._rotate_if_needed()
-        report = observer.generate_report(
-            tick, include_debug=self._debug_mode, snapshot=snapshot
-        )
+        report = observer.generate_report(tick, include_debug=self._debug_mode, snapshot=snapshot)
         self._writer.append(report)
 
     def log_summary(self, total_ticks: int, final_metrics: dict[str, Any]) -> None:

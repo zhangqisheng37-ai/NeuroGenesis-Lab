@@ -179,8 +179,7 @@ def _print_benchmark_results(
         f"{vec_time:.3f}s ({tick_count / vec_time:.0f} ticks/s)"
     )
     print(
-        f"  原始引擎 ({compare_n} neurons): "
-        f"{orig_time:.3f}s ({tick_count / orig_time:.0f} ticks/s)"
+        f"  原始引擎 ({compare_n} neurons): {orig_time:.3f}s ({tick_count / orig_time:.0f} ticks/s)"
     )
     print(
         f"  Rust并行LIF ({rust_size} neurons, backend={rust_backend}): "

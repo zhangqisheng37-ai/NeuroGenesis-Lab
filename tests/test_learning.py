@@ -154,7 +154,7 @@ class TestRuleDiscovery:
             return {(1, 2, 3): 2}, {(1, 2): 3}, "python-fallback"
 
         monkeypatch.setattr(
-            "neurogenesis_lab.learning.mine_pattern_counts_safe", _fake_mine
+            "neurogenesis_lab.learning.rules.mine_pattern_counts_safe", _fake_mine
         )
 
         store = RuleDiscovery(min_support=2).discover([[1, 2, 3], [1, 2, 3]])

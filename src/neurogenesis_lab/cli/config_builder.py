@@ -130,9 +130,7 @@ def build_sim_config(args: argparse.Namespace) -> SimConfig:
                 ),
                 move_cost=_as_float(network, "move_cost", cfg.network.move_cost),
                 energy_cap=_as_float(network, "energy_cap", cfg.network.energy_cap),
-                adaptive_decay=_as_bool(
-                    network, "adaptive_decay", cfg.network.adaptive_decay
-                ),
+                adaptive_decay=_as_bool(network, "adaptive_decay", cfg.network.adaptive_decay),
                 adaptive_reproduction=_as_bool(
                     network,
                     "adaptive_reproduction",
@@ -177,15 +175,9 @@ def build_sim_config(args: argparse.Namespace) -> SimConfig:
         cfg.dt = args.dt
     if hasattr(args, "background_current") and args.background_current is not None:
         cfg.network.background_current = float(args.background_current)
-    if (
-        hasattr(args, "spontaneous_spike_rate")
-        and args.spontaneous_spike_rate is not None
-    ):
+    if hasattr(args, "spontaneous_spike_rate") and args.spontaneous_spike_rate is not None:
         cfg.network.spontaneous_spike_rate = float(args.spontaneous_spike_rate)
-    if (
-        hasattr(args, "low_activation_threshold")
-        and args.low_activation_threshold is not None
-    ):
+    if hasattr(args, "low_activation_threshold") and args.low_activation_threshold is not None:
         cfg.network.low_activation_threshold = int(args.low_activation_threshold)
     return cfg
 

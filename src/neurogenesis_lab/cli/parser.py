@@ -16,9 +16,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="neurogenesis-lab",
         description="NeuroGenesis Lab — 数字生命仿真平台",
     )
-    parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}"
-    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     subparsers = parser.add_subparsers(dest="command", help="可用命令")
 
     # run
@@ -59,9 +57,7 @@ def _build_parser() -> argparse.ArgumentParser:
         help="低激活告警阈值（总放电/总传播任一不高于该值则告警）",
     )
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
-    run_parser.add_argument(
-        "--config", type=str, default=None, help="TOML 配置文件路径"
-    )
+    run_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
     run_parser.add_argument("--debug", action="store_true", help="开启 debug 模式")
     run_parser.add_argument(
         "--log-interval",

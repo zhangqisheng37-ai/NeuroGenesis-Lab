@@ -224,13 +224,9 @@ class NetworkParams:
         """
         errors: list[str] = []
         if self.reproduction_threshold <= 0:
-            errors.append(
-                f"reproduction_threshold 必须为正: {self.reproduction_threshold}"
-            )
+            errors.append(f"reproduction_threshold 必须为正: {self.reproduction_threshold}")
         if not (0 < self.reproduction_share <= 1):
-            errors.append(
-                f"reproduction_share 必须在 (0, 1]: {self.reproduction_share}"
-            )
+            errors.append(f"reproduction_share 必须在 (0, 1]: {self.reproduction_share}")
         if self.mutation_scale < 0:
             errors.append(f"mutation_scale 不能为负: {self.mutation_scale}")
         if self.energy_decay < 0:
@@ -252,9 +248,7 @@ class NetworkParams:
                 f"spontaneous_spike_rate 必须在 [0, 1] 范围内: {self.spontaneous_spike_rate}"
             )
         if self.low_activation_threshold < 0:
-            errors.append(
-                f"low_activation_threshold 不能为负: {self.low_activation_threshold}"
-            )
+            errors.append(f"low_activation_threshold 不能为负: {self.low_activation_threshold}")
         if self.move_cost < 0:
             errors.append(f"move_cost 不能为负: {self.move_cost}")
         if self.energy_cap <= 0:

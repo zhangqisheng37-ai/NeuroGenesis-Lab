@@ -16,9 +16,7 @@ import numpy as np
 from neurogenesis_lab.config import ENDANGERED_EXIT_MULTIPLIER
 
 
-def update_endangered_mode(
-    current_mode: bool, alive_count: int, threshold: int
-) -> bool:
+def update_endangered_mode(current_mode: bool, alive_count: int, threshold: int) -> bool:
     """根据存活数更新濒危模式标志（两引擎共享）。
 
     复刻现有两条独立判定：存活数 <= 阈值且当前非濒危则进入；
@@ -40,9 +38,7 @@ def update_endangered_mode(
     return new_mode
 
 
-def select_rescued(
-    candidates: Sequence[tuple[str, float]], deficit: int
-) -> list[str]:
+def select_rescued(candidates: Sequence[tuple[str, float]], deficit: int) -> list[str]:
     """从死亡候选中挑选待复活者（Network 标量路径）。
 
     按能量降序稳定排序取前 ``deficit`` 个，复刻 Network 现有 ``list.sort`` 行为。
@@ -95,9 +91,7 @@ def can_reproduce(energy: float, threshold: float) -> bool:
     return energy >= threshold
 
 
-def reproduction_mask(
-    alive: np.ndarray, energy: np.ndarray, threshold: float
-) -> np.ndarray:
+def reproduction_mask(alive: np.ndarray, energy: np.ndarray, threshold: float) -> np.ndarray:
     """计算可繁殖掩码（Vectorized 数组路径）：存活且能量达阈值。
 
     Args:

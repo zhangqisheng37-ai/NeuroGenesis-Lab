@@ -51,9 +51,7 @@ def plot_population_curve(
 
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.plot(ticks, alive, label="存活神经元", color="#2ecc71", linewidth=2)
-        ax.plot(
-            ticks, total, label="总神经元", color="#3498db", linewidth=2, linestyle="--"
-        )
+        ax.plot(ticks, total, label="总神经元", color="#3498db", linewidth=2, linestyle="--")
         ax.fill_between(ticks, alive, alpha=0.3, color="#2ecc71")
 
         ax.set_xlabel("Tick", fontsize=12)
@@ -134,9 +132,7 @@ def plot_learning_metrics(
 
         # 提取学习指标
         total_spikes = [d["learning"]["total_spikes"] for d in data if "learning" in d]
-        total_propagations = [
-            d["learning"]["total_propagations"] for d in data if "learning" in d
-        ]
+        total_propagations = [d["learning"]["total_propagations"] for d in data if "learning" in d]
 
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 10))
 
@@ -392,16 +388,12 @@ class LiveMonitor:
         """初始化 4 子图面板"""
         plt.ion()  # 交互模式
         self._fig, axes = plt.subplots(2, 2, figsize=(14, 9))
-        self._fig.suptitle(
-            "NeuroGenesis Lab — 实时监控", fontsize=14, fontweight="bold"
-        )
+        self._fig.suptitle("NeuroGenesis Lab — 实时监控", fontsize=14, fontweight="bold")
         self._axes = [axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]]
 
         # 子图1: 种群动态
         ax = self._axes[0]
-        (self._lines["alive"],) = ax.plot(
-            [], [], label="存活", color="#2ecc71", linewidth=2
-        )
+        (self._lines["alive"],) = ax.plot([], [], label="存活", color="#2ecc71", linewidth=2)
         (self._lines["total"],) = ax.plot(
             [], [], label="总数", color="#3498db", linewidth=2, linestyle="--"
         )
@@ -533,10 +525,7 @@ class LiveMonitor:
                     # 绘制新的连接线
                     for n in alive:
                         for target_id in n.links:
-                            if (
-                                target_id in network.neurons
-                                and network.neurons[target_id].alive
-                            ):
+                            if target_id in network.neurons and network.neurons[target_id].alive:
                                 target = network.neurons[target_id]
                                 (line,) = ax.plot(
                                     [n.pos[0], target.pos[0]],
@@ -567,9 +556,7 @@ class LiveMonitor:
                     ax.autoscale_view()
 
             elif (
-                hasattr(network, "pos")
-                and hasattr(network, "alive")
-                and hasattr(network, "energy")
+                hasattr(network, "pos") and hasattr(network, "alive") and hasattr(network, "energy")
             ):
                 # VectorizedNetwork 路径
                 pos = network.pos[network.alive]

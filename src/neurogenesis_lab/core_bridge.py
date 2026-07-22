@@ -105,9 +105,7 @@ def mine_pattern_counts_safe(
         rust_trigram_support = {
             (int(a), int(b), int(c)): int(support) for a, b, c, support in tri_rows
         }
-        rust_bigram_support = {
-            (int(a), int(b)): int(support) for a, b, support in bi_rows
-        }
+        rust_bigram_support = {(int(a), int(b)): int(support) for a, b, support in bi_rows}
         return rust_trigram_support, rust_bigram_support, "rust"
 
     trigram_support: dict[tuple[int, int, int], int] = {}
@@ -118,8 +116,7 @@ def mine_pattern_counts_safe(
             for index in range(max(0, len(sequence) - 2))
         }
         bigrams = {
-            (sequence[index], sequence[index + 1])
-            for index in range(max(0, len(sequence) - 1))
+            (sequence[index], sequence[index + 1]) for index in range(max(0, len(sequence) - 1))
         }
         for trigram in trigrams:
             trigram_support[trigram] = trigram_support.get(trigram, 0) + 1
@@ -127,13 +124,9 @@ def mine_pattern_counts_safe(
             bigram_support[bigram] = bigram_support.get(bigram, 0) + 1
 
     trigram_support = {
-        trigram: support
-        for trigram, support in trigram_support.items()
-        if support >= min_support
+        trigram: support for trigram, support in trigram_support.items() if support >= min_support
     }
     bigram_support = {
-        bigram: support
-        for bigram, support in bigram_support.items()
-        if support >= min_support
+        bigram: support for bigram, support in bigram_support.items() if support >= min_support
     }
     return trigram_support, bigram_support, "python-fallback"

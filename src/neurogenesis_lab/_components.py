@@ -61,9 +61,7 @@ class ComponentMixin:
         comp_attr = mapping.get(name)
         if comp_attr is not None:
             return getattr(getattr(self, comp_attr), name)
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
 
     def __setattr__(self, name: str, value: object) -> None:
         # 组件初始化前回退到 object.__setattr__

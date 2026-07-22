@@ -136,15 +136,9 @@ class NeuronMemory:
     _observe_dirty: bool = True
 
 
-_NEURON_DYNAMICS_FIELDS = frozenset(
-    f.name for f in NeuronDynamics.__dataclass_fields__.values()
-)
-_NEURON_EVOLUTION_FIELDS = frozenset(
-    f.name for f in NeuronEvolution.__dataclass_fields__.values()
-)
-_NEURON_MEMORY_FIELDS = frozenset(
-    f.name for f in NeuronMemory.__dataclass_fields__.values()
-)
+_NEURON_DYNAMICS_FIELDS = frozenset(f.name for f in NeuronDynamics.__dataclass_fields__.values())
+_NEURON_EVOLUTION_FIELDS = frozenset(f.name for f in NeuronEvolution.__dataclass_fields__.values())
+_NEURON_MEMORY_FIELDS = frozenset(f.name for f in NeuronMemory.__dataclass_fields__.values())
 
 
 @dataclass
@@ -210,9 +204,7 @@ class Neuron(ComponentMixin):
     spike_count: int = 0
     propagation_count: int = 0
     prediction_hits: int = 0
-    _observe_cache: list[dict[str, int]] = field(
-        default_factory=list, init=False, repr=False
-    )
+    _observe_cache: list[dict[str, int]] = field(default_factory=list, init=False, repr=False)
     _observe_dirty: bool = field(default=True, init=False, repr=False)
     _dynamics: NeuronDynamics = field(init=False, repr=False)
     _evolution: NeuronEvolution = field(init=False, repr=False)
@@ -242,9 +234,7 @@ class Neuron(ComponentMixin):
         """
         if not self.alive:
             return []
-        recent_tokens = [
-            item.token_id for item in list(self.mem)[-RECENT_TOKEN_WINDOW:]
-        ]
+        recent_tokens = [item.token_id for item in list(self.mem)[-RECENT_TOKEN_WINDOW:]]
         self.mem.append(event)
         self.last_event = event
         self.energy = max(0.0, self.energy + self.input_gain)
@@ -253,13 +243,9 @@ class Neuron(ComponentMixin):
             self.transitions[(prev.token_id, event.token_id)] += 1
             self._observe_dirty = True
         if event.token_id in recent_tokens:
-            self.states["novelty"] = max(
-                0.0, self.states["novelty"] - NOVELTY_DECAY_STEP
-            )
+            self.states["novelty"] = max(0.0, self.states["novelty"] - NOVELTY_DECAY_STEP)
         else:
-            self.states["novelty"] = min(
-                1.0, self.states["novelty"] + NOVELTY_GROWTH_STEP
-            )
+            self.states["novelty"] = min(1.0, self.states["novelty"] + NOVELTY_GROWTH_STEP)
         return []
 
     def update(self, dt: float, input_current: float) -> bool:

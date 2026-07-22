@@ -32,9 +32,7 @@ def _init_network(cfg: SimConfig, args: argparse.Namespace) -> tuple[Network, in
         network = Network.load_checkpoint(Path(resume_path))
         run_start_tick = network.current_tick + 1
         run_end_tick = network.current_tick + cfg.ticks
-        print(
-            f"  已从 checkpoint 恢复: {resume_path} (from tick={network.current_tick})"
-        )
+        print(f"  已从 checkpoint 恢复: {resume_path} (from tick={network.current_tick})")
     else:
         neuron_count = getattr(args, "neurons", 8) or 8
         neuron_types = [LIFNeuron, IzhikevichNeuron, AdExNeuron]
@@ -50,8 +48,7 @@ def _init_network(cfg: SimConfig, args: argparse.Namespace) -> tuple[Network, in
             "move_cost": cfg.network.move_cost,
         }
         neurons = [
-            neuron_types[i % len(neuron_types)](**common_neuron_kwargs)
-            for i in range(neuron_count)
+            neuron_types[i % len(neuron_types)](**common_neuron_kwargs) for i in range(neuron_count)
         ]
         network = Network(
             neurons={n.id: n for n in neurons},
@@ -139,9 +136,7 @@ def _init_logging(
         except Exception as exc:
             print(f"  警告: 无法启动实时监控 ({exc})")
     checkpoint_interval = max(0, int(getattr(args, "checkpoint_interval", 0) or 0))
-    checkpoint_dir = Path(
-        getattr(args, "checkpoint_dir", str(output_dir)) or str(output_dir)
-    )
+    checkpoint_dir = Path(getattr(args, "checkpoint_dir", str(output_dir)) or str(output_dir))
     return logger, observer, live_monitor, checkpoint_interval, checkpoint_dir
 
 

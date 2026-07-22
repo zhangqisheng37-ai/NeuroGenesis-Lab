@@ -16,6 +16,18 @@
 - **组件委托 Mixin**：新增 `_components.py` 模块，提供 `ComponentMixin` 混入基类。`Neuron` 和 `Network` 的 `__getattr__` / `__setattr__` / `__post_init__` / `__setstate__` 委托逻辑统一由此基类管理，净减少 ~22 行同时消除两处重复实现。
 - **向量化传播优化**：`VectorizedNetwork._propagate_spikes` 重写为批量稀疏矩阵切片 + 按延迟分组调度，将逐 target 的 `np.zeros(n)` 分配次数从 O(边数) 降为 O(不同延迟数)，`_schedule_currents` 调用次数大幅减少。
 
+### 大模块按功能拆分（子包化）
+
+- **`network.py`（~900 行）→ `network/` 子包**：`EventQueue`（`event_queue.py`）、`Corpse`/`CorpsePool`（`corpse.py`）、`NetworkConfig`/`NetworkState`（`state.py`）拆为独立模块；`Network` 主类经 dynamics/lifecycle/persistence 三个 Mixin 组合（`engine.py`），配置/状态字段仍由 `ComponentMixin` 透明代理。
+- **`vectorized.py`（~1000 行）→ `vectorized/` 子包**：`SpatialGrid`（`spatial.py`）独立；全部字段集中于 `VectorizedState`（`state.py`），`VectorizedNetwork` 经 dynamics/propagation/lifecycle/persistence 四个 Mixin 组合（`engine.py`），字段经多重继承单一来源、零重复声明。
+- **`learning.py`（~850 行）→ `learning/` 子包**：按类拆为 `expression.py`（`MemoryBank`/`PatternMiner`/`QueryEngine`）、`rules.py`（`RuleStore`/`RuleDiscovery`/`RuleComposer`）、`auto.py`（`AutoLearner`）。
+- **公共 API 完全不变**：各子包 `__init__.py` 原样 re-export 全部符号（含 `_parse_expression`、`mine_pattern_counts_safe`），`from neurogenesis_lab.network import Network` 等导入路径无回归。
+
+### 性能回归测试
+
+- 新增 `tests/test_performance_regression.py`：以**确定性操作计数断言**守护向量化优化，锁定结构性不变量（`_propagate_spikes` 按投递 tick 分组调度、每 tick 每种模型 step 内核仅调用一次），不依赖挂钟阈值，CI 稳定；后续重构若使优化退化将立即失败。
+
+
 ### 工程改进
 
 - 修复 `test_cli_config.py` 导入路径（`__main__._build_sim_config` → `cli.config_builder.build_sim_config`）。
