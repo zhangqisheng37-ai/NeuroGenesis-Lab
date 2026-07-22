@@ -9,10 +9,11 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，用于研�
 
 ## 当前状态
 
-- 当前版本：`v0.6.0`（`src/neurogenesis_lab/__init__.py`）
+- 当前版本：`v0.6.1`（`src/neurogenesis_lab/__init__.py`）
 - 当前 Schema：`2.0.0`（`src/neurogenesis_lab/config.py`）
 - CLI 子命令：`run` / `benchmark` / `info`
 - 双引擎统一协议：`Network` 与 `VectorizedNetwork` 均实现 `SimEngine`（`TickSnapshot` / `EngineSummary`）
+- 大模块子包化：`network/`（8 模块）、`vectorized/`（7 模块）、`learning/`（4 模块）
 
 ## 核心能力
 
@@ -95,23 +96,40 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 1000
 src/neurogenesis_lab/
 ├── __init__.py
 ├── __main__.py
+├── _components.py          # 组件委托混入基类
+├── adaptive.py             # 双引擎共享自适应逻辑
 ├── config.py
-├── neuron.py
-├── network.py
-├── vectorized.py
-├── protocols.py
-├── learning.py
+├── core_bridge.py          # Rust 桥接与 Python fallback
 ├── encoding.py
+├── evolution.py            # 引擎无关的演化决策函数
+├── logger.py
+├── network/                # 标准引擎子包
+│   ├── __init__.py
+│   ├── engine.py           # Network 主类
+│   ├── event_queue.py      # 事件优先队列
+│   ├── corpse.py           # 尸体回收系统
+│   ├── state.py            # 配置/运行状态组件
+│   ├── dynamics.py         # 动力学 Mixin
+│   ├── lifecycle.py        # 生命周期 Mixin
+│   └── persistence.py      # checkpoint 持久化
+├── vectorized/             # 向量化引擎子包
+│   ├── __init__.py
+│   ├── engine.py           # VectorizedNetwork 主类
+│   ├── spatial.py          # 空间索引
+│   ├── state.py            # 全字段容器
+│   ├── dynamics.py         # 动力学 Mixin
+│   ├── propagation.py      # 稀疏传播 Mixin
+│   ├── lifecycle.py        # 生命周期 Mixin
+│   └── persistence.py      # checkpoint 持久化
+├── learning/               # 学习引擎子包
+│   ├── __init__.py
+│   ├── auto.py             # AutoLearner
+│   ├── expression.py       # 表达式解析与模式挖掘
+│   └── rules.py            # 规则存储与推理
+├── neuron.py
 ├── observability.py
-├── core_bridge.py
-├── visualization.py
-└── cli/
-    ├── __init__.py
-    ├── parser.py
-    ├── config_builder.py
-    ├── run.py
-    ├── benchmark.py
-    └── info.py
+├── protocols.py
+└── visualization.py
 ```
 
 ## 实验配置索引

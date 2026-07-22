@@ -1,6 +1,6 @@
 # 系统架构（Architecture）
 
-本文档描述当前代码基线（v0.6.0）下的真实架构。
+本文档描述当前代码基线（v0.6.1）下的真实架构。
 
 ## 1. 总览
 
@@ -17,19 +17,44 @@ NeuroGenesis Lab 采用「CLI + 配置 + 双引擎 + 可观测性」分层：
 
 ```text
 src/neurogenesis_lab/
-├── __init__.py                 # __version__ = 0.6.0
+├── __init__.py                 # __version__ = 0.6.1
 ├── __main__.py                 # 向后兼容入口，转发到 cli.main
 ├── _components.py              # ComponentMixin — 组件委托混入基类
 ├── adaptive.py                 # 自适应衰减/繁殖 — 双引擎共享逻辑
 ├── config.py                   # SCHEMA_VERSION=2.0.0, SimConfig/Params
-├── protocols.py                # TickSnapshot / EngineSummary / SimEngine
+├── core_bridge.py              # Rust 桥接与 Python fallback
+├── encoding.py                 # 编码系统（Event/Tokenizer/Encoder）
+├── evolution.py                # 引擎无关的演化决策函数
+├── logger.py
+├── network/                    # 标准引擎子包（继承 ComponentMixin）
+│   ├── __init__.py
+│   ├── engine.py               # Network 主类（组合 dynamics/lifecycle/persistence Mixin）
+│   ├── event_queue.py          # EventQueue — 事件优先队列
+│   ├── corpse.py               # Corpse / CorpsePool 尸体回收
+│   ├── state.py                # NetworkConfig / NetworkState 组件
+│   ├── dynamics.py             # 动力学 Mixin
+│   ├── lifecycle.py            # 生命周期 Mixin
+│   └── persistence.py          # checkpoint 保存与恢复
+├── vectorized/                 # 向量化引擎子包
+│   ├── __init__.py
+│   ├── engine.py               # VectorizedNetwork 主类
+│   ├── spatial.py              # SpatialGrid — 空间索引
+│   ├── state.py                # VectorizedState — 全字段容器
+│   ├── dynamics.py             # 多模型分组动力学 Mixin
+│   ├── propagation.py          # 批量稀疏传播 Mixin
+│   ├── lifecycle.py            # 生命周期 Mixin
+│   └── persistence.py          # checkpoint 持久化
+├── learning/                   # 学习引擎子包
+│   ├── __init__.py
+│   ├── auto.py                 # AutoLearner 自动学习包装器
+│   ├── expression.py           # 表达式解析/模式挖掘/查询引擎
+│   └── rules.py                # RuleStore / RuleDiscovery / RuleComposer
 ├── neuron.py                   # LIF/Izhikevich/AdEx 神经元（继承 ComponentMixin）
-├── network.py                  # 标准引擎（继承 ComponentMixin）
-├── vectorized.py               # 向量化引擎（批量稀疏传播优化）
-├── learning.py                 # AutoLearner / RuleDiscovery
 ├── observability.py            # 观测采集 + 写盘
-├── core_bridge.py              # Rust 桥接与 fallback
-└── cli/
+├── protocols.py                # TickSnapshot / EngineSummary / SimEngine
+├── visualization.py            # 可视化与实时监控
+└── cli/                        # CLI 子包
+    ├── __init__.py
     ├── parser.py               # CLI 参数定义
     ├── config_builder.py       # TOML + CLI -> SimConfig
     ├── run.py                  # run 子命令
@@ -63,7 +88,7 @@ src/neurogenesis_lab/
 
 ### 4.1 Network（标准引擎）
 
-`src/neurogenesis_lab/network.py`：
+`src/neurogenesis_lab/network/` 子包，主类位于 `engine.py`：
 
 - 继承 `ComponentMixin`，配置/状态字段透明代理到 `NetworkConfig` / `NetworkState` 子组件
 - 事件队列驱动（`ready_events`）
@@ -73,7 +98,7 @@ src/neurogenesis_lab/
 
 ### 4.2 VectorizedNetwork（向量化引擎）
 
-`src/neurogenesis_lab/vectorized.py`：
+`src/neurogenesis_lab/vectorized/` 子包，主类位于 `engine.py`：
 
 - NumPy + SciPy 稀疏矩阵路径
 - 多模型分组动力学（LIF/Izhikevich/AdEx）
@@ -100,7 +125,7 @@ src/neurogenesis_lab/
 
 ## 6. 版本与 Schema
 
-- 版本：`0.6.0`（`src/neurogenesis_lab/__init__.py`）
+- 版本：`0.6.1`（`src/neurogenesis_lab/__init__.py`）
 - Schema：`2.0.0`（`src/neurogenesis_lab/config.py`）
 
 ## 7. 说明

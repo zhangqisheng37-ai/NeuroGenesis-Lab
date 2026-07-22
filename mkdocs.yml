@@ -65,6 +65,7 @@ nav:
       - protocols: api/protocols.md
       - core_bridge: api/core_bridge.md
       - cli: api/cli.md
+      - evolution: api/evolution.md
   - 架构设计: architecture.md
   - 参数参考: parameters.md
   - 指标说明: metrics.md
