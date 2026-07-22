@@ -46,9 +46,9 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 
 ## 当前状态
 
-- **版本**：v0.6.0
-- **测试基线**：347 passed, 0 failed, 覆盖率 92.61%
-- **阶段**：Phase 7（工程基础设施完善与双引擎功能对齐）
+- **版本**：v0.6.1
+- **测试基线**：177+ passed, 覆盖率 ~92%
+- **阶段**：Phase 7 已完成，Phase 8 规划中
 
 ## 导航
 

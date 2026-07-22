@@ -4,7 +4,7 @@ NeuroGenesis Lab 提供了灵活的神经元接口，允许你轻松实现自定
 
 ## 1. 神经元基类
 
-所有神经元模型都继承自 `src/neurogenesis_lab/neuron.py` 中的 `Neuron` 基类。`Neuron` 是一个 `dataclass`，内部采用组件化架构（`NeuronDynamics` / `NeuronEvolution` / `NeuronMemory`）。
+所有神经元模型都继承自 `src/neurogenesis_lab/neuron.py` 中的 `Neuron` 基类。`Neuron` 是一个 `dataclass`，内部采用组件化架构（`NeuronDynamics` / `NeuronEvolution` / `NeuronMemory`），通过 `ComponentMixin`（`src/neurogenesis_lab/_components.py`）实现字段透明代理。
 
 建议优先参考现有实现（`LIFNeuron` / `IzhikevichNeuron` / `AdExNeuron`）保持接口一致，尤其是：
 
@@ -23,7 +23,7 @@ class Neuron:
     links: dict = ...      # 出边字典
     states: dict = ...     # 内部状态 (energy/entropy/emotion/novelty)
     # 内部组件：_dynamics, _evolution, _memory
-    # 通过 __getattr__/__setattr__ 代理访问 v, u, w, v_rest, tau_m 等
+    # 通过 ComponentMixin 代理访问 v, u, w, v_rest, tau_m 等
 ```
 
 ## 2. 实现自定义模型
@@ -108,7 +108,7 @@ python -m neurogenesis_lab run --ticks 100 --visualize
             self.input_gain *= random.uniform(0.9, 1.1)
 ```
 
-> **注意**：v0.6.0 的 `Neuron` 基类采用组件化架构（`NeuronDynamics` / `NeuronEvolution` / `NeuronMemory`），通过 `__getattr__` / `__setattr__` 代理访问。自定义子类的额外字段会保留在子类 `__dict__` 中，不与组件冲突。遗传属性由 `config.py` 中的 `HERITABLE_ATTRS` 常量统一管理。
+> **注意**：v0.6.0 的 `Neuron` 基类采用组件化架构（`NeuronDynamics` / `NeuronEvolution` / `NeuronMemory`），通过 `ComponentMixin`（`src/neurogenesis_lab/_components.py`）代理访问。自定义子类的额外字段会保留在子类 `__dict__` 中，不与组件冲突。遗传属性由 `config.py` 中的 `HERITABLE_ATTRS` 常量统一管理。
 
 若需要让自定义模型被 Rust 路径加速，推荐方式是：
 

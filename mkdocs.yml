@@ -61,6 +61,7 @@ nav:
       - encoding: api/encoding.md
       - observability: api/observability.md
       - visualization: api/visualization.md
+      - adaptive: api/adaptive.md
       - protocols: api/protocols.md
       - core_bridge: api/core_bridge.md
       - cli: api/cli.md

@@ -10,6 +10,8 @@ NeuroGenesis Lab 采用「CLI + 配置 + 双引擎 + 可观测性」分层：
 2. `run` 命令初始化 `Network` 并驱动 tick 循环
 3. `Network` / `VectorizedNetwork` 通过 `SimEngine` 协议统一接口
 4. `NetworkObserver` + `ObservabilityLogger` 负责 JSONL 观测输出
+5. 双引擎共享 `adaptive.py` 的自适应机制（衰减/繁殖成本动态调节）
+6. `_components.py` 提供 `ComponentMixin` 混入基类，`Neuron` 和 `Network` 通过委托模式将字段透明代理到子组件
 
 ## 2. 关键模块
 
@@ -17,11 +19,13 @@ NeuroGenesis Lab 采用「CLI + 配置 + 双引擎 + 可观测性」分层：
 src/neurogenesis_lab/
 ├── __init__.py                 # __version__ = 0.6.0
 ├── __main__.py                 # 向后兼容入口，转发到 cli.main
+├── _components.py              # ComponentMixin — 组件委托混入基类
+├── adaptive.py                 # 自适应衰减/繁殖 — 双引擎共享逻辑
 ├── config.py                   # SCHEMA_VERSION=2.0.0, SimConfig/Params
 ├── protocols.py                # TickSnapshot / EngineSummary / SimEngine
-├── neuron.py                   # LIF/Izhikevich/AdEx 神经元
-├── network.py                  # 标准引擎（run 命令当前默认）
-├── vectorized.py               # 向量化引擎（benchmark 主要使用）
+├── neuron.py                   # LIF/Izhikevich/AdEx 神经元（继承 ComponentMixin）
+├── network.py                  # 标准引擎（继承 ComponentMixin）
+├── vectorized.py               # 向量化引擎（批量稀疏传播优化）
 ├── learning.py                 # AutoLearner / RuleDiscovery
 ├── observability.py            # 观测采集 + 写盘
 ├── core_bridge.py              # Rust 桥接与 fallback
@@ -61,9 +65,10 @@ src/neurogenesis_lab/
 
 `src/neurogenesis_lab/network.py`：
 
+- 继承 `ComponentMixin`，配置/状态字段透明代理到 `NetworkConfig` / `NetworkState` 子组件
 - 事件队列驱动（`ready_events`）
 - 演化：繁殖、死亡、尸体回收
-- 自适应机制：`adaptive_decay` / `adaptive_reproduction`
+- 自适应机制：通过 `adaptive.calculate_adaptive_decay()` / `calculate_adaptive_reproduction_share()` 共享实现
 - 摘要额外字段：`corpse_pool_free`、`corpse_pool_reused`
 
 ### 4.2 VectorizedNetwork（向量化引擎）
@@ -72,6 +77,7 @@ src/neurogenesis_lab/
 
 - NumPy + SciPy 稀疏矩阵路径
 - 多模型分组动力学（LIF/Izhikevich/AdEx）
+- 批量稀疏传播：`_propagate_spikes` 使用稀疏切片 + 按延迟分组调度，消除逐神经元 getrow 开销
 - 同样返回 `TickSnapshot` / `EngineSummary`
 - 支持独立 checkpoint（`save_checkpoint` / `load_checkpoint`）
 

@@ -8,6 +8,22 @@
 
 ---
 
+## v0.6.1（2026-07-22）
+
+### 代码质量与性能优化
+
+- **自适应逻辑提取**：新增 `adaptive.py` 模块，将 `Network` 和 `VectorizedNetwork` 中重复的 `_calculate_adaptive_decay` / `_calculate_adaptive_reproduction_share` 抽取为 `calculate_adaptive_decay()` / `calculate_adaptive_reproduction_share()` 共享函数，消除 88 行重复代码。
+- **组件委托 Mixin**：新增 `_components.py` 模块，提供 `ComponentMixin` 混入基类。`Neuron` 和 `Network` 的 `__getattr__` / `__setattr__` / `__post_init__` / `__setstate__` 委托逻辑统一由此基类管理，净减少 ~22 行同时消除两处重复实现。
+- **向量化传播优化**：`VectorizedNetwork._propagate_spikes` 重写为批量稀疏矩阵切片 + 按延迟分组调度，将逐 target 的 `np.zeros(n)` 分配次数从 O(边数) 降为 O(不同延迟数)，`_schedule_currents` 调用次数大幅减少。
+
+### 工程改进
+
+- 修复 `test_cli_config.py` 导入路径（`__main__._build_sim_config` → `cli.config_builder.build_sim_config`）。
+- 移除 `pyproject.toml` 中的 `--basetemp=.pytest_tmp`，pytest 改用系统临时目录避免 Windows 权限问题。
+- mypy 零错误、ruff 零警告，所有 177+ 核心测试通过。
+
+---
+
 ## v0.6.0（2026-03-05）
 
 ### 工程基础设施完善（Phase 7 完成）
