@@ -14,30 +14,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
-from scipy.sparse import csr_matrix, coo_matrix  # type: ignore[import-untyped]
-from scipy.spatial import cKDTree  # type: ignore[import-untyped]
+from scipy.sparse import csr_matrix, coo_matrix
+from scipy.spatial import cKDTree
 
+from neurogenesis_lab.adaptive import calculate_adaptive_decay, calculate_adaptive_reproduction_share
 from neurogenesis_lab.config import (
-    DECAY_HIGH_MULTIPLIER,
-    DECAY_LOW_MULTIPLIER,
-    DENSITY_HIGH_THRESHOLD,
-    DENSITY_LOW_THRESHOLD,
     ENDANGERED_DECAY_DISCOUNT,
     ENDANGERED_EXIT_MULTIPLIER,
     MOVE_JITTER_RANGE,
-    POPULATION_HIGH_THRESHOLD,
-    POPULATION_LOW_THRESHOLD,
-    REPRO_SHARE_HIGH_MULTIPLIER,
-    REPRO_SHARE_LOW_MULTIPLIER,
-    REPRO_SHARE_MAX,
-    REPRO_SHARE_MIN,
-    RESCUED_NEURON_ENERGY,
     SCHEMA_VERSION,
     SPAWN_POSITION_JITTER,
     PE_SMOOTHING_ALPHA,
     SPATIAL_REBUILD_INTERVAL,
     SPAWN_LINK_WEIGHT,
     SPAWN_LINK_DELAY,
+    RESCUED_NEURON_ENERGY,
 )
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
@@ -692,52 +683,6 @@ class VectorizedNetwork:
         self.corpse_energy[expired] = 0.0
 
     # ------------------------------------------------------------------
-    # 自适应衰减 & 繁殖
-    # ------------------------------------------------------------------
-
-    def _calculate_adaptive_decay(self, alive_count: int) -> float:
-        """根据种群密度计算自适应能量衰减系数。
-
-        Args:
-            alive_count: 当前存活神经元数量。
-
-        Returns:
-            调整后的能量衰减值。
-        """
-        if not self.adaptive_decay:
-            return self.energy_decay
-        density_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
-        if density_ratio > DENSITY_HIGH_THRESHOLD:
-            return self.energy_decay * DECAY_HIGH_MULTIPLIER
-        elif density_ratio < DENSITY_LOW_THRESHOLD:
-            return self.energy_decay * DECAY_LOW_MULTIPLIER
-        return self.energy_decay
-
-    def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
-        """根据种群数量计算自适应繁殖份额。
-
-        Args:
-            alive_count: 当前存活神经元数量。
-
-        Returns:
-            调整后的繁殖能量分享比例。
-        """
-        if not self.adaptive_reproduction:
-            return self.reproduction_share
-        pop_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
-        if pop_ratio > POPULATION_HIGH_THRESHOLD:
-            return min(
-                REPRO_SHARE_MAX,
-                self.reproduction_share * REPRO_SHARE_HIGH_MULTIPLIER,
-            )
-        elif pop_ratio < POPULATION_LOW_THRESHOLD:
-            return max(
-                REPRO_SHARE_MIN,
-                self.reproduction_share * REPRO_SHARE_LOW_MULTIPLIER,
-            )
-        return self.reproduction_share
-
-    # ------------------------------------------------------------------
     # 演化 tick
     # ------------------------------------------------------------------
 
@@ -757,7 +702,9 @@ class VectorizedNetwork:
         )
 
         # 自适应衰减（含濒危折扣）
-        effective_decay = self._calculate_adaptive_decay(alive_count)
+        effective_decay = calculate_adaptive_decay(
+            self.adaptive_decay, self.energy_decay, alive_count, self.max_neurons
+        )
         if self._endangered_mode:
             effective_decay *= ENDANGERED_DECAY_DISCOUNT
         self.energy[alive_mask] = np.maximum(
@@ -792,7 +739,9 @@ class VectorizedNetwork:
         # 繁殖
         births = 0
         alive_count = int(np.sum(self.alive))
-        effective_share = self._calculate_adaptive_reproduction_share(alive_count)
+        effective_share = calculate_adaptive_reproduction_share(
+            self.adaptive_reproduction, self.reproduction_share, alive_count, self.max_neurons
+        )
         if alive_count < self.max_neurons:
             repro_mask = self.alive & (self.energy >= self.reproduction_threshold)
             repro_indices = np.where(repro_mask)[0]

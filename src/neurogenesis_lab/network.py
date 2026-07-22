@@ -10,18 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable
 
+from neurogenesis_lab.adaptive import calculate_adaptive_decay, calculate_adaptive_reproduction_share
 from neurogenesis_lab.config import (
-    DENSITY_HIGH_THRESHOLD,
-    DENSITY_LOW_THRESHOLD,
-    DECAY_HIGH_MULTIPLIER,
-    DECAY_LOW_MULTIPLIER,
-    POPULATION_HIGH_THRESHOLD,
-    POPULATION_LOW_THRESHOLD,
-    REPRO_SHARE_HIGH_MULTIPLIER,
-    REPRO_SHARE_LOW_MULTIPLIER,
-    REPRO_SHARE_MAX,
-    REPRO_SHARE_MIN,
-    RESCUED_NEURON_ENERGY,
     SCHEMA_VERSION,
     PE_SMOOTHING_ALPHA,
     ENDANGERED_EXIT_MULTIPLIER,
@@ -31,6 +21,7 @@ from neurogenesis_lab.config import (
     PROXIMITY_DELAY_SCALE,
     SPAWN_LINK_WEIGHT,
     SPAWN_LINK_DELAY,
+    RESCUED_NEURON_ENERGY,
 )
 from neurogenesis_lab.encoding import Event
 from neurogenesis_lab.neuron import Neuron, calculate_reward, safe_float
@@ -525,7 +516,9 @@ class Network:
             inputs[event.src_id].append(event)
 
         alive_count: int = sum(1 for n in self.neurons.values() if n.alive)
-        effective_decay = self._calculate_adaptive_decay(alive_count)
+        effective_decay = calculate_adaptive_decay(
+            self.adaptive_decay, self.energy_decay, alive_count, self.max_neurons
+        )
         budget_share = (
             self.energy_budget_per_tick / alive_count
             if self.energy_budget_per_tick > 0 and alive_count > 0
@@ -706,7 +699,9 @@ class Network:
 
         # 计算自适应繁殖成本
         alive_count = len(candidates)
-        effective_share = self._calculate_adaptive_reproduction_share(alive_count)
+        effective_share = calculate_adaptive_reproduction_share(
+            self.adaptive_reproduction, self.reproduction_share, alive_count, self.max_neurons
+        )
         effective_mutation_scale = (
             self.evolution_mutation_amplitude
             if self.evolution_mutation_amplitude is not None
@@ -738,48 +733,6 @@ class Network:
             births += 1
         self._prune_links()
         return births
-
-    def _calculate_adaptive_decay(self, alive_count: int) -> float:
-        """根据种群密度计算自适应衰减率"""
-        if not self.adaptive_decay:
-            return self.energy_decay
-
-        # 种群密度比例
-        density_ratio = alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
-
-        # 密度高时增加衰减，密度低时减少衰减
-        if density_ratio > DENSITY_HIGH_THRESHOLD:
-            # 过度拥挤，增加衰减
-            return self.energy_decay * DECAY_HIGH_MULTIPLIER
-        elif density_ratio < DENSITY_LOW_THRESHOLD:
-            # 种群稀少，减少衰减
-            return self.energy_decay * DECAY_LOW_MULTIPLIER
-        else:
-            return self.energy_decay
-
-    def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
-        """根据种群规模计算自适应繁殖成本"""
-        if not self.adaptive_reproduction:
-            return self.reproduction_share
-
-        # 种群规模比例
-        population_ratio = (
-            alive_count / self.max_neurons if self.max_neurons > 0 else 0.5
-        )
-
-        # 接近上限时增加繁殖成本，远离上限时降低成本
-        if population_ratio > POPULATION_HIGH_THRESHOLD:
-            # 接近容量上限，增加成本（母体分享更多能量）
-            return min(
-                REPRO_SHARE_MAX, self.reproduction_share * REPRO_SHARE_HIGH_MULTIPLIER
-            )
-        elif population_ratio < POPULATION_LOW_THRESHOLD:
-            # 种群稀少，降低成本（鼓励繁殖）
-            return max(
-                REPRO_SHARE_MIN, self.reproduction_share * REPRO_SHARE_LOW_MULTIPLIER
-            )
-        else:
-            return self.reproduction_share
 
     def check_death(self) -> int:
         """执行死亡检查 — 移除能量耗尽的神经元，生成尸体。

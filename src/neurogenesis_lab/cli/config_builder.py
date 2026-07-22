@@ -25,9 +25,9 @@ def load_toml_config(path: Path) -> dict[str, Any]:
         解析后的字典。
     """
     try:
-        import tomllib  # type: ignore[import-not-found]
+        import tomllib
     except ImportError:
-        import tomli as tomllib  # type: ignore[import-not-found]
+        import tomli as tomllib
     with open(path, "rb") as f:
         return dict(tomllib.load(f))
 

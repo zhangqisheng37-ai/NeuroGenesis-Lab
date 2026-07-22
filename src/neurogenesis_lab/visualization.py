@@ -312,9 +312,10 @@ def plot_network_topology(
 def load_jsonl_data(path: Path) -> list[dict[str, Any]]:
     """加载 JSONL 数据"""
     import gzip
+    from typing import Callable, IO
 
     data = []
-    open_func = gzip.open if path.suffix == ".gz" else open
+    open_func: Callable[..., IO[str]] = gzip.open if path.suffix == ".gz" else open  # type: ignore[assignment]
 
     with open_func(path, "rt", encoding="utf-8") as f:
         for line in f:

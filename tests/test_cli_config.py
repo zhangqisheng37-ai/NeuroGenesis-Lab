@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from neurogenesis_lab.__main__ import _build_sim_config
+from neurogenesis_lab.cli.config_builder import build_sim_config
 
 
 def test_build_sim_config_missing_sections_uses_defaults(tmp_path: Path) -> None:
@@ -27,7 +27,7 @@ ticks = 120
         spontaneous_spike_rate=None,
         low_activation_threshold=None,
     )
-    cfg = _build_sim_config(args)
+    cfg = build_sim_config(args)
 
     assert cfg.ticks == 120
     # 缺失 section 应回退默认值
@@ -55,7 +55,7 @@ propagation = 1.8
         spontaneous_spike_rate=None,
         low_activation_threshold=None,
     )
-    cfg = _build_sim_config(args)
+    cfg = build_sim_config(args)
 
     assert cfg.evolution.fitness_weights["propagation"] == 1.8
     # 其余键应保留默认值
@@ -84,7 +84,7 @@ ticks = "abc"
     )
 
     with pytest.raises((TypeError, ValueError)):
-        _build_sim_config(args)
+        build_sim_config(args)
 
 
 def test_build_sim_config_maps_all_toml_sections(tmp_path: Path) -> None:
@@ -136,7 +136,7 @@ prediction_hit = 0.9
     )
 
     args = Namespace(config=str(cfg_file), ticks=None, seed=None, dt=None)
-    cfg = _build_sim_config(args)
+    cfg = build_sim_config(args)
 
     assert cfg.ticks == 222
     assert cfg.seed == 99
@@ -195,7 +195,7 @@ dt = 1.0
         spontaneous_spike_rate=0.2,
         low_activation_threshold=5,
     )
-    cfg = _build_sim_config(args)
+    cfg = build_sim_config(args)
 
     assert cfg.ticks == 300
     assert cfg.seed == 123
