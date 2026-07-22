@@ -711,6 +711,37 @@ class VectorizedNetwork:
     # 演化 tick
     # ------------------------------------------------------------------
 
+    def _calculate_adaptive_decay(self, alive_count: int) -> float:
+        """计算自适应能量衰减 — 委托 adaptive 模块（保留向后兼容 API）。
+
+        注意：不含濒危模式折扣，折扣在 _run_vectorized_evolution 中另行叠加。
+
+        Args:
+            alive_count: 当前存活神经元数量。
+
+        Returns:
+            根据种群密度调整后的能量衰减值。
+        """
+        return calculate_adaptive_decay(
+            self.adaptive_decay, self.energy_decay, alive_count, self.max_neurons
+        )
+
+    def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
+        """计算自适应繁殖份额 — 委托 adaptive 模块（保留向后兼容 API）。
+
+        Args:
+            alive_count: 当前存活神经元数量。
+
+        Returns:
+            根据种群规模调整后的繁殖能量分享比例。
+        """
+        return calculate_adaptive_reproduction_share(
+            self.adaptive_reproduction,
+            self.reproduction_share,
+            alive_count,
+            self.max_neurons,
+        )
+
     def _run_vectorized_evolution(
         self, tick: int, alive_mask: np.ndarray
     ) -> tuple[int, int]:
@@ -727,9 +758,7 @@ class VectorizedNetwork:
         )
 
         # 自适应衰减（含濒危折扣）
-        effective_decay = calculate_adaptive_decay(
-            self.adaptive_decay, self.energy_decay, alive_count, self.max_neurons
-        )
+        effective_decay = self._calculate_adaptive_decay(alive_count)
         if self._endangered_mode:
             effective_decay *= ENDANGERED_DECAY_DISCOUNT
         self.energy[alive_mask] = np.maximum(
@@ -764,9 +793,7 @@ class VectorizedNetwork:
         # 繁殖
         births = 0
         alive_count = int(np.sum(self.alive))
-        effective_share = calculate_adaptive_reproduction_share(
-            self.adaptive_reproduction, self.reproduction_share, alive_count, self.max_neurons
-        )
+        effective_share = self._calculate_adaptive_reproduction_share(alive_count)
         if alive_count < self.max_neurons:
             repro_mask = self.alive & (self.energy >= self.reproduction_threshold)
             repro_indices = np.where(repro_mask)[0]

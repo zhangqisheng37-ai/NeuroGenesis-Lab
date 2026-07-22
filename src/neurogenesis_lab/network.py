@@ -449,6 +449,35 @@ class Network(ComponentMixin):
 
         return snapshot
 
+    def _calculate_adaptive_decay(self, alive_count: int) -> float:
+        """计算自适应能量衰减 — 委托 adaptive 模块（保留向后兼容 API）。
+
+        Args:
+            alive_count: 当前存活神经元数量。
+
+        Returns:
+            根据种群密度调整后的能量衰减值。
+        """
+        return calculate_adaptive_decay(
+            self.adaptive_decay, self.energy_decay, alive_count, self.max_neurons
+        )
+
+    def _calculate_adaptive_reproduction_share(self, alive_count: int) -> float:
+        """计算自适应繁殖份额 — 委托 adaptive 模块（保留向后兼容 API）。
+
+        Args:
+            alive_count: 当前存活神经元数量。
+
+        Returns:
+            根据种群规模调整后的繁殖能量分享比例。
+        """
+        return calculate_adaptive_reproduction_share(
+            self.adaptive_reproduction,
+            self.reproduction_share,
+            alive_count,
+            self.max_neurons,
+        )
+
     def _process_inputs(
         self, tick: int, dt: float
     ) -> tuple[list[Event], dict[str, list[Event]], float, float]:
@@ -462,9 +491,7 @@ class Network(ComponentMixin):
             inputs[event.src_id].append(event)
 
         alive_count: int = sum(1 for n in self.neurons.values() if n.alive)
-        effective_decay = calculate_adaptive_decay(
-            self.adaptive_decay, self.energy_decay, alive_count, self.max_neurons
-        )
+        effective_decay = self._calculate_adaptive_decay(alive_count)
         budget_share = (
             self.energy_budget_per_tick / alive_count
             if self.energy_budget_per_tick > 0 and alive_count > 0
@@ -645,9 +672,7 @@ class Network(ComponentMixin):
 
         # 计算自适应繁殖成本
         alive_count = len(candidates)
-        effective_share = calculate_adaptive_reproduction_share(
-            self.adaptive_reproduction, self.reproduction_share, alive_count, self.max_neurons
-        )
+        effective_share = self._calculate_adaptive_reproduction_share(alive_count)
         effective_mutation_scale = (
             self.evolution_mutation_amplitude
             if self.evolution_mutation_amplitude is not None
