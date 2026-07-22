@@ -20,7 +20,6 @@ from scipy.spatial import cKDTree
 from neurogenesis_lab.adaptive import calculate_adaptive_decay, calculate_adaptive_reproduction_share
 from neurogenesis_lab.config import (
     ENDANGERED_DECAY_DISCOUNT,
-    ENDANGERED_EXIT_MULTIPLIER,
     MOVE_JITTER_RANGE,
     SCHEMA_VERSION,
     SPAWN_POSITION_JITTER,
@@ -31,6 +30,12 @@ from neurogenesis_lab.config import (
     RESCUED_NEURON_ENERGY,
 )
 from neurogenesis_lab.encoding import Event
+from neurogenesis_lab.evolution import (
+    child_energy,
+    reproduction_mask,
+    select_rescued_indices,
+    update_endangered_mode,
+)
 from neurogenesis_lab.protocols import TickSnapshot, EngineSummary
 
 
@@ -444,10 +449,9 @@ class VectorizedNetwork:
         """
         # 濒危模式判定
         alive_count = int(np.sum(self.alive))
-        if alive_count <= self.endangered_threshold and not self._endangered_mode:
-            self._endangered_mode = True
-        if alive_count > self.endangered_threshold * ENDANGERED_EXIT_MULTIPLIER:
-            self._endangered_mode = False
+        self._endangered_mode = update_endangered_mode(
+            self._endangered_mode, alive_count, self.endangered_threshold
+        )
 
         combined_inputs, ready_events = self._inject_inputs(tick, dt, input_currents)
         alive_mask, spike_indices, tick_spikes = self._vectorized_dynamics_step(
@@ -677,7 +681,7 @@ class VectorizedNetwork:
 
         # TTL 递减
         self.corpse_timer[self.corpse_mask] -= 1
-        # 能量衰减
+        # 能量衰减（规则同 evolution.decay_corpse_energy 的数组化等价）
         self.corpse_energy[self.corpse_mask] = np.maximum(
             0.0, self.corpse_energy[self.corpse_mask] - self._corpse_decay_rate
         )
@@ -699,7 +703,7 @@ class VectorizedNetwork:
                 self.energy[nearest] += self.corpse_energy[ci]
                 self.corpse_energy[ci] = 0.0
 
-        # 清理过期或无能量尸体
+        # 清理过期或无能量尸体（规则同 evolution.is_corpse_expired 的数组化等价）
         expired = self.corpse_mask & (
             (self.corpse_timer <= 0) | (self.corpse_energy <= 0)
         )
@@ -775,8 +779,9 @@ class VectorizedNetwork:
             death_indices = np.where(death_mask)[0]
             if len(death_indices) > 0:
                 save_count = self.min_neurons - alive_after
-                sorted_indices = death_indices[np.argsort(-self.energy[death_indices])]
-                saved = sorted_indices[:save_count]
+                saved = select_rescued_indices(
+                    self.energy, death_indices, save_count
+                )
                 death_mask[saved] = False
                 self.energy[saved] = RESCUED_NEURON_ENERGY
 
@@ -795,7 +800,9 @@ class VectorizedNetwork:
         alive_count = int(np.sum(self.alive))
         effective_share = self._calculate_adaptive_reproduction_share(alive_count)
         if alive_count < self.max_neurons:
-            repro_mask = self.alive & (self.energy >= self.reproduction_threshold)
+            repro_mask = reproduction_mask(
+                self.alive, self.energy, self.reproduction_threshold
+            )
             repro_indices = np.where(repro_mask)[0]
             if len(repro_indices) > 0:
                 new_rows: list[int] = []
@@ -809,12 +816,12 @@ class VectorizedNetwork:
                     if len(dead_slots) == 0:
                         break
                     slot = int(dead_slots[0])
-                    child_energy = self.energy[i] * effective_share
-                    self.energy[i] -= child_energy
+                    child_e = child_energy(self.energy[i], effective_share)
+                    self.energy[i] -= child_e
 
                     self.v[slot] = self.v_rest[i]
                     self.u[slot] = 0.0
-                    self.energy[slot] = child_energy
+                    self.energy[slot] = child_e
                     self.alive[slot] = True
                     self.corpse_mask[slot] = False
                     self.corpse_timer[slot] = 0

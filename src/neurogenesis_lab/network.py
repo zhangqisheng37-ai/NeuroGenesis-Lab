@@ -12,10 +12,16 @@ from typing import Iterable, ClassVar
 
 from neurogenesis_lab._components import ComponentMixin
 from neurogenesis_lab.adaptive import calculate_adaptive_decay, calculate_adaptive_reproduction_share
+from neurogenesis_lab.evolution import (
+    can_reproduce,
+    decay_corpse_energy,
+    is_corpse_expired,
+    select_rescued,
+    update_endangered_mode,
+)
 from neurogenesis_lab.config import (
     SCHEMA_VERSION,
     PE_SMOOTHING_ALPHA,
-    ENDANGERED_EXIT_MULTIPLIER,
     ENDANGERED_DECAY_DISCOUNT,
     CONGESTION_LINK_THRESHOLD,
     PROXIMITY_WEIGHT_MIN,
@@ -498,10 +504,9 @@ class Network(ComponentMixin):
             else 0.0
         )
 
-        if alive_count <= self.endangered_threshold and not self._endangered_mode:
-            self._endangered_mode = True
-        if alive_count > self.endangered_threshold * ENDANGERED_EXIT_MULTIPLIER:
-            self._endangered_mode = False
+        self._endangered_mode = update_endangered_mode(
+            self._endangered_mode, alive_count, self.endangered_threshold
+        )
         return ready, inputs, effective_decay, budget_share
 
     def _update_dynamics(
@@ -683,7 +688,7 @@ class Network(ComponentMixin):
         for neuron in candidates:
             if len(self.neurons) >= self.max_neurons:
                 break
-            if neuron.energy < self.reproduction_threshold:
+            if not can_reproduce(neuron.energy, self.reproduction_threshold):
                 continue
             # 拥塞惩罚: 该神经元连接过多时降低繁殖概率
             link_count = len(neuron.links)
@@ -734,14 +739,13 @@ class Network(ComponentMixin):
                 self.min_neurons,
             )
             # 保留能量最高的死亡神经元
-            dead_neurons = [
+            save_count = self.min_neurons - alive_count
+            candidates = [
                 (nid, self.neurons[nid].energy)
                 for nid in dead_ids
                 if nid in self.neurons
             ]
-            dead_neurons.sort(key=lambda x: x[1], reverse=True)
-            save_count = self.min_neurons - alive_count
-            saved = {nid for nid, _ in dead_neurons[:save_count]}
+            saved = set(select_rescued(candidates, save_count))
             for nid in saved:
                 self.neurons[nid].alive = True
                 self.neurons[nid].energy = max(
@@ -796,7 +800,7 @@ class Network(ComponentMixin):
         for corpse in self.corpses:
             corpse.ttl -= 1
             # 能量衰减
-            corpse.energy = max(0.0, corpse.energy - corpse.decay_rate)
+            corpse.energy = decay_corpse_energy(corpse.energy, corpse.decay_rate)
             if corpse.energy > 0 and alive:
                 cx, cy = int(corpse.pos[0] // cell_size), int(
                     corpse.pos[1] // cell_size
@@ -816,10 +820,10 @@ class Network(ComponentMixin):
                 if nearest is not None:
                     nearest.energy += corpse.energy
                     corpse.energy = 0.0
-            if corpse.ttl > 0 and corpse.energy > 0.0:
-                updated.append(corpse)
-            else:
+            if is_corpse_expired(corpse.ttl, corpse.energy):
                 self.corpse_pool.release(corpse, self.corpse_pool_max_size)
+            else:
+                updated.append(corpse)
         self.corpses = updated
 
     def _prune_links(self) -> None:
