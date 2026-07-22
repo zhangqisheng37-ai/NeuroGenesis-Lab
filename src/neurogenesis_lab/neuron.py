@@ -4,9 +4,10 @@ import math
 import random
 from collections import Counter, deque
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, ClassVar
 from uuid import uuid4
 
+from neurogenesis_lab._components import ComponentMixin
 from neurogenesis_lab.config import (
     HERITABLE_ATTRS,
     SPAWN_POSITION_JITTER,
@@ -147,11 +148,11 @@ _NEURON_MEMORY_FIELDS = frozenset(
 
 
 @dataclass
-class Neuron:
+class Neuron(ComponentMixin):
     """基础神经元 — LIF 模型，支持演化、记忆和空间移动。
 
     内部状态通过 NeuronDynamics、NeuronEvolution、NeuronMemory 三个组件管理，
-    对外通过 ``__getattr__``/``__setattr__`` 透明代理访问。
+    对外通过 ``ComponentMixin`` 透明代理访问。
 
     Attributes:
         id: 唯一标识符，默认 UUID hex。
@@ -168,6 +169,12 @@ class Neuron:
         >>> neuron = Neuron(pos=(1.0, 2.0), energy=1.5)
         >>> spiked = neuron.update(dt=1.0, input_current=5.0)
     """
+
+    _component_specs: ClassVar = [
+        ("_dynamics", NeuronDynamics, _NEURON_DYNAMICS_FIELDS),
+        ("_evolution", NeuronEvolution, _NEURON_EVOLUTION_FIELDS),
+        ("_memory", NeuronMemory, _NEURON_MEMORY_FIELDS),
+    ]
 
     id: str = field(default_factory=lambda: uuid4().hex)
     pos: tuple[float, float] = (0.0, 0.0)
@@ -212,92 +219,13 @@ class Neuron:
     _memory: NeuronMemory = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        # 构建动力学组件
-        dyn_kwargs = {}
-        for fname in _NEURON_DYNAMICS_FIELDS:
-            if fname in self.__dict__:
-                dyn_kwargs[fname] = self.__dict__[fname]
-        object.__setattr__(self, "_dynamics", NeuronDynamics(**dyn_kwargs))
-
-        # 构建演化组件
-        evo_kwargs = {}
-        for fname in _NEURON_EVOLUTION_FIELDS:
-            if fname in self.__dict__:
-                evo_kwargs[fname] = self.__dict__[fname]
-        object.__setattr__(self, "_evolution", NeuronEvolution(**evo_kwargs))
-
-        # 构建记忆组件
-        mem_kwargs = {}
-        for fname in _NEURON_MEMORY_FIELDS:
-            if fname in self.__dict__:
-                mem_kwargs[fname] = self.__dict__[fname]
-        object.__setattr__(self, "_memory", NeuronMemory(**mem_kwargs))
-
-        # 从 __dict__ 中删除已转移到组件的字段
-        _all_component_fields = (
-            _NEURON_DYNAMICS_FIELDS | _NEURON_EVOLUTION_FIELDS | _NEURON_MEMORY_FIELDS
-        )
-        for fname in _all_component_fields:
-            self.__dict__.pop(fname, None)
-
-        # 原有初始化逻辑
-        memory = cast(NeuronMemory, self._memory)
+        super().__post_init__()
+        # 重新初始化 deque 确保 maxlen 生效
+        memory = self._memory
         memory.mem = deque(memory.mem, maxlen=memory.mem_size)
         self.states["energy"] = self.energy
         self.last_energy = self.energy
         self._observe_dirty = True
-
-    def __getattr__(self, name: str) -> object:
-        if name in _NEURON_DYNAMICS_FIELDS:
-            return getattr(self._dynamics, name)
-        if name in _NEURON_EVOLUTION_FIELDS:
-            return getattr(self._evolution, name)
-        if name in _NEURON_MEMORY_FIELDS:
-            return getattr(self._memory, name)
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
-
-    def __setattr__(self, name: str, value: object) -> None:
-        if "_dynamics" not in self.__dict__:
-            object.__setattr__(self, name, value)
-            return
-        if name in _NEURON_DYNAMICS_FIELDS:
-            setattr(self._dynamics, name, value)
-        elif name in _NEURON_EVOLUTION_FIELDS:
-            setattr(self._evolution, name, value)
-        elif name in _NEURON_MEMORY_FIELDS:
-            setattr(self._memory, name, value)
-        else:
-            object.__setattr__(self, name, value)
-
-    def __setstate__(self, state: dict) -> None:
-        """pickle 反序列化兼容 — 处理旧格式（无组件）"""
-        self.__dict__.update(state)
-        if "_dynamics" not in state:
-            _all = (
-                _NEURON_DYNAMICS_FIELDS
-                | _NEURON_EVOLUTION_FIELDS
-                | _NEURON_MEMORY_FIELDS
-            )
-            dyn_kwargs = {
-                f: self.__dict__[f]
-                for f in _NEURON_DYNAMICS_FIELDS
-                if f in self.__dict__
-            }
-            object.__setattr__(self, "_dynamics", NeuronDynamics(**dyn_kwargs))
-            evo_kwargs = {
-                f: self.__dict__[f]
-                for f in _NEURON_EVOLUTION_FIELDS
-                if f in self.__dict__
-            }
-            object.__setattr__(self, "_evolution", NeuronEvolution(**evo_kwargs))
-            mem_kwargs = {
-                f: self.__dict__[f] for f in _NEURON_MEMORY_FIELDS if f in self.__dict__
-            }
-            object.__setattr__(self, "_memory", NeuronMemory(**mem_kwargs))
-            for fname in _all:
-                self.__dict__.pop(fname, None)
 
     def start_tick(self) -> None:
         """记录 tick 开始时的能量快照，用于后续奖励计算。"""
@@ -521,12 +449,7 @@ class Neuron:
 
 
 # 删除 dataclass 在类上生成的默认值属性，避免遮蔽 __getattr__ 路由
-_ALL_NEURON_COMPONENT_FIELDS = (
-    _NEURON_DYNAMICS_FIELDS | _NEURON_EVOLUTION_FIELDS | _NEURON_MEMORY_FIELDS
-)
-for _fname in _ALL_NEURON_COMPONENT_FIELDS:
-    if _fname in Neuron.__dict__:
-        delattr(Neuron, _fname)
+ComponentMixin.cleanup_dataclass_defaults(Neuron)
 
 
 @dataclass

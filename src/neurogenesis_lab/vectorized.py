@@ -606,38 +606,63 @@ class VectorizedNetwork:
         self.u[mask] += du * dt
 
     def _propagate_spikes(self, tick: int, spike_indices: np.ndarray) -> int:
-        propagation_count = 0
-        if len(spike_indices) <= 0:
-            return propagation_count
-        for spike_idx in spike_indices:
-            if self.weight_matrix is None or self.delay_matrix is None:
+        """批量向量化放电传播 — 使用稀疏矩阵切片 + 按延迟分组调度。
+
+        相比逐神经元 getrow + 逐目标 payload 分配，本实现：
+        1. 一次性取出所有放电源的出边（稀疏矩阵切片）
+        2. 转换为 COO 格式批量迭代
+        3. 按 (deliver_tick) 分组，每组一个 payload 向量，消除 N×M 次 np.zeros 分配
+        """
+        n_spikes = len(spike_indices)
+        if n_spikes <= 0:
+            return 0
+        if self.weight_matrix is None or self.delay_matrix is None:
+            return 0
+
+        # 一次性取出所有放电行的子矩阵 (n_spikes, n)
+        spike_rows_w = self.weight_matrix[spike_indices]
+        spike_rows_d = self.delay_matrix[spike_indices]
+
+        # 转为 COO 批量遍历，coo_w.row 是局部行索引 (0..n_spikes-1)
+        coo_w = spike_rows_w.tocoo()
+        coo_d = spike_rows_d.tocoo()
+
+        if len(coo_w.data) == 0:
+            return 0
+
+        propagation_count = len(coo_w.data)
+
+        # 按 (deliver_tick) 分组累积电流，key: deliver_tick, value: payload 向量
+        tick_payloads: dict[int, np.ndarray] = {}
+
+        for edge_idx in range(len(coo_w.data)):
+            local_src = coo_w.row[edge_idx]
+            target = coo_w.col[edge_idx]
+            weight = float(coo_w.data[edge_idx])
+            delay = max(0, int(coo_d.data[edge_idx]))
+
+            if not self.alive[target]:
                 continue
-            row_w = self.weight_matrix.getrow(spike_idx)
-            if row_w.nnz <= 0:
-                continue
-            row_d = self.delay_matrix.getrow(spike_idx)
-            delay_map = {
-                int(col): int(delay)
-                for col, delay in zip(row_d.indices.tolist(), row_d.data.tolist())
-            }
-            targets = row_w.indices
-            weights = row_w.data
-            propagation_count += len(targets)
-            for target, weight in zip(targets, weights):
-                if not self.alive[target]:
-                    continue
-                src_mem_len = int(self.token_mem_len[int(spike_idx)])
-                if src_mem_len > 0:
-                    mem_size = self.token_memory.shape[1]
-                    src_ptr = int(self.token_mem_ptr[int(spike_idx)])
-                    src_last = (src_ptr - 1) % mem_size
-                    propagated_token = int(self.token_memory[int(spike_idx), src_last])
-                    self._write_token(int(target), propagated_token)
-                delay = max(0, delay_map.get(int(target), 1))
-                deliver_tick = int(tick) + delay
-                payload = np.zeros(self.n, dtype=np.float64)
-                payload[int(target)] = float(weight)
-                self._schedule_currents(deliver_tick, payload)
+
+            # Token 传播：从源神经元复制最新 token 到目标
+            src_idx = int(spike_indices[local_src])
+            src_mem_len = int(self.token_mem_len[src_idx])
+            if src_mem_len > 0:
+                mem_size = self.token_memory.shape[1]
+                src_ptr = int(self.token_mem_ptr[src_idx])
+                src_last = (src_ptr - 1) % mem_size
+                propagated_token = int(self.token_memory[src_idx, src_last])
+                self._write_token(target, propagated_token)
+
+            deliver_tick = int(tick) + delay
+            if deliver_tick not in tick_payloads:
+                tick_payloads[deliver_tick] = np.zeros(self.n, dtype=np.float64)
+            tick_payloads[deliver_tick][target] += weight
+
+        # 批量调度，每 (deliver_tick) 仅一次 _schedule_currents 调用
+        for deliver_tick, payload in tick_payloads.items():
+            self._schedule_currents(deliver_tick, payload)
+
         self.total_propagations += propagation_count
         return propagation_count
 

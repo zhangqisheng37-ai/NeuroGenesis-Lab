@@ -8,8 +8,9 @@ import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, ClassVar
 
+from neurogenesis_lab._components import ComponentMixin
 from neurogenesis_lab.adaptive import calculate_adaptive_decay, calculate_adaptive_reproduction_share
 from neurogenesis_lab.config import (
     SCHEMA_VERSION,
@@ -254,11 +255,11 @@ _NETWORK_STATE_FIELDS = frozenset(
 
 
 @dataclass
-class Network:
+class Network(ComponentMixin):
     """神经网络仿真引擎 — 管理神经元集合、事件队列和演化逻辑。
 
     内部配置和状态分别委托给 NetworkConfig 和 NetworkState 组件，
-    通过 ``__getattr__``/``__setattr__`` 透明代理访问。
+    通过 ``ComponentMixin`` 透明代理访问。
     实现 SimEngine 协议，返回统一的 TickSnapshot 和 EngineSummary。
 
     Attributes:
@@ -273,6 +274,11 @@ class Network:
         >>> net = Network(neurons={"n1": Neuron(id="n1")})
         >>> snapshot = net.tick(tick=1, dt=1.0)
     """
+
+    _component_specs: ClassVar = [
+        ("_config", NetworkConfig, _NETWORK_CONFIG_FIELDS),
+        ("_state", NetworkState, _NETWORK_STATE_FIELDS),
+    ]
 
     neurons: dict[str, Neuron]
     queue: EventQueue = field(default_factory=EventQueue)
@@ -317,66 +323,6 @@ class Network:
     schema_version: str = SCHEMA_VERSION
     corpse_pool: CorpsePool = field(default_factory=CorpsePool)
     corpse_pool_max_size: int = 2048
-
-    def __post_init__(self) -> None:
-        # 构建配置组件
-        config_kwargs = {}
-        for fname in _NETWORK_CONFIG_FIELDS:
-            if fname in self.__dict__:
-                config_kwargs[fname] = self.__dict__[fname]
-        object.__setattr__(self, "_config", NetworkConfig(**config_kwargs))
-
-        # 构建状态组件
-        state_kwargs = {}
-        for fname in _NETWORK_STATE_FIELDS:
-            if fname in self.__dict__:
-                state_kwargs[fname] = self.__dict__[fname]
-        object.__setattr__(self, "_state", NetworkState(**state_kwargs))
-
-        # 从 __dict__ 中删除已转移到组件的字段
-        for fname in _NETWORK_CONFIG_FIELDS | _NETWORK_STATE_FIELDS:
-            self.__dict__.pop(fname, None)
-
-    def __getattr__(self, name: str) -> object:
-        if name in _NETWORK_CONFIG_FIELDS:
-            return getattr(self._config, name)
-        if name in _NETWORK_STATE_FIELDS:
-            return getattr(self._state, name)
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{name}'"
-        )
-
-    def __setattr__(self, name: str, value: object) -> None:
-        # 组件初始化前回退到 object.__setattr__
-        if "_config" not in self.__dict__ or "_state" not in self.__dict__:
-            object.__setattr__(self, name, value)
-            return
-        if name in _NETWORK_CONFIG_FIELDS:
-            setattr(self._config, name, value)
-        elif name in _NETWORK_STATE_FIELDS:
-            setattr(self._state, name, value)
-        else:
-            object.__setattr__(self, name, value)
-
-    def __setstate__(self, state: dict) -> None:
-        """pickle 反序列化兼容 — 处理旧格式（无 _config/_state）"""
-        self.__dict__.update(state)
-        if "_config" not in state or "_state" not in state:
-            # 旧 checkpoint：从扁平字段重建组件
-            config_kwargs = {}
-            for fname in _NETWORK_CONFIG_FIELDS:
-                if fname in self.__dict__:
-                    config_kwargs[fname] = self.__dict__[fname]
-            object.__setattr__(self, "_config", NetworkConfig(**config_kwargs))
-
-            state_kwargs = {}
-            for fname in _NETWORK_STATE_FIELDS:
-                if fname in self.__dict__:
-                    state_kwargs[fname] = self.__dict__[fname]
-            object.__setattr__(self, "_state", NetworkState(**state_kwargs))
-
-            for fname in _NETWORK_CONFIG_FIELDS | _NETWORK_STATE_FIELDS:
-                self.__dict__.pop(fname, None)
 
     def connect(
         self, source_id: str, target_id: str, weight: float = 1.0, delay: int = 0
@@ -957,6 +903,4 @@ class Network:
 
 
 # 删除 dataclass 在类上生成的默认值属性，避免遮蔽 __getattr__ 路由
-for _fname in _NETWORK_CONFIG_FIELDS | _NETWORK_STATE_FIELDS:
-    if _fname in Network.__dict__:
-        delattr(Network, _fname)
+ComponentMixin.cleanup_dataclass_defaults(Network)
