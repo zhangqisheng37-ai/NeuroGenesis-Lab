@@ -4,6 +4,31 @@
 
 ## 开发环境搭建
 
+### 一步搭建（推荐）
+
+克隆仓库后，从干净状态一步搭好环境（脚本会在 `.venv` 不存在时自动创建）：
+
+```bash
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1
+
+# Linux / macOS
+bash scripts/bootstrap.sh
+```
+
+默认会构建 Rust 扩展并执行运行时一致性检查。若本机没有 Rust 工具链，
+可只搭建纯 Python 开发环境：
+
+```bash
+# Windows
+powershell -ExecutionPolicy Bypass -File scripts\bootstrap.ps1 -SkipRust
+
+# Linux / macOS
+bash scripts/bootstrap.sh --skip-rust
+```
+
+如需手动逐步搭建，可按以下步骤操作。
+
 ### 1. 克隆仓库
 
 ```bash
