@@ -7,11 +7,12 @@ from neurogenesis_lab.config import (
     EvolutionParams,
     NetworkParams,
     NeuronParams,
+    SCHEMA_VERSION,
     SimConfig,
     default_config,
     default_sim_config,
     seed_all,
-    SCHEMA_VERSION,
+    sim_config_from_dict,
 )
 
 
@@ -138,6 +139,45 @@ class TestSimConfig:
         assert "background_current" in d["network"]
         assert "spontaneous_spike_rate" in d["network"]
         assert "low_activation_threshold" in d["network"]
+
+    def test_sim_config_from_dict_asdict_format(self) -> None:
+        """asdict 格式（SimConfig.to_dict() 输出）重建配置。"""
+        cfg = sim_config_from_dict(
+            {
+                "ticks": 200,
+                "seed": 7,
+                "neuron": {"tau_m": 15.0, "mem_size": 32},
+                "network": {"energy_decay": 0.01, "unknown_key": 1},
+                "evolution": {"min_neurons": 4},
+                "unknown_field": "ignored",
+            }
+        )
+        assert cfg.ticks == 200
+        assert cfg.seed == 7
+        assert cfg.neuron.tau_m == 15.0
+        assert cfg.neuron.mem_size == 32
+        assert cfg.network.energy_decay == 0.01
+        assert cfg.evolution.min_neurons == 4
+        # 未知字段被安全忽略，默认值保持
+        assert cfg.dt == 1.0
+        assert cfg.network.max_neurons == 50
+
+    def test_sim_config_from_dict_group_format(self) -> None:
+        """分组格式（配置编辑器输出）重建配置。"""
+        cfg = sim_config_from_dict(
+            {
+                "simulation": {"ticks": 150, "seed": 9},
+                "neuron": {"v_th": -50.0},
+            }
+        )
+        assert cfg.ticks == 150
+        assert cfg.seed == 9
+        assert cfg.neuron.v_th == -50.0
+
+    def test_sim_config_from_dict_empty(self) -> None:
+        """空字典返回默认配置。"""
+        cfg = sim_config_from_dict({})
+        assert cfg == SimConfig()
 
 
 class TestSeedAll:
