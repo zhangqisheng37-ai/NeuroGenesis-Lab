@@ -62,15 +62,16 @@ async def experiments_compare_page(
     id_list = [i.strip() for i in ids.split(",") if i.strip()]
     with _get_store(request) as store:
         records = [store.get(eid) for eid in id_list]
-    records = [r for r in records if r is not None]
-    flat_configs = [flatten_config(r.config) for r in records]
+    # 用新变量名避开 mypy 对同名变量自引用推导式的收窄限制
+    existing = [r for r in records if r is not None]
+    flat_configs = [flatten_config(r.config) for r in existing]
     diff_keys = config_diff_keys(flat_configs)
     return _Templates.TemplateResponse(
         request,
         "experiment_detail.html",
         {
             "mode": "compare",
-            "experiments": [r.to_dict() for r in records],
+            "experiments": [r.to_dict() for r in existing],
             "diff_keys": diff_keys,
             "flat_configs": flat_configs,
         },
@@ -172,12 +173,12 @@ async def api_compare_experiments(
     id_list = [i.strip() for i in ids.split(",") if i.strip()]
     with _get_store(request) as store:
         records = [store.get(eid) for eid in id_list]
-    records = [r for r in records if r is not None]
-    flat_configs = [flatten_config(r.config) for r in records]
+    existing = [r for r in records if r is not None]
+    flat_configs = [flatten_config(r.config) for r in existing]
     diff_keys = config_diff_keys(flat_configs)
     return JSONResponse(
         {
-            "records": [r.to_dict() for r in records],
+            "records": [r.to_dict() for r in existing],
             "diff_keys": diff_keys,
             "flat_configs": flat_configs,
         }

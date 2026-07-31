@@ -13,8 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.sparse import csr_matrix
-from scipy.spatial import cKDTree
+from scipy.sparse import csr_matrix  # type: ignore[import-untyped]
+from scipy.spatial import cKDTree  # type: ignore[import-untyped]
 
 from neurogenesis_lab.config import (
     PE_SMOOTHING_ALPHA,

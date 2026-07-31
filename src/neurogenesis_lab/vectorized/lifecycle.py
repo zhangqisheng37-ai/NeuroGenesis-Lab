@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix  # type: ignore[import-untyped]
 
 from neurogenesis_lab.adaptive import (
     calculate_adaptive_decay,

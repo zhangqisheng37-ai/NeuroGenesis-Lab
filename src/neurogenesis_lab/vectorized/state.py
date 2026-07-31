@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix  # type: ignore[import-untyped]
 
 from neurogenesis_lab.config import SCHEMA_VERSION
 from neurogenesis_lab.vectorized.spatial import SpatialGrid
