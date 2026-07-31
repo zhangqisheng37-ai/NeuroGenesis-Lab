@@ -23,7 +23,7 @@ from neurogenesis_lab.config import (
 router = APIRouter(prefix="/api/config", tags=["config"])
 
 # experiments/ 目录相对于项目根目录
-_EXPERIMENTS_DIR = Path(__file__).resolve().parents[3] / "experiments"
+_EXPERIMENTS_DIR = Path(__file__).resolve().parents[4] / "experiments"
 
 
 # ── Schema 生成辅助 ──────────────────────────────────────────
@@ -46,7 +46,7 @@ def _get_default(field: Field) -> Any:
     """获取 dataclass 字段的默认值。"""
     if field.default is not dataclasses.MISSING:
         return field.default
-    if field.default_factory is not dataclasses.MISSING:  # type: ignore[comparison-overlap]
+    if field.default_factory is not dataclasses.MISSING:
         return field.default_factory()
     return None
 

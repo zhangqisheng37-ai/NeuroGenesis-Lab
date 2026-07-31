@@ -1,11 +1,13 @@
 {% extends "base.html" %}
 {% block title %}配置编辑器{% endblock %}
+{% block body_class %}page-config{% endblock %}
 
 {% block content %}
 <div class="section">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
-    <h2 style="margin:0;">配置编辑器</h2>
-    <div style="display:flex;gap:0.5rem;align-items:center;">
+  <div class="page-header">
+    <span class="page-icon">⚙️</span>
+    <h2>配置编辑器</h2>
+    <div class="page-actions">
       <label for="preset-select" style="color:var(--muted);font-size:13px;">预设模板：</label>
       <select id="preset-select" class="form-select" style="width:200px;">
         <option value="">— 选择预设 —</option>

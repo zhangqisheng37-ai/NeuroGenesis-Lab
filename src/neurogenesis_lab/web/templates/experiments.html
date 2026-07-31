@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 
 {% block title %}实验列表{% endblock %}
+{% block body_class %}page-experiments{% endblock %}
 
 {% block content %}
 <div class="section">
-  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
-    <h2 style="margin:0;">实验列表</h2>
-    <div style="display:flex; gap:0.5rem;">
+  <div class="page-header">
+    <span class="page-icon">🧪</span>
+    <h2>实验列表</h2>
+    <div class="page-actions">
       <button id="btn-batch-delete" class="btn btn-danger" style="display:none;" onclick="batchDelete()">批量删除</button>
       <button class="btn" onclick="showSystemInfo()">系统信息</button>
       <a href="/configure" class="btn btn-primary">+ 新建实验</a>
@@ -35,6 +37,7 @@
 
   <!-- 搜索框 -->
   <div class="search-bar">
+    <span class="search-icon">🔍</span>
     <input id="search-input" type="text" placeholder="搜索实验 ID、名称或状态…">
   </div>
 

@@ -140,9 +140,10 @@ def _run_simulation_thread(cfg: SimConfig, args: argparse.Namespace) -> None:
                 pass
     except Exception:
         _simulation_state["state"] = "finished"
-        queue = _simulation_state.get("message_queue")
-        if queue is not None:
-            queue.append(
+        # 新变量名避免覆盖 try 块中已注解的 queue 类型
+        pending_queue: deque | None = _simulation_state.get("message_queue")
+        if pending_queue is not None:
+            pending_queue.append(
                 build_status_message(STATE_FINISHED, _simulation_state.get("tick", 0), 50)
             )
         event = _simulation_state.get("message_event")
@@ -274,6 +275,10 @@ async def send_command(request: Request) -> JSONResponse:
     control: LiveControlState | None = _simulation_state.get("control")
     if control is None or not _simulation_state["running"]:
         return JSONResponse({"error": "没有正在运行的仿真"}, status_code=404)
+
+    # 仿真已结束时不再接受命令
+    if _simulation_state.get("state") == "finished":
+        return JSONResponse({"error": "仿真已结束"}, status_code=404)
 
     try:
         body = await request.json()
