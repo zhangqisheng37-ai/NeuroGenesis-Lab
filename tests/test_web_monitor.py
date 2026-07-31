@@ -83,3 +83,45 @@ def test_dashboard_shows_real_data(client, tmp_path):
     assert resp.status_code == 200
     assert "dash_test_001" in resp.text
     assert "1" in resp.text  # total_experiments
+
+
+def test_dashboard_shows_rust_core_and_defaults(client):
+    """仪表盘显示 Rust 核心状态和默认配置。"""
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert "Rust" in resp.text
+    assert "ticks" in resp.text
+
+
+def test_benchmark_page_returns_200(client):
+    """Benchmark 页面返回 200。"""
+    resp = client.get("/benchmark")
+    assert resp.status_code == 200
+    assert "基准测试" in resp.text or "benchmark" in resp.text.lower()
+
+
+def test_api_info(client):
+    """系统信息 API 返回完整信息。"""
+    data = client.get("/api/info").json()
+    assert "version" in data
+    assert "python_version" in data
+    assert "rust_core" in data
+    assert "available" in data["rust_core"]
+    assert "defaults" in data
+    assert "ticks" in data["defaults"]
+    assert "seed" in data["defaults"]
+
+
+def test_api_benchmark(client):
+    """Benchmark API 返回性能测试结果。"""
+    resp = client.post(
+        "/api/benchmark",
+        json={"neurons": 10, "ticks": 5, "seed": 42},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "vectorized" in data
+    assert "original" in data
+    assert "rust" in data
+    assert "time" in data["vectorized"]
+    assert "neurons" in data["vectorized"]

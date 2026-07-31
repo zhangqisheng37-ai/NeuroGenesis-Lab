@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}性能基准测试{% endblock %}
+
+{% block content %}
+<div class="section">
+  <h2>性能基准测试 (Benchmark)</h2>
+  <p style="color:var(--muted);font-size:13px;">
+    测试向量化引擎、原始引擎和 Rust 并行 LIF 的性能表现。
+  </p>
+</div>
+
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">测试参数</div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:1rem;">
+      <div class="form-group">
+        <label for="bench-neurons">神经元数量</label>
+        <input type="number" id="bench-neurons" class="form-input" value="1000" min="1" step="1">
+      </div>
+      <div class="form-group">
+        <label for="bench-ticks">Tick 数</label>
+        <input type="number" id="bench-ticks" class="form-input" value="100" min="1" step="1">
+      </div>
+      <div class="form-group">
+        <label for="bench-seed">随机种子</label>
+        <input type="number" id="bench-seed" class="form-input" value="42" step="1">
+      </div>
+    </div>
+    <div style="margin-top:1rem;">
+      <button class="btn btn-primary" id="btn-bench-start">开始测试</button>
+    </div>
+  </div>
+</div>
+
+<div id="bench-result" style="display:none;">
+  <div class="card">
+    <div class="card-header">测试结果</div>
+    <div class="card-body">
+      <div id="bench-summary" style="margin-bottom:1rem;"></div>
+      <table class="table" id="bench-table">
+        <thead>
+          <tr>
+            <th>引擎</th>
+            <th>神经元数</th>
+            <th>耗时 (s)</th>
+            <th>吞吐量 (ticks/s)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="bench-error" style="display:none;" class="card">
+  <div class="card-body" style="color:var(--danger);"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  document.getElementById("btn-bench-start").addEventListener("click", async function () {
+    const btn = this;
+    const neurons = parseInt(document.getElementById("bench-neurons").value) || 1000;
+    const ticks = parseInt(document.getElementById("bench-ticks").value) || 100;
+    const seed = parseInt(document.getElementById("bench-seed").value) || 42;
+
+    document.getElementById("bench-result").style.display = "none";
+    document.getElementById("bench-error").style.display = "none";
+
+    try {
+      let result;
+      await withLoading(btn, async () => {
+        result = await apiPost("/api/benchmark", { neurons, ticks, seed });
+      });
+
+      if (result.error) {
+        document.getElementById("bench-error").style.display = "";
+        document.querySelector("#bench-error .card-body").textContent = "错误: " + result.error;
+        return;
+      }
+
+      // 填充结果
+      const tbody = document.querySelector("#bench-table tbody");
+      let html = "";
+      const engines = [
+        { name: "向量化引擎", key: "vectorized" },
+        { name: "原始引擎", key: "original" },
+        { name: "Rust 并行 LIF", key: "rust" },
+      ];
+      for (const eng of engines) {
+        const d = result[eng.key];
+        if (!d) continue;
+        const throughput = d.time > 0 ? (ticks / d.time).toFixed(0) : "-";
+        html += `<tr>
+          <td>${eng.name}</td>
+          <td>${d.neurons}</td>
+          <td>${d.time.toFixed(3)}</td>
+          <td>${throughput}</td>
+        </tr>`;
+      }
+      tbody.innerHTML = html;
+
+      // 摘要
+      const summaryEl = document.getElementById("bench-summary");
+      let summaryHtml = `<div style="font-size:13px;color:var(--muted);">
+        参数: neurons=${neurons}, ticks=${ticks}, seed=${seed}`;
+      if (result.speedup) {
+        summaryHtml += ` | 加速比: ${result.speedup.toFixed(1)}x`;
+      }
+      summaryHtml += "</div>";
+      summaryEl.innerHTML = summaryHtml;
+
+      document.getElementById("bench-result").style.display = "";
+    } catch (e) {
+      document.getElementById("bench-error").style.display = "";
+      document.querySelector("#bench-error .card-body").textContent = "测试失败: " + e.message;
+    }
+  });
+})();
+</script>
+{% endblock %}

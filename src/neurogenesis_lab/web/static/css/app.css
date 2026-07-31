@@ -146,6 +146,9 @@ code { background: var(--panel); padding: 2px 6px; border-radius: 3px; font-size
 /* ── Toast 通知 ─────────────────────────────────────── */
 .toast-container { position: fixed; top: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: 0.5rem; }
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.6rem 1rem;
   border-radius: var(--radius);
   background: var(--panel);
@@ -157,9 +160,110 @@ code { background: var(--panel); padding: 2px 6px; border-radius: 3px; font-size
   transform: translateX(20px);
   animation: toast-in 0.25s forwards;
 }
+.toast-icon { flex-shrink: 0; font-size: 16px; }
+.toast-message { flex: 1; }
+.toast-close {
+  flex-shrink: 0; cursor: pointer; opacity: 0.5;
+  background: none; border: none; color: var(--text); font-size: 16px;
+  padding: 0 2px; line-height: 1;
+}
+.toast-close:hover { opacity: 1; }
 .toast-success { border-color: var(--accent); }
 .toast-error { border-color: var(--danger); }
+.toast-warning { border-color: var(--spike); }
 @keyframes toast-in { to { opacity: 1; transform: translateX(0); } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(20px); } }
+
+/* ── Loading Spinner ─────────────────────────────────── */
+.spinner {
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── 确认对话框 ──────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 9998;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  animation: fade-in 0.15s;
+}
+.modal-dialog {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 8px; padding: 1.5rem; min-width: 360px; max-width: 480px;
+  animation: modal-in 0.2s;
+}
+.modal-title { font-size: 16px; font-weight: 600; margin-bottom: 0.75rem; }
+.modal-message { color: var(--muted); font-size: 14px; margin-bottom: 1.25rem; }
+.modal-actions { display: flex; gap: 0.75rem; justify-content: flex-end; }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modal-in { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+
+/* ── 全局 Loading 遮罩 ───────────────────────────────── */
+.loading-overlay {
+  position: fixed; inset: 0; z-index: 9997;
+  background: rgba(15,17,23,0.7);
+  display: flex; align-items: center; justify-content: center;
+}
+.loading-overlay .spinner { width: 32px; height: 32px; border-width: 3px; }
+
+/* ── 空状态引导 ──────────────────────────────────────── */
+.empty-state-guidance {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 3rem 1rem; color: var(--muted); text-align: center;
+}
+.empty-state-guidance .empty-icon { font-size: 48px; margin-bottom: 1rem; opacity: 0.6; }
+.empty-state-guidance .empty-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 0.5rem; }
+.empty-state-guidance .empty-desc { font-size: 14px; margin-bottom: 1.25rem; }
+
+/* ── 行淡出动画（无刷新删除） ─────────────────────────── */
+@keyframes row-fade-out {
+  to { opacity: 0; transform: translateX(20px); }
+}
+.row-removing { animation: row-fade-out 0.3s forwards; }
+
+/* ── 分页栏 ─────────────────────────────────────────── */
+.pagination {
+  display: flex; align-items: center; gap: 0.5rem;
+  justify-content: center; padding: 1rem 0;
+}
+.pagination .page-info { color: var(--muted); font-size: 13px; }
+.pagination .page-btn {
+  padding: 0.3rem 0.6rem; font-size: 13px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel); color: var(--text); cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.pagination .page-btn:hover { background: var(--border); }
+.pagination .page-btn.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+.pagination .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.pagination .page-size { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; }
+.pagination .page-size select {
+  padding: 0.25rem 0.5rem; background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 13px;
+}
+
+/* ── 排序表头 ─────────────────────────────────────────── */
+.table th.sortable { cursor: pointer; user-select: none; }
+.table th.sortable:hover { color: var(--text); }
+.table th.sort-active { color: var(--accent); }
+.sort-arrow { font-size: 10px; margin-left: 4px; }
+
+/* ── 搜索框 ─────────────────────────────────────────── */
+.search-bar { margin-bottom: 1rem; }
+.search-bar input {
+  width: 100%; padding: 0.5rem 0.75rem;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); color: var(--text); font-size: 14px;
+}
+.search-bar input:focus { outline: none; border-color: var(--accent); }
+.search-highlight { background: rgba(245,158,11,0.3); border-radius: 2px; }
 
 /* ── 实时监控页面布局 ──────────────────────────────── */
 .monitor-layout {

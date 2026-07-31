@@ -74,6 +74,26 @@
         </div>
       </div>
       {% endif %}
+
+      <!-- 输出数据 -->
+      <div class="card" style="margin-top:1rem;">
+        <div class="card-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+             id="output-toggle">
+          <span>输出数据 (run.jsonl)</span>
+          <span class="collapse-icon" id="output-icon">▶</span>
+        </div>
+        <div class="card-body" id="output-section" style="display:none;">
+          <div id="output-loading" style="color:var(--muted);font-size:13px;">加载中...</div>
+          <div id="output-info" style="display:none;margin-bottom:0.75rem;font-size:13px;color:var(--muted);"></div>
+          <div id="output-content" style="display:none;max-height:500px;overflow:auto;">
+            <table class="table" id="output-table">
+              <thead><tr><th style="width:50px;">#</th><th>数据</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div id="output-empty" style="display:none;color:var(--muted);font-size:13px;">暂无输出数据</div>
+        </div>
+      </div>
     </div>
   {% endif %}
 
@@ -173,6 +193,67 @@
 {% endblock %}
 
 {% block scripts %}
+{% if mode == "detail" and experiment is not none %}
+<script>
+(function () {
+  "use strict";
+  const expId = "{{ experiment.experiment_id }}";
+  let loaded = false;
+
+  // 折叠/展开
+  document.getElementById("output-toggle").addEventListener("click", function () {
+    const section = document.getElementById("output-section");
+    const icon = document.getElementById("output-icon");
+    if (section.style.display === "none") {
+      section.style.display = "";
+      icon.textContent = "▼";
+      if (!loaded) loadOutput();
+    } else {
+      section.style.display = "none";
+      icon.textContent = "▶";
+    }
+  });
+
+  async function loadOutput() {
+    loaded = true;
+    try {
+      const data = await apiGet("/api/experiments/" + encodeURIComponent(expId) + "/output");
+      document.getElementById("output-loading").style.display = "none";
+      if (!data.lines || data.lines.length === 0) {
+        document.getElementById("output-empty").style.display = "";
+        return;
+      }
+      // 显示信息
+      const infoEl = document.getElementById("output-info");
+      let infoText = "总行数: " + data.total_lines;
+      if (data.truncated) infoText += "（已截断，仅显示前 " + data.lines.length + " 条）";
+      infoEl.textContent = infoText;
+      infoEl.style.display = "";
+      // 填充表格
+      const tbody = document.querySelector("#output-table tbody");
+      let html = "";
+      for (let i = 0; i < data.lines.length; i++) {
+        const line = data.lines[i];
+        const display = JSON.stringify(line, null, 2);
+        html += `<tr><td>${i + 1}</td><td><pre style="margin:0;font-size:11px;white-space:pre-wrap;word-break:break-all;">${escapeHtml(display)}</pre></td></tr>`;
+      }
+      tbody.innerHTML = html;
+      document.getElementById("output-content").style.display = "";
+    } catch (e) {
+      document.getElementById("output-loading").style.display = "none";
+      document.getElementById("output-empty").textContent = "加载失败: " + e.message;
+      document.getElementById("output-empty").style.display = "";
+    }
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+})();
+</script>
+{% endif %}
 {% if mode == "compare" and experiments | length >= 2 %}
 <script src="/static/js/charts.js"></script>
 <script>

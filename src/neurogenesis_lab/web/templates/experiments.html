@@ -33,19 +33,24 @@
     </div>
   </form>
 
+  <!-- 搜索框 -->
+  <div class="search-bar">
+    <input id="search-input" type="text" placeholder="搜索实验 ID、名称或状态…">
+  </div>
+
   <!-- 实验表格 -->
   <div class="card">
     <table class="table" id="experiments-table">
       <thead>
         <tr>
           <th style="width:36px;"><input type="checkbox" id="check-all" onchange="toggleAll(this)"></th>
-          <th>实验 ID</th>
+          <th class="sortable" data-field="experiment_id" onclick="toggleSort('experiment_id')">实验 ID <span class="sort-arrow"></span></th>
           <th>名称</th>
-          <th>状态</th>
-          <th>创建时间</th>
-          <th>Seed</th>
-          <th>神经元</th>
-          <th>用时(s)</th>
+          <th class="sortable" data-field="status" onclick="toggleSort('status')">状态 <span class="sort-arrow"></span></th>
+          <th class="sortable" data-field="created_at" onclick="toggleSort('created_at')">创建时间 <span class="sort-arrow"></span></th>
+          <th class="sortable" data-field="seed" onclick="toggleSort('seed')">Seed <span class="sort-arrow"></span></th>
+          <th class="sortable" data-field="neurons" onclick="toggleSort('neurons')">神经元 <span class="sort-arrow"></span></th>
+          <th class="sortable" data-field="runtime_seconds" onclick="toggleSort('runtime_seconds')">用时(s) <span class="sort-arrow"></span></th>
           <th>操作</th>
         </tr>
       </thead>
@@ -53,6 +58,21 @@
         <tr><td colspan="9" class="empty-state">加载中…</td></tr>
       </tbody>
     </table>
+    <!-- 分页栏 -->
+    <div class="pagination" id="pagination" style="display:none;">
+      <button class="page-btn" id="page-prev" onclick="goPage(currentPage-1)">上一页</button>
+      <span id="page-numbers"></span>
+      <button class="page-btn" id="page-next" onclick="goPage(currentPage+1)">下一页</button>
+      <span class="page-info" id="page-info"></span>
+      <span class="page-size">
+        <label for="page-size-select" style="color:var(--muted);font-size:13px;">每页</label>
+        <select id="page-size-select" onchange="changePageSize(this.value)">
+          <option value="10">10</option>
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+        </select>
+      </span>
+    </div>
   </div>
 </div>
 
@@ -77,25 +97,78 @@
 
 {% block scripts %}
 <script>
-let _experiments = [];
+let _experiments = [];   // 当前页数据
+let _total = 0;          // 总记录数
+let currentPage = 1;
+let pageSize = 20;
+let sortBy = "created_at";
+let sortOrder = "desc";
+let searchTerm = "";
+let _searchTimer = null;
 
+// 初始加载
 (async function () {
+  await fetchPage();
+})();
+
+// 搜索 debounce
+document.getElementById("search-input").addEventListener("input", (e) => {
+  clearTimeout(_searchTimer);
+  _searchTimer = setTimeout(() => {
+    searchTerm = e.target.value.trim().toLowerCase();
+    renderTable();
+  }, 300);
+});
+
+async function fetchPage() {
   const tbody = document.getElementById("experiments-tbody");
+  const offset = (currentPage - 1) * pageSize;
+  const filterParam = "{{ filter }}" ? "&filter={{ filter | urlencode }}" : "";
+  const url = `/api/experiments?limit=${pageSize}&offset=${offset}&sort_by=${sortBy}&sort_order=${sortOrder}${filterParam}`;
   try {
-    _experiments = await apiGet("/api/experiments?limit={{ limit }}{% if filter %}&filter={{ filter | urlencode }}{% endif %}");
-    if (!_experiments.length) {
+    const data = await apiGet(url);
+    _experiments = data.experiments;
+    _total = data.total;
+    if (!_total) {
       tbody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无实验记录</td></tr>';
+      document.getElementById("pagination").style.display = "none";
       return;
     }
     renderTable();
+    renderPagination();
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty-state">加载失败：${err.message}</td></tr>`;
+    document.getElementById("pagination").style.display = "none";
   }
-})();
+}
+
+function highlightText(text, term) {
+  if (!term || !text) return text || "—";
+  const str = String(text);
+  const idx = str.toLowerCase().indexOf(term);
+  if (idx === -1) return str;
+  return str.slice(0, idx) +
+    `<span class="search-highlight">${str.slice(idx, idx + term.length)}</span>` +
+    str.slice(idx + term.length);
+}
 
 function renderTable() {
   const tbody = document.getElementById("experiments-tbody");
-  tbody.innerHTML = _experiments.map(exp => {
+  // 客户端搜索过滤
+  let items = _experiments;
+  if (searchTerm) {
+    items = _experiments.filter(exp => {
+      const id = (exp.experiment_id || "").toLowerCase();
+      const name = (exp.experiment_name || "").toLowerCase();
+      const status = (exp.status || "").toLowerCase();
+      return id.includes(searchTerm) || name.includes(searchTerm) || status.includes(searchTerm);
+    });
+  }
+  if (!items.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty-state">无匹配结果</td></tr>';
+    return;
+  }
+  tbody.innerHTML = items.map(exp => {
     const statusClass = `badge-${exp.status}`;
     const name = exp.experiment_name || "—";
     const created = exp.created_at ? exp.created_at.replace("T", " ").slice(0, 19) : "—";
@@ -105,9 +178,9 @@ function renderTable() {
     return `
       <tr>
         <td><input type="checkbox" class="row-check" value="${exp.experiment_id}" onchange="updateBatchBtn()"></td>
-        <td><a href="/experiments/${encodeURIComponent(exp.experiment_id)}">${exp.experiment_id}</a></td>
-        <td>${name}</td>
-        <td><span class="badge ${statusClass}">${exp.status}</span></td>
+        <td><a href="/experiments/${encodeURIComponent(exp.experiment_id)}">${highlightText(exp.experiment_id, searchTerm)}</a></td>
+        <td>${highlightText(name, searchTerm)}</td>
+        <td><span class="badge ${statusClass}">${highlightText(exp.status, searchTerm)}</span></td>
         <td>${created}</td>
         <td>${seed}</td>
         <td>${neurons}</td>
@@ -118,6 +191,70 @@ function renderTable() {
         </td>
       </tr>`;
   }).join("");
+}
+
+function renderPagination() {
+  const totalPages = Math.ceil(_total / pageSize);
+  const pag = document.getElementById("pagination");
+  pag.style.display = "flex";
+  // 页码按钮
+  const nums = document.getElementById("page-numbers");
+  let html = "";
+  const maxVisible = 5;
+  let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+  let end = Math.min(totalPages, start + maxVisible - 1);
+  if (end - start < maxVisible - 1) start = Math.max(1, end - maxVisible + 1);
+  for (let i = start; i <= end; i++) {
+    const active = i === currentPage ? " active" : "";
+    html += `<button class="page-btn${active}" onclick="goPage(${i})">${i}</button>`;
+  }
+  nums.innerHTML = html;
+  // 上一页/下一页
+  document.getElementById("page-prev").disabled = currentPage <= 1;
+  document.getElementById("page-next").disabled = currentPage >= totalPages;
+  // 信息
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, _total);
+  document.getElementById("page-info").textContent = `第 ${from}-${to} 条，共 ${_total} 条`;
+}
+
+function goPage(page) {
+  const totalPages = Math.ceil(_total / pageSize);
+  if (page < 1 || page > totalPages) return;
+  currentPage = page;
+  fetchPage();
+}
+
+function changePageSize(size) {
+  pageSize = parseInt(size, 10);
+  currentPage = 1;
+  fetchPage();
+}
+
+function toggleSort(field) {
+  if (sortBy === field) {
+    sortOrder = sortOrder === "asc" ? "desc" : "asc";
+  } else {
+    sortBy = field;
+    sortOrder = "desc";
+  }
+  updateSortHeaders();
+  currentPage = 1;
+  fetchPage();
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll("th.sortable").forEach(th => {
+    const field = th.dataset.field;
+    const arrow = th.querySelector(".sort-arrow");
+    if (field === sortBy) {
+      th.classList.add("sort-active");
+      arrow.textContent = sortOrder === "asc" ? " ▲" : " ▼";
+    } else {
+      th.classList.remove("sort-active");
+      arrow.textContent = "";
+    }
+  });
 }
 
 function toggleAll(master) {
@@ -137,38 +274,82 @@ function updateBatchBtn() {
 async function batchDelete() {
   const ids = getSelected();
   if (!ids.length) return;
-  if (!confirmAction(`确认删除选中的 ${ids.length} 个实验？此操作不可撤销。`)) return;
+  const confirmed = await showConfirmDialog("批量删除", `确认删除选中的 ${ids.length} 个实验？此操作不可撤销。`, { confirmText: "删除", confirmStyle: "danger" });
+  if (!confirmed) return;
+  const btn = document.getElementById("btn-batch-delete");
   let ok = 0;
-  for (const id of ids) {
-    try {
-      await apiDelete(`/api/experiments/${encodeURIComponent(id)}`);
-      ok++;
-    } catch (err) {
-      showToast(`删除 ${id} 失败：${err.message}`, "error");
+  await withLoading(btn, async () => {
+    for (const id of ids) {
+      try {
+        await apiDelete(`/api/experiments/${encodeURIComponent(id)}`, { silent: true });
+        const row = document.querySelector(`.row-check[value="${id}"]`);
+        if (row) {
+          const tr = row.closest("tr");
+          tr.classList.add("row-removing");
+          await new Promise(r => setTimeout(r, 300));
+          tr.remove();
+        }
+        _experiments = _experiments.filter(e => e.experiment_id !== id);
+        _total--;
+        ok++;
+      } catch (err) {
+        showToast(`删除 ${id} 失败：${err.message}`, "error");
+      }
     }
-  }
+  });
   if (ok) showToast(`已删除 ${ok} 个实验`, "success");
-  location.reload();
+  if (!_experiments.length && currentPage > 1) {
+    currentPage--;
+    await fetchPage();
+  } else if (!_experiments.length) {
+    document.getElementById("experiments-tbody").innerHTML = '<tr><td colspan="9" class="empty-state">暂无实验记录</td></tr>';
+    document.getElementById("pagination").style.display = "none";
+  } else {
+    renderPagination();
+  }
+  document.getElementById("check-all").checked = false;
+  updateBatchBtn();
 }
 
 async function deleteExperiment(id) {
-  if (!confirmAction(`确认删除实验 "${id}"？此操作不可撤销。`)) return;
-  try {
-    await apiDelete(`/api/experiments/${encodeURIComponent(id)}`);
-    showToast(`实验 ${id} 已删除`, "success");
-    location.reload();
-  } catch (err) {
-    showToast(`删除失败：${err.message}`, "error");
-  }
+  const confirmed = await showConfirmDialog("删除实验", `确认删除实验 "${id}"？此操作不可撤销。`, { confirmText: "删除", confirmStyle: "danger" });
+  if (!confirmed) return;
+  const row = document.querySelector(`.row-check[value="${id}"]`)?.closest("tr");
+  const btn = row?.querySelector(".btn-danger");
+  await withLoading(btn, async () => {
+    try {
+      await apiDelete(`/api/experiments/${encodeURIComponent(id)}`, { silent: true });
+      if (row) {
+        row.classList.add("row-removing");
+        await new Promise(r => setTimeout(r, 300));
+        row.remove();
+      }
+      _experiments = _experiments.filter(e => e.experiment_id !== id);
+      _total--;
+      showToast(`实验 ${id} 已删除`, "success");
+      if (!_experiments.length && currentPage > 1) {
+        currentPage--;
+        await fetchPage();
+      } else if (!_experiments.length) {
+        document.getElementById("experiments-tbody").innerHTML = '<tr><td colspan="9" class="empty-state">暂无实验记录</td></tr>';
+        document.getElementById("pagination").style.display = "none";
+      } else {
+        renderPagination();
+      }
+      document.getElementById("check-all").checked = false;
+      updateBatchBtn();
+    } catch (err) {
+      showToast(`删除失败：${err.message}`, "error");
+    }
+  });
 }
 
 async function showSystemInfo() {
   const modal = document.getElementById("sysinfo-modal");
   try {
     const data = await apiGet("/api/experiments?limit=1");
-    document.getElementById("si-total").textContent = _experiments.length;
+    document.getElementById("si-total").textContent = data.total;
   } catch (_) {}
-  // 从页面全局获取版本信息
   const footer = document.querySelector(".footer span");
   if (footer) {
     document.getElementById("si-version").textContent = footer.textContent.trim();

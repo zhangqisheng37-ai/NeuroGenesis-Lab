@@ -45,7 +45,12 @@
     </tbody>
   </table>
   {% else %}
-  <p class="empty-state">暂无实验记录。运行 <code>neurogenesis-lab run</code> 开始第一个实验。</p>
+  <div class="empty-state-guidance" style="text-align:center;padding:2.5rem 1rem;">
+    <div class="empty-icon">🧪</div>
+    <div class="empty-title">还没有任何实验记录</div>
+    <div class="empty-desc">创建你的第一个实验，开始探索脉冲神经网络的演化与学习。</div>
+    <a href="/configure" class="btn btn-primary" style="padding:8px 24px;font-size:14px;">创建第一个实验</a>
+  </div>
   {% endif %}
 </section>
 
@@ -89,6 +94,22 @@
         <tr>
           <td style="font-weight:600;">数据库路径</td>
           <td><code>{{ db_path }}</code></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">Rust 核心</td>
+          <td>
+            {% if rust_core_available %}
+              <span style="color:var(--accent);">✓ 可用</span>
+            {% else %}
+              <span style="color:var(--muted);">✗ 不可用（已降级为纯 Python）</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">默认配置</td>
+          <td style="font-size:13px;color:var(--muted);">
+            ticks={{ default_ticks }}, seed={{ default_seed }}, dt={{ default_dt }}
+          </td>
         </tr>
       </tbody>
     </table>

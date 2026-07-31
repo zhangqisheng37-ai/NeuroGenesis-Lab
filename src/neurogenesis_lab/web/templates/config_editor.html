@@ -11,6 +11,9 @@
         <option value="">— 选择预设 —</option>
       </select>
       <button class="btn" id="btn-load-preset">加载</button>
+      <span style="color:var(--muted);margin:0 0.25rem;">|</span>
+      <label class="btn" for="toml-import" style="cursor:pointer;margin:0;">TOML 导入</label>
+      <input type="file" id="toml-import" accept=".toml" style="display:none;">
     </div>
   </div>
 </div>
@@ -63,6 +66,7 @@
   <div style="flex:1;"></div>
   <button class="btn" id="btn-export">导出 TOML</button>
   <button class="btn btn-primary" id="btn-save-preset">保存为预设</button>
+  <button class="btn" id="btn-run" style="background:var(--accent);color:#fff;">▶ 直接运行</button>
 </div>
 
 <!-- 错误列表 -->
@@ -212,6 +216,7 @@
       }
       html += "</div>";
       errorListEl.innerHTML = html;
+      showToast(`配置校验失败，发现 ${result.errors.length} 个问题`, "warning");
     }
   }
 
@@ -270,36 +275,42 @@
     const data = collectFormData();
     const name = prompt("请输入文件名（不含扩展名）：", "custom_config");
     if (!name) return;
-    try {
-      const result = await apiPost("/api/config/save", { name, config: data });
-      if (result.error) {
-        showToast(result.error + (result.details ? ": " + result.details.join(", ") : ""), "error");
-        return;
+    const btn = document.getElementById("btn-export");
+    await withLoading(btn, async () => {
+      try {
+        const result = await apiPost("/api/config/save", { name, config: data });
+        if (result.error) {
+          showToast(result.error + (result.details ? ": " + result.details.join(", ") : ""), "error");
+          return;
+        }
+        showToast("已导出: " + result.path, "success");
+      } catch (e) {
+        showToast("导出失败: " + e.message, "error");
       }
-      showToast("已导出: " + result.path, "success");
-    } catch (e) {
-      showToast("导出失败: " + e.message, "error");
-    }
+    });
   }
 
   async function savePreset() {
     const data = collectFormData();
     const name = prompt("请输入预设名称（不含扩展名）：", "");
     if (!name) return;
-    try {
-      const result = await apiPost("/api/config/save", { name, config: data });
-      if (result.error) {
-        showToast(result.error + (result.details ? ": " + result.details.join(", ") : ""), "error");
-        return;
+    const btn = document.getElementById("btn-save-preset");
+    await withLoading(btn, async () => {
+      try {
+        const result = await apiPost("/api/config/save", { name, config: data });
+        if (result.error) {
+          showToast(result.error + (result.details ? ": " + result.details.join(", ") : ""), "error");
+          return;
+        }
+        showToast("已保存预设: " + result.path, "success");
+        // 刷新预设列表
+        const select = document.getElementById("preset-select");
+        select.innerHTML = '<option value="">— 选择预设 —</option>';
+        loadPresets();
+      } catch (e) {
+        showToast("保存失败: " + e.message, "error");
       }
-      showToast("已保存预设: " + result.path, "success");
-      // 刷新预设列表
-      const select = document.getElementById("preset-select");
-      select.innerHTML = '<option value="">— 选择预设 —</option>';
-      loadPresets();
-    } catch (e) {
-      showToast("保存失败: " + e.message, "error");
-    }
+    });
   }
 
   // ── 折叠/展开 ─────────────────────────────────────────────
@@ -319,6 +330,87 @@
     });
   });
 
+  // ── 直接运行 ──────────────────────────────────────────────
+  async function runSimulation() {
+    const configData = collectFormData();
+    const runBtn = document.getElementById("btn-run");
+    // 先校验
+    try {
+      const validation = await apiPost("/api/config/validate", configData, { silent: true });
+      if (!validation.valid) {
+        showToast("配置校验失败: " + validation.errors.join(", "), "error");
+        return;
+      }
+    } catch (e) {
+      showToast("校验请求失败: " + e.message, "error");
+      return;
+    }
+    // 启动仿真
+    try {
+      await withLoading(runBtn, async () => {
+        await apiPost("/api/run", {
+          ticks: configData.simulation?.ticks || 100,
+          seed: configData.simulation?.seed || 42,
+          neurons: 8,
+        });
+      });
+      showToast("仿真已启动，跳转到监控页面", "success");
+      window.location.href = "/monitor";
+    } catch (e) {
+      showToast("启动失败: " + e.message, "error");
+    }
+  }
+
+  // ── TOML 导入 ─────────────────────────────────────────────
+  function parseSimpleToml(text) {
+    const result = {};
+    let currentSection = result;
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const sectionMatch = trimmed.match(/^\[([^\]]+)\]$/);
+      if (sectionMatch) {
+        const keys = sectionMatch[1].split(".");
+        currentSection = result;
+        for (const k of keys) {
+          currentSection[k] = currentSection[k] || {};
+          currentSection = currentSection[k];
+        }
+        continue;
+      }
+      const kvMatch = trimmed.match(/^(\w+)\s*=\s*(.+)$/);
+      if (kvMatch) {
+        const key = kvMatch[1];
+        let value = kvMatch[2];
+        if (value === "true") value = true;
+        else if (value === "false") value = false;
+        else if (/^-?\d+$/.test(value)) value = parseInt(value);
+        else if (/^-?\d+\.\d+$/.test(value)) value = parseFloat(value);
+        else value = value.replace(/^["']|["']$/g, "");
+        currentSection[key] = value;
+      }
+    }
+    return result;
+  }
+
+  function handleTomlImport(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (ev) {
+      try {
+        const parsed = parseSimpleToml(ev.target.result);
+        fillFormFromData(parsed);
+        showToast("已导入 TOML 配置: " + file.name, "success");
+      } catch (err) {
+        showToast("TOML 解析失败: " + err.message, "error");
+      }
+    };
+    reader.readAsText(file);
+    // 重置 input 以便重复选择同一文件
+    e.target.value = "";
+  }
+
   // ── 事件绑定 ──────────────────────────────────────────────
   document.getElementById("btn-load-preset").addEventListener("click", () => {
     const name = document.getElementById("preset-select").value;
@@ -326,6 +418,8 @@
   });
   document.getElementById("btn-export").addEventListener("click", exportToml);
   document.getElementById("btn-save-preset").addEventListener("click", savePreset);
+  document.getElementById("btn-run").addEventListener("click", runSimulation);
+  document.getElementById("toml-import").addEventListener("change", handleTomlImport);
 
   // 输入变化时 debounce 校验
   document.addEventListener("input", (e) => {

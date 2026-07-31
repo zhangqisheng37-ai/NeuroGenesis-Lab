@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, Query, Request
@@ -104,16 +105,62 @@ async def experiment_detail_page(
 # ── JSON API 端点 ───────────────────────────────────────────────────────────
 
 
+_VALID_SORT_FIELDS = {
+    "created_at", "experiment_id", "status", "seed", "neurons", "ticks", "runtime_seconds"
+}
+
+
 @router.get("/api/experiments")
 async def api_list_experiments(
     request: Request,
     filter: str | None = Query(None, description="过滤表达式"),
     limit: int = Query(50, ge=1, le=1000, description="最大返回条数"),
+    offset: int = Query(0, ge=0, description="跳过的记录数"),
+    sort_by: str = Query("created_at", description="排序字段"),
+    sort_order: str = Query("desc", description="排序方向：asc 或 desc"),
 ) -> JSONResponse:
-    """返回实验列表 JSON。"""
+    """返回实验列表 JSON，支持分页与排序。"""
+    # 校验排序字段
+    if sort_by not in _VALID_SORT_FIELDS:
+        sort_by = "created_at"
+    if sort_order not in ("asc", "desc"):
+        sort_order = "desc"
+
+    # 获取全部符合过滤条件的记录（不传 limit，由 API 层做分页）
     with _get_store(request) as store:
-        records = store.list_experiments(filter_expression=filter, limit=limit)
-    return JSONResponse([r.to_dict() for r in records])
+        records = store.list_experiments(filter_expression=filter, limit=0)
+
+    total = len(records)
+
+    # 排序
+    reverse = sort_order == "desc"
+    _numeric_fields = {"seed", "neurons", "ticks", "runtime_seconds"}
+
+    def _sort_key(r: object) -> tuple:
+        val = getattr(r, sort_by, None)
+        if val is None:
+            return (1, 0, "")
+        if sort_by in _numeric_fields:
+            return (0, val, "")
+        return (0, 0, str(val))
+
+    records.sort(key=_sort_key, reverse=reverse)
+    # None 值始终排在末尾
+    none_records = [r for r in records if getattr(r, sort_by, None) is None]
+    non_none_records = [r for r in records if getattr(r, sort_by, None) is not None]
+    records = non_none_records + none_records
+
+    # 分页切片
+    page = records[offset : offset + limit]
+
+    return JSONResponse(
+        {
+            "experiments": [r.to_dict() for r in page],
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+        }
+    )
 
 
 @router.get("/api/experiments/compare")
@@ -165,3 +212,47 @@ async def api_delete_experiment(
             remove_output_dir(record.experiment_id, record.output_dir)
         store.delete(experiment_id)
     return JSONResponse({"status": "deleted", "id": experiment_id})
+
+
+@router.get("/api/experiments/{experiment_id}/output")
+async def api_experiment_output(
+    request: Request,
+    experiment_id: str,
+    limit: int = Query(100, ge=1, le=10000, description="最大返回行数"),
+) -> JSONResponse:
+    """获取实验输出数据（run.jsonl）。
+
+    返回前 N 条记录，并标注总行数与是否截断。
+    """
+    with _get_store(request) as store:
+        record = store.get(experiment_id)
+    if record is None:
+        return JSONResponse({"detail": "实验不存在"}, status_code=404)
+
+    output_file = record.output_file
+    if not output_file or not Path(output_file).is_file():
+        return JSONResponse(
+            {"lines": [], "total_lines": 0, "truncated": False}
+        )
+
+    lines: list[dict] = []
+    total_lines = 0
+    with Path(output_file).open("r", encoding="utf-8") as f:
+        for raw_line in f:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            total_lines += 1
+            if len(lines) < limit:
+                try:
+                    lines.append(json.loads(raw_line))
+                except json.JSONDecodeError:
+                    lines.append({"_raw": raw_line})
+
+    return JSONResponse(
+        {
+            "lines": lines,
+            "total_lines": total_lines,
+            "truncated": total_lines > limit,
+        }
+    )
