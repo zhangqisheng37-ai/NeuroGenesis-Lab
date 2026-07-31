@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import math
 import random
-from dataclasses import asdict, dataclass, field
-from typing import Any
+from dataclasses import asdict, dataclass, field, fields
+from typing import Any, Mapping
 
 
 SCHEMA_VERSION = "2.0.0"
@@ -352,6 +352,48 @@ def default_sim_config() -> SimConfig:
         使用默认参数的 SimConfig 实例。
     """
     return SimConfig()
+
+
+def _filter_dataclass_fields(cls: type, data: Mapping[str, Any]) -> dict[str, Any]:
+    """仅保留 dataclass 声明的字段，忽略未知键。"""
+    valid = {f.name for f in fields(cls)}
+    return {k: v for k, v in data.items() if k in valid}
+
+
+def sim_config_from_dict(data: Mapping[str, Any]) -> SimConfig:
+    """从字典重建 SimConfig，兼容两种输入格式。
+
+    - ``SimConfig.to_dict()`` 的 asdict 格式：顶层为 ticks/seed/dt 等标量字段，
+      子配置为 ``neuron`` / ``network`` / ``evolution`` 嵌套字典；
+    - 配置编辑器产出的分组格式：``simulation`` 分组内含 ticks/seed/dt，
+      其余分组与 asdict 格式相同。
+
+    Args:
+        data: 配置字典。
+
+    Returns:
+        重建的 SimConfig 实例；未知字段被安全忽略。
+    """
+    scalar_keys = {
+        f.name for f in fields(SimConfig) if f.name not in ("neuron", "network", "evolution")
+    }
+    scalar = {k: v for k, v in data.items() if k in scalar_keys}
+    sim_group = data.get("simulation")
+    if isinstance(sim_group, Mapping):
+        scalar.update({k: v for k, v in sim_group.items() if k in scalar_keys})
+
+    def _sub(cls: type, name: str) -> Any:
+        raw = data.get(name)
+        if isinstance(raw, Mapping):
+            return cls(**_filter_dataclass_fields(cls, raw))
+        return cls()
+
+    return SimConfig(
+        **scalar,
+        neuron=_sub(NeuronParams, "neuron"),
+        network=_sub(NetworkParams, "network"),
+        evolution=_sub(EvolutionParams, "evolution"),
+    )
 
 
 def seed_all(seed: int) -> None:

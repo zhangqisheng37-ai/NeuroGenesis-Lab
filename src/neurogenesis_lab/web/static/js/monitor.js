@@ -1,8 +1,8 @@
 /**
- * NeuroGenesis Lab — P5 实时监控 D3.js 可视化与控制逻辑
+ * NeuroGenesis Lab — 实验运行工作台前端逻辑
  *
- * 从 live.html 提取的核心渲染逻辑，封装为 NetworkMonitor 类，
- * 通过 WebSocket 接收仿真数据并实时更新力导向网络图与统计面板。
+ * 覆盖完整闭环：参数配置/预设加载 → 启动仿真（POST /api/run）→
+ * WebSocket 实时网络图 + 统计 + 时序曲线 → 结束显示实验详情入口。
  */
 
 "use strict";
@@ -20,17 +20,121 @@ const STAT_FIELDS = [
   ["prediction_accuracy", "预测准确率"],
 ];
 
+const SERIES_MAX_POINTS = 200;
+
 /**
- * 实时监控主类 — 管理 WebSocket 连接、D3 渲染与控制交互。
+ * 实时时序曲线 — D3 折线图，环形缓冲滚动窗口。
+ */
+class TimeSeriesChart {
+  constructor(svgSelector) {
+    this.svg = d3.select(svgSelector);
+    this.maxPoints = SERIES_MAX_POINTS;
+    this.series = { alive: [], energy: [], pe: [] };
+    this.metrics = [
+      { key: "alive", label: "存活", color: "#14b8a6" },
+      { key: "energy", label: "平均能量", color: "#f59e0b" },
+      { key: "pe", label: "预测误差", color: "#8b5cf6" },
+    ];
+    this.width = 0;
+    this.height = 170;
+    this._measure();
+    window.addEventListener("resize", () => this._measure());
+  }
+
+  _measure() {
+    const el = this.svg.node();
+    if (!el || !el.parentElement) return;
+    this.width = Math.max(el.parentElement.clientWidth || 300, 200);
+    this.height = 170;
+    this.svg.attr("viewBox", `0 0 ${this.width} ${this.height}`);
+  }
+
+  /** 追加一个数据点并裁剪窗口。 */
+  push(tick, stats) {
+    this.series.alive.push({ x: tick, y: Number(stats.alive_neurons) || 0 });
+    this.series.energy.push({ x: tick, y: Number(stats.mean_energy) || 0 });
+    this.series.pe.push({ x: tick, y: Number(stats.prediction_error) || 0 });
+    for (const key of ["alive", "energy", "pe"]) {
+      this.series[key] = this.series[key].slice(-this.maxPoints);
+    }
+    this.render();
+  }
+
+  /** 重新渲染全部折线。 */
+  render() {
+    const margin = { top: 10, right: 10, bottom: 20, left: 34 };
+    const w = this.width - margin.left - margin.right;
+    const h = this.height - margin.top - margin.bottom;
+    if (w <= 0 || h <= 0) return;
+
+    this.svg.selectAll("*").remove();
+    const g = this.svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const xDomain = d3.extent(this.series.alive, (d) => d.x);
+    const xScale = d3
+      .scaleLinear()
+      .domain(xDomain[0] === undefined ? [0, 1] : [xDomain[0], Math.max(xDomain[0] + 1, xDomain[1])])
+      .range([0, w]);
+    const yScale = d3
+      .scaleLinear()
+      .domain([0, 1])
+      .range([h, 0]);
+
+    // 三个指标各自归一化（独立 y 轴便于观察趋势）
+    for (const m of this.metrics) {
+      const pts = this.series[m.key];
+      if (pts.length < 2) continue;
+      const max = d3.max(pts, (d) => d.y) || 1;
+      const domain = [0, max === 0 ? 1 : max * 1.1];
+      const localY = d3.scaleLinear().domain(domain).range([h, 0]);
+      const line = d3
+        .line()
+        .x((d) => xScale(d.x))
+        .y((d) => localY(d.y));
+      g.append("path")
+        .datum(pts)
+        .attr("fill", "none")
+        .attr("stroke", m.color)
+        .attr("stroke-width", 1.5)
+        .attr("opacity", 0.9)
+        .attr("d", line);
+    }
+
+    // 坐标轴
+    const axisX = d3.axisBottom(xScale).ticks(4);
+    const axisY = d3.axisLeft(yScale).ticks(3);
+    g.append("g")
+      .attr("transform", `translate(0,${h})`)
+      .call(axisX)
+      .selectAll("text")
+      .style("fill", "#8b93a7")
+      .style("font-size", "10px");
+    g.append("g")
+      .call(axisY)
+      .selectAll("text")
+      .style("fill", "#8b93a7")
+      .style("font-size", "10px");
+    g.selectAll(".domain, .tick line").style("stroke", "#262b38");
+  }
+
+  /** 清空所有数据。 */
+  reset() {
+    this.series = { alive: [], energy: [], pe: [] };
+    this.render();
+  }
+}
+
+/**
+ * 实验工作台主类 — 管理启动流程、WebSocket、D3 渲染与控制交互。
  */
 class NetworkMonitor {
   constructor() {
-    /** @type {WebSocket|null} */
     this.ws = null;
-    /** @type {object} */
     this.stats = {};
-    /** @type {string} */
     this.simState = "idle";
+    this.experimentId = null;
+    this.presetConfig = null;
+    this.chart = new TimeSeriesChart("#series-chart");
 
     // D3 SVG 初始化
     this.svg = d3.select("#network-canvas");
@@ -43,6 +147,13 @@ class NetworkMonitor {
 
     this._initSVG();
     this._initControls();
+    this._initLaunchPanel();
+    this._loadPresets();
+    this._initSpeedInput();
+    this._applyStatus("idle");
+
+    // 页面加载时检测是否有正在运行的仿真
+    this._checkRunning();
   }
 
   /** 初始化 SVG 画布尺寸与窗口监听。 */
@@ -64,29 +175,164 @@ class NetworkMonitor {
     const btnPause = document.getElementById("btn-pause");
     const btnResume = document.getElementById("btn-resume");
     const btnStop = document.getElementById("btn-stop");
-    const speed = document.getElementById("speed");
 
-    if (btnPause) btnPause.onclick = () => { this._sendCommand("pause"); this._setStatus("paused"); };
-    if (btnResume) btnResume.onclick = () => { this._sendCommand("resume"); this._setStatus("running"); };
+    if (btnPause) btnPause.onclick = () => { this._sendCommand("pause"); this._applyStatus("paused"); };
+    if (btnResume) btnResume.onclick = () => { this._sendCommand("resume"); this._applyStatus("running"); };
     if (btnStop) btnStop.onclick = () => this._sendCommand("stop");
-    if (speed) {
-      speed.oninput = () => {
-        const ms = parseInt(speed.value, 10);
-        document.getElementById("speed-val").textContent = ms;
+  }
+
+  /** 绑定启动面板：预设加载与启动按钮。 */
+  _initLaunchPanel() {
+    const btnLaunch = document.getElementById("btn-launch");
+    if (btnLaunch) {
+      btnLaunch.onclick = () => this._startSimulation();
+    }
+    const preset = document.getElementById("preset-select");
+    if (preset) {
+      preset.onchange = () => this._loadPresetConfig(preset.value);
+    }
+  }
+
+  /** 速度输入：运行时实时调速，空闲时作为启动参数。 */
+  _initSpeedInput() {
+    const speed = document.getElementById("f-tick-ms");
+    if (!speed) return;
+    speed.oninput = () => {
+      const ms = parseInt(speed.value, 10) || 0;
+      const valEl = document.getElementById("speed-val");
+      if (valEl) valEl.textContent = ms;
+      if (this.simState === "running" || this.simState === "paused") {
         this._sendCommand("speed_change", { tick_ms: ms });
+      }
+    };
+  }
+
+  /** 加载预设列表到下拉框。 */
+  async _loadPresets() {
+    const select = document.getElementById("preset-select");
+    if (!select) return;
+    try {
+      const data = await apiGet("/api/config/presets", { silent: true });
+      for (const p of data || []) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      }
+    } catch (e) {
+      console.warn("加载预设失败:", e);
+    }
+  }
+
+  /** 加载指定预设内容并回填表单。 */
+  async _loadPresetConfig(name) {
+    if (!name) {
+      this.presetConfig = null;
+      return;
+    }
+    try {
+      const cfg = await apiGet(`/api/config/presets/${name}`, { silent: true });
+      if (cfg.error) {
+        showToast(cfg.error, "error");
+        return;
+      }
+      this.presetConfig = cfg;
+      const sim = cfg.simulation || {};
+      this._setValue("f-ticks", sim.ticks);
+      this._setValue("f-seed", sim.seed);
+      this._setValue("f-expr", sim.expr);
+      this._setValue("f-input-weight", sim.input_weight);
+      this._setValue("f-stim-interval", sim.stim_interval);
+      showToast(`已加载预设「${name}」`, "success");
+    } catch (e) {
+      showToast("加载预设失败: " + e.message, "error");
+    }
+  }
+
+  /** 安全设置表单值（跳过空值）。 */
+  _setValue(id, value) {
+    if (value === undefined || value === null) return;
+    const el = document.getElementById(id);
+    if (el) el.value = value;
+  }
+
+  /** 检查是否有正在运行的仿真（页面刷新后恢复）。 */
+  async _checkRunning() {
+    try {
+      const status = await apiGet("/api/run/status", { silent: true });
+      if (status.running) {
+        this.experimentId = status.experiment_id || null;
+        this._applyStatus(status.state || "running");
+        this._connect();
+      }
+    } catch (e) {
+      console.warn("查询运行状态失败:", e);
+    }
+  }
+
+  /** 收集启动参数并调用 POST /api/run。 */
+  async _startSimulation() {
+    const btnLaunch = document.getElementById("btn-launch");
+    if (this.simState === "running" || this.simState === "paused") {
+      showToast("仿真已在运行中", "warning");
+      return;
+    }
+    const tickMs = Math.max(0, parseInt(document.getElementById("f-tick-ms").value, 10) || 50);
+
+    let body;
+    if (this.presetConfig) {
+      // 预设模式：完整配置 + 表单覆盖的公共参数
+      body = {
+        config: this.presetConfig,
+        ticks: parseInt(document.getElementById("f-ticks").value, 10) || 100,
+        seed: parseInt(document.getElementById("f-seed").value, 10) || 42,
+        neurons: Math.max(2, parseInt(document.getElementById("f-neurons").value, 10) || 8),
+        expr: document.getElementById("f-expr").value || "1+2=3",
+        input_weight: parseFloat(document.getElementById("f-input-weight").value) || 40,
+        stim_interval: parseInt(document.getElementById("f-stim-interval").value, 10) || 5,
+        tick_ms: tickMs,
+        experiment_name: this.presetConfig.simulation?.name || null,
       };
+    } else {
+      body = {
+        ticks: parseInt(document.getElementById("f-ticks").value, 10) || 100,
+        seed: parseInt(document.getElementById("f-seed").value, 10) || 42,
+        neurons: Math.max(2, parseInt(document.getElementById("f-neurons").value, 10) || 8),
+        expr: document.getElementById("f-expr").value || "1+2=3",
+        input_weight: parseFloat(document.getElementById("f-input-weight").value) || 40,
+        stim_interval: parseInt(document.getElementById("f-stim-interval").value, 10) || 5,
+        tick_ms: tickMs,
+      };
+    }
+
+    try {
+      const result = await withLoading(btnLaunch, async () => {
+        return await apiPost("/api/run", body);
+      });
+      if (result.error) {
+        showToast(result.error, "error");
+        return;
+      }
+      this.experimentId = result.experiment_id || null;
+      this.chart.reset();
+      this._applyStatus("running");
+      this._connect();
+      showToast(`仿真已启动（实验 ${this.experimentId || "—"}）`, "success");
+    } catch (e) {
+      showToast("启动失败: " + e.message, "error");
     }
   }
 
   /**
    * 建立 WebSocket 连接。
-   * @param {string} url — WebSocket 地址（如 ws://localhost/ws）
+   * @param {string} [url] — WebSocket 地址，默认当前 host 的 /ws
    */
   connect(url) {
     if (this.ws) {
       this.ws.close();
     }
-    this.ws = new WebSocket(url);
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    this.ws = new WebSocket(url || `${proto}://${location.host}/ws`);
     const connEl = document.getElementById("conn-state");
 
     this.ws.onopen = () => {
@@ -95,8 +341,10 @@ class NetworkMonitor {
 
     this.ws.onclose = () => {
       if (connEl) { connEl.textContent = "连接断开"; connEl.className = "conn-indicator offline"; }
-      // 自动重连
-      setTimeout(() => this.connect(url), 1500);
+      // 自动重连（已结束时不再重连）
+      if (this.simState !== "finished") {
+        setTimeout(() => this.connect(), 1500);
+      }
     };
 
     this.ws.onerror = () => {
@@ -113,6 +361,11 @@ class NetworkMonitor {
     };
   }
 
+  /** 连接别名 — 页面恢复运行状态时使用。 */
+  _connect() {
+    this.connect();
+  }
+
   /**
    * 根据消息类型分发处理。
    * @param {object} msg
@@ -121,18 +374,25 @@ class NetworkMonitor {
     if (msg.type === "tick_update") {
       this._updateNetwork(msg.neurons || [], msg.connections || []);
       this._updateStats(msg.stats || {});
+      this._updateChart(msg.stats || {});
+      const tickEl = document.getElementById("tick-val");
+      if (tickEl) tickEl.textContent = msg.tick;
     } else if (msg.type === "status") {
-      this._setStatus(msg.state);
+      this._applyStatus(msg.state);
       if (typeof msg.tick_ms === "number") {
-        const speedEl = document.getElementById("speed");
+        const speedEl = document.getElementById("f-tick-ms");
         const speedValEl = document.getElementById("speed-val");
         if (speedEl) speedEl.value = msg.tick_ms;
         if (speedValEl) speedValEl.textContent = msg.tick_ms;
       }
     } else if (msg.type === "init") {
-      // 初始化消息 — 可在此显示配置信息
       console.log("仿真初始化:", msg.total_neurons, "个神经元");
     }
+  }
+
+  /** 更新时序曲线。 */
+  _updateChart(stats) {
+    this.chart.push(Number(stats.tick) || 0, stats);
   }
 
   /**
@@ -142,6 +402,8 @@ class NetworkMonitor {
    */
   _updateNetwork(neurons, connections) {
     if (!neurons.length) return;
+    const placeholder = document.getElementById("canvas-placeholder");
+    if (placeholder) placeholder.style.display = "none";
 
     // 更新坐标比例尺
     const xs = neurons.map((n) => n.x);
@@ -228,10 +490,10 @@ class NetworkMonitor {
   }
 
   /**
-   * 更新仿真状态指示器。
-   * @param {string} state — running / paused / finished
+   * 应用仿真状态：徽标、控制按钮、启动面板与结果链接。
+   * @param {string} state — idle / running / paused / finished
    */
-  _setStatus(state) {
+  _applyStatus(state) {
     this.simState = state;
     const badge = document.getElementById("status-badge");
     const map = { running: "运行中", paused: "已暂停", finished: "已结束", idle: "空闲" };
@@ -243,17 +505,28 @@ class NetworkMonitor {
     const btnPause = document.getElementById("btn-pause");
     const btnResume = document.getElementById("btn-resume");
     const btnStop = document.getElementById("btn-stop");
+    const launchPanel = document.getElementById("launch-panel");
+    const resultLink = document.getElementById("result-link");
     const finished = state === "finished";
+    const running = state === "running" || state === "paused";
 
     if (btnPause) {
       btnPause.classList.toggle("active", state === "paused");
-      btnPause.disabled = finished;
+      btnPause.disabled = !running || state === "paused";
     }
     if (btnResume) {
       btnResume.classList.toggle("active", state === "running");
-      btnResume.disabled = finished;
+      btnResume.disabled = !running || state === "running";
     }
-    if (btnStop) btnStop.disabled = finished;
+    if (btnStop) btnStop.disabled = !running;
+
+    // 启动面板在空闲与结束时可见（结束后可立即配置再次运行）；结果入口在结束时显示
+    if (launchPanel) launchPanel.style.display = (state === "idle" || state === "finished") ? "" : "none";
+    if (resultLink) resultLink.style.display = finished ? "" : "none";
+    if (finished && this.experimentId) {
+      const link = document.getElementById("result-link-a");
+      if (link) link.href = `/experiments/${this.experimentId}`;
+    }
   }
 
   /**
@@ -270,7 +543,5 @@ class NetworkMonitor {
 
 // ── 页面加载时初始化 ──────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", () => {
-  const monitor = new NetworkMonitor();
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  monitor.connect(`${proto}://${location.host}/ws`);
+  new NetworkMonitor();
 });

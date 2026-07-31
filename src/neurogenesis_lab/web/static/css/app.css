@@ -503,6 +503,111 @@ code { background: var(--panel); padding: 2px 6px; border-radius: 4px; font-size
   border-radius: 50%; margin-right: 6px; vertical-align: middle;
 }
 
+/* ── 实验工作台布局 ─────────────────────────────────── */
+.workbench-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr 320px;
+  grid-template-rows: auto 1fr;
+  gap: 0;
+  height: calc(100vh - 52px - 40px);
+  margin: 0;
+  max-width: 100%;
+  padding: 0;
+}
+.workbench-topbar {
+  grid-column: 1 / 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.topbar-left { display: flex; align-items: center; gap: 12px; }
+.topbar-title { font-size: 16px; font-weight: 600; }
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.topbar-meta { font-size: 13px; color: var(--muted); }
+.topbar-meta span { color: var(--text); font-weight: 500; }
+
+.launch-panel {
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+}
+.launch-panel .form-group { margin-bottom: 0.85rem; }
+.launch-panel .form-group label {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 12px;
+}
+.launch-panel .form-group input,
+.launch-panel .form-group select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 7px 9px;
+  font-size: 13px;
+  box-sizing: border-box;
+}
+.launch-panel .form-group input:focus,
+.launch-panel .form-group select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.btn-block { width: 100%; justify-content: center; margin-top: 4px; }
+.launch-hint {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 10px;
+  border-top: 1px dashed var(--border);
+  padding-top: 10px;
+}
+
+.canvas-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  padding: 24px;
+  pointer-events: none;
+}
+.placeholder-title { font-size: 16px; font-weight: 600; color: var(--muted); }
+.placeholder-sub { font-size: 13px; color: var(--muted); max-width: 420px; line-height: 1.6; }
+
+.chart-panel {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+.chart-panel .panel-label { margin-bottom: 4px; }
+.result-link { margin-top: 4px; }
+.stat-sub { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* 窄屏适配：工作台降级为上下布局 */
+@media (max-width: 1100px) {
+  .workbench-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    height: auto;
+    min-height: calc(100vh - 52px - 40px);
+  }
+  .workbench-topbar { grid-column: 1 / 2; }
+  .launch-panel { border-right: none; border-bottom: 1px solid var(--border); }
+  .monitor-canvas-wrap { min-height: 420px; }
+}
+
 /* ── 页面差异化样式 ─────────────────────────────────── */
 
 /* 页面标题通用样式 */

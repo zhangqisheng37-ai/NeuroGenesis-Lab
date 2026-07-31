@@ -189,6 +189,8 @@ function renderTable() {
         <td>${neurons}</td>
         <td>${runtime}</td>
         <td>
+          <button class="btn btn-primary" style="padding:2px 8px;font-size:12px;"
+            onclick="runExperiment('${exp.experiment_id}')">▶ 运行</button>
           <button class="btn btn-danger" style="padding:2px 8px;font-size:12px;"
             onclick="deleteExperiment('${exp.experiment_id}')">删除</button>
         </td>
@@ -312,6 +314,30 @@ async function batchDelete() {
   }
   document.getElementById("check-all").checked = false;
   updateBatchBtn();
+}
+
+/** 使用实验记录中的配置重新启动仿真并跳转工作台实时可视化。 */
+async function runExperiment(experimentId) {
+  try {
+    const detail = await apiGet(`/api/experiments/${experimentId}`);
+    if (!detail || !detail.config) {
+      showToast("该实验没有可用配置，无法重新运行", "warning");
+      return;
+    }
+    const result = await apiPost("/api/run", {
+      config: detail.config,
+      tick_ms: 30,
+      experiment_name: detail.experiment_name || null,
+    });
+    if (result.error) {
+      showToast(result.error, "error");
+      return;
+    }
+    showToast("已启动可视化运行，跳转工作台", "success");
+    window.location.href = "/monitor";
+  } catch (e) {
+    showToast("启动失败: " + e.message, "error");
+  }
 }
 
 async function deleteExperiment(id) {

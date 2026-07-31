@@ -347,16 +347,15 @@
       showToast("校验请求失败: " + e.message, "error");
       return;
     }
-    // 启动仿真
+    // 启动仿真（携带完整配置，工作台实时可视化）
     try {
       await withLoading(runBtn, async () => {
         await apiPost("/api/run", {
-          ticks: configData.simulation?.ticks || 100,
-          seed: configData.simulation?.seed || 42,
-          neurons: 8,
+          config: configData,
+          tick_ms: 50,
         });
       });
-      showToast("仿真已启动，跳转到监控页面", "success");
+      showToast("仿真已启动，跳转到工作台", "success");
       window.location.href = "/monitor";
     } catch (e) {
       showToast("启动失败: " + e.message, "error");

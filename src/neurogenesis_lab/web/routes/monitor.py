@@ -1,8 +1,8 @@
 """实时监控 REST API 路由 (Phase 4 / P5.3)
 
 提供 Web 管理界面中的实时监控功能：
-- ``GET /monitor`` 渲染监控页面
-- ``POST /api/run`` 启动后台仿真
+- ``GET /monitor`` 渲染监控页面（实验运行工作台）
+- ``POST /api/run`` 启动后台仿真（支持完整配置，运行结束自动写入实验库）
 - ``GET /api/run/status`` 查询仿真状态
 - ``POST /api/run/command`` 发送控制命令
 - ``WS /ws`` WebSocket 实时数据推送
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import threading
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any
@@ -21,14 +22,25 @@ from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
-from neurogenesis_lab.config import SimConfig, seed_all
+from neurogenesis_lab.cli.run import (
+    _finalize_run,
+    _init_logging,
+    _init_network,
+    _start_tracking,
+)
+from neurogenesis_lab.config import SimConfig, seed_all, sim_config_from_dict
+from neurogenesis_lab.experiments import ExperimentRecord, ExperimentStore, utc_now_iso
+from neurogenesis_lab.learning import AutoLearner, RuleDiscovery
 from neurogenesis_lab.live_protocol import (
     STATE_FINISHED,
     TickMessageBuilder,
     build_init_message,
     build_status_message,
+    clamp_tick_ms,
     parse_command,
 )
+from neurogenesis_lab.network import Network
+from neurogenesis_lab.observability import NetworkObserver, ObservabilityLogger
 from neurogenesis_lab.server import LiveControlState
 
 router = APIRouter(tags=["monitor"])
@@ -45,6 +57,7 @@ _simulation_state: dict[str, Any] = {
     "tick": 0,
     "state": "idle",      # idle / running / paused / finished
     "tick_ms": 50,
+    "experiment_id": None,  # 当前运行对应的实验记录 ID
     "message_queue": None,  # deque
     "message_event": None,  # asyncio.Event (lazy, created in event loop)
 }
@@ -59,6 +72,7 @@ def _reset_simulation_state() -> None:
     _simulation_state["tick"] = 0
     _simulation_state["state"] = "idle"
     _simulation_state["tick_ms"] = 50
+    _simulation_state["experiment_id"] = None
     _simulation_state["message_queue"] = None
     _simulation_state["message_event"] = None
 
@@ -88,27 +102,136 @@ def _push_message(message: dict[str, Any]) -> None:
             pass
 
 
-def _run_simulation_thread(cfg: SimConfig, args: argparse.Namespace) -> None:
-    """在后台线程中运行仿真循环（参考 serve.py 模式）。"""
-    from neurogenesis_lab.cli.run import _init_network
-    from neurogenesis_lab.learning import AutoLearner, RuleDiscovery
-
+def _finish_tracking_in_thread(
+    db_path: str,
+    record: ExperimentRecord | None,
+    *,
+    status: str,
+    runtime_seconds: float | None = None,
+    summary: dict[str, Any] | None = None,
+    final_metrics: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    """在仿真线程内写入实验结束元数据（SQLite 连接须在线程内创建）。"""
+    if record is None:
+        return
     try:
-        network, start_tick, end_tick = _init_network(cfg, args)
-        control: LiveControlState = _simulation_state["control"]
-        queue: deque = _simulation_state["message_queue"]
-        builder = TickMessageBuilder()
-        init_msg = build_init_message(cfg.to_dict(), len(network.neurons))
-        queue.append(init_msg)
+        with ExperimentStore(db_path) as store:
+            record.status = status
+            record.finished_at = utc_now_iso()
+            record.runtime_seconds = runtime_seconds
+            record.summary = dict(summary or {})
+            record.final_metrics = dict(final_metrics or {})
+            record.error = error
+            store.save(record)
+    except Exception as exc:
+        print(f"  警告: 实验元数据写入失败 ({exc})")
 
-        auto_learner = AutoLearner(discovery=RuleDiscovery(min_support=2))
-        last_tick = start_tick
 
+def _prepare_run(
+    body: dict[str, Any], db_path: str
+) -> tuple[
+    SimConfig,
+    argparse.Namespace,
+    Network,
+    ObservabilityLogger,
+    NetworkObserver,
+    ExperimentRecord | None,
+    int,
+    int,
+    str,
+]:
+    """在主线程中准备一次仿真运行（配置/网络/日志/实验追踪）。
+
+    Args:
+        body: 请求体参数（``config`` 优先，其余为基本参数）。
+        db_path: 实验数据库路径。
+
+    Returns:
+        (cfg, sim_args, network, logger, observer, record, start_tick, end_tick, db_path)。
+
+    Raises:
+        ValueError: 参数非法时。
+    """
+    config_data = body.get("config")
+    if isinstance(config_data, dict) and config_data:
+        cfg = sim_config_from_dict(config_data)
+    else:
+        cfg = SimConfig()
+        cfg.ticks = max(1, int(body.get("ticks", cfg.ticks)))
+        cfg.seed = int(body.get("seed", cfg.seed))
+        cfg.dt = max(0.0001, float(body.get("dt", cfg.dt)))
+
+    errors = cfg.validate()
+    if errors:
+        raise ValueError("; ".join(errors))
+
+    sim_args = argparse.Namespace(
+        resume_from=None,
+        neurons=max(1, int(body.get("neurons", 8))),
+        expr=str(body.get("expr", "1+2=3") or "1+2=3"),
+        input_weight=max(0.0, float(body.get("input_weight", 40.0) or 40.0)),
+        stim_interval=max(1, int(body.get("stim_interval", 5) or 5)),
+        output=str(body.get("output", "outputs") or "outputs"),
+        debug=False,
+        log_interval=max(1, int(body.get("log_interval", 1) or 1)),
+        max_file_size=0,
+        gzip_output=False,
+        async_log=False,
+        log_buffer_size=256,
+        visualize=False,
+        plot_interval=5,
+        checkpoint_interval=0,
+        checkpoint_dir="outputs",
+        experiment_name=body.get("experiment_name"),
+        live_monitor=False,
+    )
+
+    seed_all(cfg.seed)
+    network, start_tick, end_tick = _init_network(cfg, sim_args)
+    logger, observer, _live_monitor, _cp_interval, _cp_dir = _init_logging(cfg, sim_args, network)
+    store, record = _start_tracking(cfg, sim_args, logger.get_output_path(), db_path=db_path)
+    if store is not None:
+        # 主线程创建、主线程使用并立即关闭；仿真线程收尾时在自身线程内重建连接
+        store.close()
+    return (
+        cfg,
+        sim_args,
+        network,
+        logger,
+        observer,
+        record,
+        start_tick,
+        end_tick,
+        db_path,
+    )
+
+
+def _run_simulation_thread(
+    *,
+    cfg: SimConfig,
+    args: argparse.Namespace,
+    network: Network,
+    logger: ObservabilityLogger,
+    observer: NetworkObserver,
+    record: ExperimentRecord | None,
+    start_tick: int,
+    end_tick: int,
+    db_path: str,
+) -> None:
+    """在后台线程中运行仿真循环，结束后写入实验库并推送 finished 状态。"""
+    control: LiveControlState = _simulation_state["control"]
+    builder = TickMessageBuilder()
+    _push_message(build_init_message(cfg.to_dict(), len(network.neurons)))
+
+    auto_learner = AutoLearner(discovery=RuleDiscovery(min_support=2))
+    last_tick = start_tick
+    t0 = time.time()
+    error: str | None = None
+    try:
         for t in range(start_tick, end_tick + 1):
             while control.paused and not control.stopped:
-                import time as _time
-
-                _time.sleep(0.05)
+                time.sleep(0.05)
             if control.stopped:
                 break
 
@@ -117,41 +240,55 @@ def _run_simulation_thread(cfg: SimConfig, args: argparse.Namespace) -> None:
             snapshot["rule_count"] = report["rule_count"]
             snapshot["prediction_accuracy"] = report["prediction_accuracy"]
 
-            msg = builder.build(t, snapshot, network)
-            queue.append(msg)
+            _push_message(builder.build(t, snapshot, network))
             _simulation_state["tick"] = t
+            logger.log_tick(observer, t, snapshot)
 
             delay = control.speed_ms / 1000.0
             if delay > 0:
-                import time as _time
-
-                _time.sleep(delay)
+                time.sleep(delay)
             last_tick = t
+    except Exception as exc:
+        error = str(exc) or type(exc).__name__
 
-        _simulation_state["state"] = "finished"
-        _simulation_state["tick_ms"] = control.speed_ms
-        queue.append(build_status_message(STATE_FINISHED, last_tick, control.speed_ms))
-        # 唤醒可能正在等待的 WebSocket 处理器
-        event = _simulation_state.get("message_event")
-        if event is not None:
-            try:
-                event.set()
-            except RuntimeError:
-                pass
-    except Exception:
-        _simulation_state["state"] = "finished"
-        # 新变量名避免覆盖 try 块中已注解的 queue 类型
-        pending_queue: deque | None = _simulation_state.get("message_queue")
-        if pending_queue is not None:
-            pending_queue.append(
-                build_status_message(STATE_FINISHED, _simulation_state.get("tick", 0), 50)
+    elapsed = time.time() - t0
+    status = "completed"
+    summary_dict: dict[str, Any] = {}
+    final_metrics: dict[str, Any] = {}
+    try:
+        if error is None:
+            summary, final_metrics, _output_path = _finalize_run(
+                run_end_tick=last_tick,
+                network=network,
+                observer=observer,
+                logger=logger,
             )
-        event = _simulation_state.get("message_event")
-        if event is not None:
-            try:
-                event.set()
-            except RuntimeError:
-                pass
+            summary_dict = dict(summary)
+        else:
+            status = "failed"
+            logger.close()
+    except Exception as exc:
+        status = "failed"
+        error = str(exc) or type(exc).__name__
+        try:
+            logger.close()
+        except Exception:
+            pass
+    _finish_tracking_in_thread(
+        db_path,
+        record,
+        status=status,
+        runtime_seconds=elapsed,
+        summary=summary_dict,
+        final_metrics=final_metrics,
+        error=error,
+    )
+
+    _simulation_state["state"] = "finished"
+    _simulation_state["tick_ms"] = control.speed_ms
+    # 线程收尾即释放运行锁，避免无 WebSocket 客户端时 running 永远卡住
+    _simulation_state["running"] = False
+    _push_message(build_status_message(STATE_FINISHED, last_tick, control.speed_ms))
 
 
 # ── 页面路由 ──────────────────────────────────────────────────
@@ -177,12 +314,13 @@ async def start_simulation(request: Request) -> JSONResponse:
     """启动仿真。
 
     请求体（可选 JSON）:
-        ticks (int): 仿真步数，默认 100。
-        seed (int): 随机种子，默认 42。
-        neurons (int): 神经元数量，默认 8。
+        config (dict): 完整配置字典（asdict 或分组格式），优先于基本参数。
+        ticks / seed / dt / neurons / expr / input_weight / stim_interval: 基本参数。
+        tick_ms (int): 每 tick 间隔毫秒数，默认 50。
+        experiment_name (str): 实验名称。
 
     Returns:
-        ``{"status": "started", "ws_url": "/ws"}`` 或 409/400 错误。
+        ``{"status": "started", "experiment_id": "...", "ws_url": "/ws"}`` 或 409/400 错误。
     """
     with _simulation_lock:
         if _simulation_state["running"]:
@@ -195,46 +333,66 @@ async def start_simulation(request: Request) -> JSONResponse:
             body = await request.json()
         except Exception:
             body = {}
+        if not isinstance(body, dict):
+            body = {}
 
-        ticks = max(1, int(body.get("ticks", 100)))
-        seed = int(body.get("seed", 42))
-        neurons = max(1, int(body.get("neurons", 8)))
+        try:
+            prepared = _prepare_run(body, request.app.state.db_path)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        except Exception as exc:
+            return JSONResponse({"error": f"启动失败: {exc}"}, status_code=500)
 
-        cfg = SimConfig(ticks=ticks, seed=seed)
-        errors = cfg.validate()
-        if errors:
-            return JSONResponse({"error": "; ".join(errors)}, status_code=400)
+        (
+            cfg,
+            sim_args,
+            network,
+            logger,
+            observer,
+            record,
+            start_tick,
+            end_tick,
+            db_path,
+        ) = prepared
+        tick_ms = clamp_tick_ms(body.get("tick_ms", 50))
 
-        sim_args = argparse.Namespace(
-            resume_from=None,
-            neurons=neurons,
-            expr="1+2=3",
-            input_weight=40.0,
-            stim_interval=5,
-        )
-
-        seed_all(seed)
-
-        control = LiveControlState(tick_ms=50)
+        control = LiveControlState(tick_ms=tick_ms)
         message_queue: deque = deque(maxlen=1000)
         _simulation_state["running"] = True
         _simulation_state["control"] = control
         _simulation_state["config"] = cfg
         _simulation_state["tick"] = 0
         _simulation_state["state"] = "running"
-        _simulation_state["tick_ms"] = 50
+        _simulation_state["tick_ms"] = tick_ms
+        _simulation_state["experiment_id"] = record.experiment_id if record is not None else None
         _simulation_state["message_queue"] = message_queue
         # message_event 将在 WebSocket 首次连接时创建
 
         thread = threading.Thread(
             target=_run_simulation_thread,
-            args=(cfg, sim_args),
+            kwargs={
+                "cfg": cfg,
+                "args": sim_args,
+                "network": network,
+                "logger": logger,
+                "observer": observer,
+                "record": record,
+                "start_tick": start_tick,
+                "end_tick": end_tick,
+                "db_path": db_path,
+            },
             daemon=True,
         )
         _simulation_state["thread"] = thread
         thread.start()
 
-        return JSONResponse({"status": "started", "ws_url": "/ws"})
+        return JSONResponse(
+            {
+                "status": "started",
+                "experiment_id": _simulation_state["experiment_id"],
+                "ws_url": "/ws",
+            }
+        )
 
 
 @router.get("/api/run/status")
@@ -253,6 +411,7 @@ async def simulation_status() -> JSONResponse:
                 "tick": _simulation_state["tick"],
                 "state": display_state,
                 "tick_ms": control.speed_ms,
+                "experiment_id": _simulation_state.get("experiment_id"),
             }
         )
     return JSONResponse(
@@ -261,6 +420,7 @@ async def simulation_status() -> JSONResponse:
             "tick": 0,
             "state": "idle",
             "tick_ms": 0,
+            "experiment_id": None,
         }
     )
 

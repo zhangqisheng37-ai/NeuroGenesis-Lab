@@ -18,6 +18,14 @@
       <span class="stat-value">{{ total_experiments }}</span>
     </div>
   </div>
+
+  <div class="card stat-card">
+    <div class="card-header">当前仿真</div>
+    <div class="card-body">
+      <span class="stat-value" id="run-state">…</span>
+      <span class="stat-sub" id="run-tick"></span>
+    </div>
+  </div>
 </section>
 
 <section class="section">
@@ -34,6 +42,7 @@
         <th>创建时间</th>
         <th>Seed</th>
         <th>神经元数</th>
+        <th>操作</th>
       </tr>
     </thead>
     <tbody>
@@ -44,6 +53,10 @@
         <td>{{ exp.created_at }}</td>
         <td>{{ exp.seed }}</td>
         <td>{{ exp.neurons }}</td>
+        <td>
+          <button class="btn btn-primary" style="padding:2px 8px;font-size:12px;"
+            onclick="rerunFromDashboard('{{ exp.experiment_id }}')">▶ 可视化运行</button>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
@@ -87,9 +100,9 @@
     </a>
     <a href="/monitor" class="card action-card">
       <div class="card-body">
-        <span class="action-icon">📡</span>
-        <h3>启动实时监控</h3>
-        <p>通过 WebSocket 实时观察仿真过程</p>
+        <span class="action-icon">🎛️</span>
+        <h3>实验工作台</h3>
+        <p>配置参数并实时可视化运行仿真</p>
       </div>
     </a>
     <a href="/benchmark" class="card action-card">
@@ -153,6 +166,53 @@
 
 {% block scripts %}
 <script>
+/** 使用实验配置启动可视化运行并跳转工作台。 */
+async function rerunFromDashboard(experimentId) {
+  try {
+    const detail = await apiGet('/api/experiments/' + encodeURIComponent(experimentId));
+    if (!detail || !detail.config) {
+      showToast('该实验没有可用配置，无法重新运行', 'warning');
+      return;
+    }
+    const result = await apiPost('/api/run', {
+      config: detail.config,
+      tick_ms: 30,
+      experiment_name: detail.experiment_name || null,
+    });
+    if (result.error) {
+      showToast(result.error, 'error');
+      return;
+    }
+    showToast('已启动可视化运行，跳转工作台', 'success');
+    window.location.href = '/monitor';
+  } catch (e) {
+    showToast('启动失败: ' + e.message, 'error');
+  }
+}
+
+/** 轮询当前仿真状态并渲染到统计卡。 */
+async function pollRunStatus() {
+  try {
+    const data = await apiGet('/api/run/status', { silent: true });
+    const el = document.getElementById('run-state');
+    const tickEl = document.getElementById('run-tick');
+    if (!el) return;
+    const map = { running: '运行中', paused: '已暂停', finished: '已结束', idle: '空闲' };
+    if (data.running) {
+      el.textContent = map[data.state] || data.state;
+      el.style.color = data.state === 'paused' ? 'var(--spike)' : 'var(--accent)';
+      if (tickEl) tickEl.textContent = 'tick ' + data.tick;
+    } else {
+      el.textContent = '空闲';
+      el.style.color = 'var(--muted)';
+      if (tickEl) tickEl.textContent = '';
+    }
+  } catch (e) {
+    const el = document.getElementById('run-state');
+    if (el) { el.textContent = '未知'; el.style.color = 'var(--muted)'; }
+  }
+}
+
 async function showSysInfo() {
   try {
     const data = await fetch('/api/info').then(r => r.json());
@@ -169,5 +229,9 @@ async function showSysInfo() {
     alert('获取系统信息失败: ' + e.message);
   }
 }
+
+// 每 3 秒刷新当前仿真状态
+pollRunStatus();
+setInterval(pollRunStatus, 3000);
 </script>
 {% endblock %}

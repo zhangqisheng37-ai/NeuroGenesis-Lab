@@ -289,12 +289,20 @@ def _print_summary(
 
 
 def _start_tracking(
-    cfg: SimConfig, args: argparse.Namespace, output_path: Path
+    cfg: SimConfig, args: argparse.Namespace, output_path: Path, db_path: Path | str | None = None
 ) -> tuple[ExperimentStore | None, ExperimentRecord | None]:
-    """创建实验追踪记录（status=running），失败时降级为不追踪。"""
+    """创建实验追踪记录（status=running），失败时降级为不追踪。
+
+    Args:
+        cfg: 仿真配置。
+        args: 命令行参数。
+        output_path: 输出文件路径。
+        db_path: 实验数据库路径，None 时使用 ``outputs/experiments.db``。
+    """
     try:
         output_dir = output_path.parent
-        db_path = Path(getattr(args, "output", "outputs") or "outputs") / "experiments.db"
+        if db_path is None:
+            db_path = Path(getattr(args, "output", "outputs") or "outputs") / "experiments.db"
         store = ExperimentStore(db_path)
         record = ExperimentRecord(
             experiment_id=output_dir.name,
@@ -345,7 +353,10 @@ def _finish_tracking(
     except Exception as exc:
         print(f"  警告: 实验元数据写入失败 ({exc})")
     finally:
-        store.close()
+        try:
+            store.close()
+        except Exception as exc:
+            print(f"  警告: 实验存储关闭失败 ({exc})")
 
 
 def _finalize_run(

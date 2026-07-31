@@ -17,7 +17,10 @@
     <div class="section">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
         <h2 style="margin:0;">{{ experiment.experiment_id }}</h2>
-        <a href="/experiments" class="btn">← 返回列表</a>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-primary" onclick="rerunExperiment('{{ experiment.experiment_id }}')">▶ 重新运行并可视化</button>
+          <a href="/experiments" class="btn">← 返回列表</a>
+        </div>
       </div>
 
       <!-- 运行摘要 -->
@@ -201,6 +204,31 @@
   const expId = "{{ experiment.experiment_id }}";
   let loaded = false;
 
+  // 重新运行并可视化：使用实验记录中的配置启动仿真并跳转工作台
+  async function rerunExperiment() {
+    try {
+      const detail = await apiGet("/api/experiments/" + encodeURIComponent(expId));
+      if (!detail || !detail.config) {
+        showToast("该实验没有可用配置，无法重新运行", "warning");
+        return;
+      }
+      const result = await apiPost("/api/run", {
+        config: detail.config,
+        tick_ms: 30,
+        experiment_name: detail.experiment_name || null,
+      });
+      if (result.error) {
+        showToast(result.error, "error");
+        return;
+      }
+      showToast("已启动可视化运行，跳转工作台", "success");
+      window.location.href = "/monitor";
+    } catch (e) {
+      showToast("启动失败: " + e.message, "error");
+    }
+  }
+  window.rerunExperiment = rerunExperiment;
+
   // 折叠/展开
   document.getElementById("output-toggle").addEventListener("click", function () {
     const section = document.getElementById("output-section");
@@ -257,9 +285,11 @@
 {% endif %}
 {% if mode == "compare" and experiments | length >= 2 %}
 <script src="/static/js/charts.js"></script>
+<script id="compare-data" type="application/json">{{ experiments | tojson }}</script>
 <script>
 (function () {
-  const experiments = {{ experiments | tojson }};
+  "use strict";
+  const experiments = JSON.parse(document.getElementById("compare-data").textContent);
   const data = experiments.map(exp => {
     const values = {};
     Object.assign(values, exp.summary || {}, exp.final_metrics || {});
