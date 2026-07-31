@@ -179,6 +179,31 @@ class TestSimConfig:
         cfg = sim_config_from_dict({})
         assert cfg == SimConfig()
 
+    def test_sim_config_from_dict_string_values(self) -> None:
+        """字符串值（HTML 表单提交形态）自动转换为数值类型。"""
+        cfg = sim_config_from_dict(
+            {
+                "simulation": {"ticks": "150", "seed": "7", "dt": "0.5"},
+                "neuron": {"tau_m": "15.0", "mem_size": "32"},
+                "network": {"adaptive_decay": "true", "energy_decay": "0.01"},
+            }
+        )
+        assert cfg.ticks == 150
+        assert cfg.seed == 7
+        assert cfg.dt == 0.5
+        assert cfg.neuron.tau_m == 15.0
+        assert cfg.neuron.mem_size == 32
+        assert cfg.network.adaptive_decay is True
+        assert cfg.network.energy_decay == 0.01
+        assert cfg.validate() == []
+
+    def test_sim_config_from_dict_dict_field_string_fallback(self) -> None:
+        """dict 字段收到字符串（如表单误提交）时忽略，使用默认值兜底。"""
+        cfg = sim_config_from_dict({"evolution": {"fitness_weights": "[object Object]"}})
+        assert isinstance(cfg.evolution.fitness_weights, dict)
+        assert cfg.evolution.fitness_weights["propagation"] == 1.0
+        assert cfg.validate() == []
+
 
 class TestSeedAll:
     def test_seed_reproducibility(self) -> None:

@@ -63,6 +63,21 @@ def test_validate_config_invalid(client):
     assert len(body["errors"]) > 0
 
 
+def test_validate_config_string_values(client):
+    """字符串值（真实表单提交形态）校验通过且不抛 500。"""
+    resp = client.post(
+        "/api/config/validate",
+        json={
+            "simulation": {"ticks": "100", "seed": "42", "dt": "1.0"},
+            "neuron": {"tau_m": "20.0"},
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["valid"] is True, body
+    assert body["errors"] == []
+
+
 def test_validate_config_bad_json(client):
     """非 JSON 请求体返回错误。"""
     resp = client.post(
