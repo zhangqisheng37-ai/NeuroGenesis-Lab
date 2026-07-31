@@ -41,15 +41,30 @@ def create_web_app(db_path: str = "outputs/experiments.db") -> FastAPI:
     # 静态文件与模板
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
     templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
+    # 全局模板变量：所有页面统一获得版本号（路由无需逐个传入）
+    templates.env.globals["version"] = __version__
 
     # ── 注册路由器 ────────────────────────────────────────────
-    from neurogenesis_lab.web.routes.config import router as config_router
-    from neurogenesis_lab.web.routes.experiments import router as experiments_router
-    from neurogenesis_lab.web.routes.monitor import router as monitor_router
+    from neurogenesis_lab.web.routes import config as config_mod
+    from neurogenesis_lab.web.routes import experiments as experiments_mod
+    from neurogenesis_lab.web.routes import monitor as monitor_mod
 
-    app.include_router(experiments_router)
-    app.include_router(config_router)
-    app.include_router(monitor_router)
+    app.include_router(experiments_mod.router)
+    app.include_router(config_mod.router)
+    app.include_router(monitor_mod.router)
+
+    # 路由模块各自持有的模板实例同样注入版本号，保持导航/页脚一致
+    for mod in (experiments_mod, config_mod, monitor_mod):
+        tpls = getattr(mod, "_templates", None) or getattr(mod, "_Templates", None)
+        if tpls is not None:
+            tpls.env.globals["version"] = __version__
+
+    # ── favicon：避免 404 噪声 ──────────────────────────────
+
+    @app.get("/favicon.ico", include_in_schema=False)
+    async def favicon() -> JSONResponse:
+        return JSONResponse(content=None, status_code=204)
+
 
     # ── 仪表盘首页 ────────────────────────────────────────────
 

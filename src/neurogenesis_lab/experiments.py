@@ -303,6 +303,23 @@ class ExperimentStore:
         ).fetchone()
         return self._row_to_record(row) if row is not None else None
 
+    def mark_stale_running(self, error: str = "运行中断（服务重启）") -> int:
+        """将残留的 running 记录标记为 failed — 用于服务重启后清理僵尸记录。
+
+        Args:
+            error: 写入记录的错误信息。
+
+        Returns:
+            被标记的记录条数。
+        """
+        cur = self._conn.execute(
+            "UPDATE experiments SET status = 'failed', error = ?, updated_at = ? "
+            "WHERE status = 'running'",
+            (error, utc_now_iso()),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
     def list_experiments(
         self, filter_expression: str | None = None, limit: int = 0
     ) -> list[ExperimentRecord]:

@@ -256,12 +256,19 @@ class NetworkMonitor {
     if (el) el.value = value;
   }
 
+  /** 更新顶部实验 ID 显示。 */
+  _updateExperimentId() {
+    const expEl = document.getElementById("exp-id");
+    if (expEl) expEl.textContent = this.experimentId || "—";
+  }
+
   /** 检查是否有正在运行的仿真（页面刷新后恢复）。 */
   async _checkRunning() {
     try {
       const status = await apiGet("/api/run/status", { silent: true });
       if (status.running) {
         this.experimentId = status.experiment_id || null;
+        this._updateExperimentId();
         this._applyStatus(status.state || "running");
         this._connect();
       }
@@ -314,6 +321,7 @@ class NetworkMonitor {
         return;
       }
       this.experimentId = result.experiment_id || null;
+      this._updateExperimentId();
       this.chart.reset();
       this._applyStatus("running");
       this._connect();
@@ -340,7 +348,16 @@ class NetworkMonitor {
     };
 
     this.ws.onclose = () => {
-      if (connEl) { connEl.textContent = "连接断开"; connEl.className = "conn-indicator offline"; }
+      if (connEl) {
+        if (this.simState === "finished") {
+          // 仿真正常结束后的连接关闭不是错误
+          connEl.textContent = "已结束";
+          connEl.className = "conn-indicator finished";
+        } else {
+          connEl.textContent = "连接断开";
+          connEl.className = "conn-indicator offline";
+        }
+      }
       // 自动重连（已结束时不再重连）
       if (this.simState !== "finished") {
         setTimeout(() => this.connect(), 1500);

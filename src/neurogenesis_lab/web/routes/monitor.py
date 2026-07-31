@@ -153,6 +153,12 @@ def _prepare_run(
     Raises:
         ValueError: 参数非法时。
     """
+    # 清理服务重启后残留的 running 僵尸记录（单实例语义下旧记录必然已中断）
+    try:
+        with ExperimentStore(db_path) as cleanup_store:
+            cleanup_store.mark_stale_running()
+    except Exception as exc:
+        print(f"  警告: 清理残留运行记录失败 ({exc})")
     config_data = body.get("config")
     if isinstance(config_data, dict) and config_data:
         cfg = sim_config_from_dict(config_data)
