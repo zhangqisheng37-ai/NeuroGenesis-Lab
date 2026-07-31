@@ -42,3 +42,26 @@ def test_static_js_accessible(client):
     response = client.get("/static/js/app.js")
     assert response.status_code == 200
     assert "apiGet" in response.text
+
+
+def test_all_pages_include_version(client):
+    """所有页面导航/页脚均显示版本号（全局模板变量注入）。"""
+    from neurogenesis_lab import __version__
+
+    for path in ("/", "/experiments", "/configure", "/monitor", "/benchmark"):
+        resp = client.get(path)
+        assert resp.status_code == 200, f"{path} 返回 {resp.status_code}"
+        assert f"v{__version__}" in resp.text, f"{path} 缺少版本号"
+
+
+def test_favicon_no_404(client):
+    """favicon 请求不返回 404。"""
+    resp = client.get("/favicon.ico")
+    assert resp.status_code == 204
+
+
+def test_dashboard_run_card_points_to_workbench(client):
+    """仪表盘「运行实验」卡片指向实验工作台。"""
+    resp = client.get("/")
+    # 快速操作区中 href=/monitor 的卡片存在
+    assert '/monitor"' in resp.text

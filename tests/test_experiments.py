@@ -152,6 +152,21 @@ def test_store_delete(tmp_path: Path) -> None:
         assert store.get("run_x") is None
 
 
+def test_store_mark_stale_running(tmp_path: Path) -> None:
+    """残留 running 记录被标记为 failed（服务重启后僵尸记录清理）。"""
+    db = tmp_path / "experiments.db"
+    with ExperimentStore(db) as store:
+        store.save(_make_record("run_alive", status="running"))
+        store.save(_make_record("run_done", status="completed"))
+        marked = store.mark_stale_running()
+        assert marked == 1
+        stale = store.get("run_alive")
+        assert stale is not None and stale.status == "failed"
+        assert stale.error == "运行中断（服务重启）"
+        done = store.get("run_done")
+        assert done is not None and done.status == "completed"
+
+
 def test_store_export_index_json(tmp_path: Path) -> None:
     db = tmp_path / "experiments.db"
     index_path = tmp_path / "experiments" / "index.json"
