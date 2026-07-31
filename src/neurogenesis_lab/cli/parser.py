@@ -11,8 +11,48 @@ from neurogenesis_lab.cli.delete import cmd_delete
 from neurogenesis_lab.cli.info import cmd_info
 from neurogenesis_lab.cli.list import cmd_list
 from neurogenesis_lab.cli.run import cmd_run
+from neurogenesis_lab.cli.serve import cmd_serve
 
 _DEFAULT_DB = "outputs/experiments.db"
+
+
+def _add_live_args(parser: argparse.ArgumentParser) -> None:
+    """为 run / serve 添加实时可视化（WebSocket）共享参数。"""
+    parser.add_argument(
+        "--live-monitor",
+        action="store_true",
+        help="启用实时 WebSocket 可视化监控（浏览器观察）",
+    )
+    parser.add_argument("--host", type=str, default="127.0.0.1", help="实时服务绑定主机")
+    parser.add_argument("--port", type=int, default=8765, help="实时服务端口")
+    parser.add_argument(
+        "--ui-port",
+        type=int,
+        default=None,
+        help="浏览器打开的 UI 端口（默认同 --port，用于反向代理场景）",
+    )
+    parser.add_argument(
+        "--live-tick-ms",
+        type=int,
+        default=50,
+        help="每 tick 推送间隔（毫秒，用于调速）",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="不自动打开浏览器",
+    )
+    parser.add_argument(
+        "--wait-for-client",
+        action="store_true",
+        help="启动后等待至少一个客户端连接再开始仿真",
+    )
+    parser.add_argument(
+        "--client-wait-timeout",
+        type=float,
+        default=30.0,
+        help="等待客户端连接的超时秒数",
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -127,6 +167,23 @@ def _build_parser() -> argparse.ArgumentParser:
         default="outputs",
         help="checkpoint 输出目录",
     )
+    _add_live_args(run_parser)
+
+    # serve — 独立实时可视化服务
+    serve_parser = subparsers.add_parser("serve", help="启动实时可视化服务（流式推送仿真）")
+    serve_parser.add_argument("--ticks", type=int, default=None, help="仿真步数")
+    serve_parser.add_argument("--seed", type=int, default=None, help="随机种子")
+    serve_parser.add_argument("--dt", type=float, default=None, help="时间步长")
+    serve_parser.add_argument("--neurons", type=int, default=8, help="初始神经元数")
+    serve_parser.add_argument("--expr", type=str, default="1+2=3", help="输入表达式")
+    serve_parser.add_argument(
+        "--input-weight", type=float, default=40.0, help="外部注入事件的默认权重"
+    )
+    serve_parser.add_argument(
+        "--stim-interval", type=int, default=5, help="外部刺激注入间隔（tick）"
+    )
+    serve_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
+    _add_live_args(serve_parser)
 
     # benchmark
     bench_parser = subparsers.add_parser("benchmark", help="性能基准测试")
@@ -189,5 +246,7 @@ def main() -> None:
         cmd_compare(args)
     elif args.command == "delete":
         cmd_delete(args)
+    elif args.command == "serve":
+        cmd_serve(args)
     else:
         parser.print_help()

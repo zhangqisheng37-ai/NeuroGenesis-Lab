@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NeuroGenesis Lab · 实时监控</title>
+     <script
+       src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"
+       integrity="sha512-vc58qvvBdrDR4etbxMdlTt4GBQk1qjvyORR2nrsPsFPyrs+/u5c3+1Ct6upOgdZoIl7eq6k3a1UPDSNAQi/32A=="
+       crossorigin="anonymous"
+       referrerpolicy="no-referrer"
+     ></script>
+    <style>
+      :root {
+        --bg: #0f1117;
+        --panel: #171a23;
+        --border: #262b38;
+        --text: #e6e8ee;
+        --muted: #8b93a7;
+        --accent: #14b8a6;
+        --spike: #f59e0b;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: grid;
+        grid-template-columns: 1fr 300px;
+        grid-template-rows: auto 1fr;
+        height: 100vh;
+      }
+      header {
+        grid-column: 1 / 3;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      header h1 { font-size: 18px; margin: 0; }
+      #conn-state { font-size: 13px; color: var(--muted); }
+      #conn-state.online { color: var(--accent); }
+      #conn-state.offline { color: #ef4444; }
+      #canvas-wrap { position: relative; overflow: hidden; }
+      svg { width: 100%; height: 100%; display: block; }
+      aside {
+        background: var(--panel);
+        border-left: 1px solid var(--border);
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        overflow-y: auto;
+      }
+      .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+      .stat {
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 8px 10px;
+      }
+      .stat .label { font-size: 11px; color: var(--muted); }
+      .stat .value { font-size: 18px; font-weight: 600; margin-top: 2px; }
+      .controls { display: flex; flex-direction: column; gap: 10px; }
+      .btn-row { display: flex; gap: 8px; }
+      button {
+        flex: 1;
+        padding: 9px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        cursor: pointer;
+        transition: background 0.15s, border-color 0.15s;
+      }
+      button:hover { border-color: var(--accent); }
+      button.active { background: var(--accent); color: #04201c; border-color: var(--accent); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .speed { font-size: 13px; color: var(--muted); }
+      .speed input { width: 100%; }
+      .status-badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        background: var(--border);
+      }
+      .status-badge.running { background: #14532d; color: #86efac; }
+      .status-badge.paused { background: #78350f; color: #fcd34d; }
+      .status-badge.finished { background: #1e3a5f; color: #93c5fd; }
+      .legend { font-size: 12px; color: var(--muted); line-height: 1.7; }
+      .legend .dot {
+        display: inline-block; width: 10px; height: 10px;
+        border-radius: 50%; margin-right: 6px; vertical-align: middle;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>NeuroGenesis Lab · 实时监控</h1>
+      <span id="conn-state" class="offline">未连接</span>
+      <span id="status-badge" class="status-badge">—</span>
+    </header>
+
+    <div id="canvas-wrap">
+      <svg id="canvas"></svg>
+    </div>
+
+    <aside>
+      <div>
+        <div class="label" style="font-size:12px;color:var(--muted);margin-bottom:8px">种群指标</div>
+        <div class="stats" id="stats"></div>
+      </div>
+
+      <div class="controls">
+        <div class="btn-row">
+          <button id="btn-pause">暂停</button>
+          <button id="btn-resume" class="active">继续</button>
+        </div>
+        <div class="btn-row">
+          <button id="btn-stop">停止仿真</button>
+        </div>
+        <div class="speed">
+          <label for="speed">每 tick 间隔：<span id="speed-val">50</span> ms</label>
+          <input type="range" id="speed" min="0" max="500" step="10" value="50" />
+        </div>
+      </div>
+
+      <div class="legend">
+        <div><span class="dot" style="background:#14b8a6"></span>存活神经元（亮度随能量）</div>
+        <div><span class="dot" style="background:#f59e0b"></span>本 tick 放电</div>
+        <div><span class="dot" style="background:#3b4252"></span>死亡神经元</div>
+      </div>
+    </aside>
+
+    <script>
+      "use strict";
+      const STAT_FIELDS = [
+        ["tick", "Tick"],
+        ["alive_neurons", "存活"],
+        ["total_neurons", "总数"],
+        ["tick_spikes", "放电/tick"],
+        ["births", "出生"],
+        ["deaths", "死亡"],
+        ["mean_energy", "平均能量"],
+        ["prediction_error", "预测误差"],
+        ["rule_count", "规则数"],
+        ["prediction_accuracy", "预测准确率"],
+      ];
+
+      const svg = d3.select("#canvas");
+      const gLinks = svg.append("g").attr("stroke", "#2b3040").attr("stroke-opacity", 0.5);
+      const gNodes = svg.append("g");
+      let width = 0, height = 0, xScale = null, yScale = null;
+
+      function resize() {
+        const wrap = document.getElementById("canvas-wrap");
+        width = wrap.clientWidth;
+        height = wrap.clientHeight;
+        svg.attr("viewBox", `0 0 ${width} ${height}`);
+      }
+      window.addEventListener("resize", resize);
+      resize();
+
+      function updateScales(neurons) {
+        const xs = neurons.map((n) => n.x);
+        const ys = neurons.map((n) => n.y);
+        const pad = 40;
+        const xExtent = d3.extent(xs);
+        const yExtent = d3.extent(ys);
+        if (xExtent[0] === xExtent[1]) { xExtent[0] -= 1; xExtent[1] += 1; }
+        if (yExtent[0] === yExtent[1]) { yExtent[0] -= 1; yExtent[1] += 1; }
+        xScale = d3.scaleLinear().domain(xExtent).range([pad, width - pad]);
+        yScale = d3.scaleLinear().domain(yExtent).range([pad, height - pad]);
+      }
+
+      function energyColor(energy) {
+        const t = Math.max(0, Math.min(1, energy / 3));
+        return d3.interpolateViridis(0.25 + t * 0.6);
+      }
+
+      function renderTick(msg) {
+        const neurons = msg.neurons || [];
+        if (!neurons.length) return;
+        updateScales(neurons);
+        const byId = new Map(neurons.map((n) => [n.id, n]));
+
+        const links = (msg.connections || []).filter((c) => byId.has(c.source) && byId.has(c.target));
+        const lineSel = gLinks.selectAll("line").data(links, (d) => d.source + "->" + d.target);
+        lineSel.exit().remove();
+        lineSel.enter().append("line").merge(lineSel)
+          .attr("x1", (d) => xScale(byId.get(d.source).x))
+          .attr("y1", (d) => yScale(byId.get(d.source).y))
+          .attr("x2", (d) => xScale(byId.get(d.target).x))
+          .attr("y2", (d) => yScale(byId.get(d.target).y));
+
+        const nodeSel = gNodes.selectAll("circle").data(neurons, (d) => d.id);
+        nodeSel.exit().remove();
+        nodeSel.enter().append("circle")
+          .attr("r", 6)
+          .merge(nodeSel)
+          .attr("cx", (d) => xScale(d.x))
+          .attr("cy", (d) => yScale(d.y))
+          .attr("r", (d) => (d.spiked ? 9 : d.alive ? 6 : 4))
+          .attr("fill", (d) => (!d.alive ? "#3b4252" : d.spiked ? "#f59e0b" : energyColor(d.energy)))
+          .attr("stroke", (d) => (d.spiked ? "#fde68a" : "none"))
+          .attr("stroke-width", (d) => (d.spiked ? 2 : 0));
+
+        renderStats(msg.stats || {});
+      }
+
+      function fmt(v) {
+        if (typeof v !== "number") return v;
+        return Number.isInteger(v) ? v : v.toFixed(4);
+      }
+
+      function renderStats(stats) {
+        const box = d3.select("#stats");
+        const sel = box.selectAll(".stat").data(STAT_FIELDS, (d) => d[0]);
+        const enter = sel.enter().append("div").attr("class", "stat");
+        enter.append("div").attr("class", "label").text((d) => d[1]);
+        enter.append("div").attr("class", "value");
+        enter.merge(sel).select(".value").text((d) => fmt(stats[d[0]] ?? 0));
+      }
+
+      function setStatus(state) {
+        const badge = document.getElementById("status-badge");
+        const map = { running: "运行中", paused: "已暂停", finished: "已结束" };
+        badge.textContent = map[state] || state;
+        badge.className = "status-badge " + state;
+        document.getElementById("btn-pause").classList.toggle("active", state === "paused");
+        document.getElementById("btn-resume").classList.toggle("active", state === "running");
+        const finished = state === "finished";
+        document.getElementById("btn-pause").disabled = finished;
+        document.getElementById("btn-resume").disabled = finished;
+        document.getElementById("btn-stop").disabled = finished;
+      }
+
+      let ws = null;
+      function connect() {
+        const proto = location.protocol === "https:" ? "wss" : "ws";
+        ws = new WebSocket(`${proto}://${location.host}/ws`);
+        const state = document.getElementById("conn-state");
+        ws.onopen = () => { state.textContent = "已连接"; state.className = "online"; };
+        ws.onclose = () => {
+          state.textContent = "连接断开"; state.className = "offline";
+          setTimeout(connect, 1500);
+        };
+        ws.onmessage = (ev) => {
+          const msg = JSON.parse(ev.data);
+          if (msg.type === "tick_update") renderTick(msg);
+          else if (msg.type === "status") {
+            setStatus(msg.state);
+            if (typeof msg.tick_ms === "number") {
+              document.getElementById("speed").value = msg.tick_ms;
+              document.getElementById("speed-val").textContent = msg.tick_ms;
+            }
+          }
+        };
+      }
+
+      function send(type, payload) {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type, ...payload }));
+      }
+      document.getElementById("btn-pause").onclick = () => { send("pause", {}); setStatus("paused"); };
+      document.getElementById("btn-resume").onclick = () => { send("resume", {}); setStatus("running"); };
+      document.getElementById("btn-stop").onclick = () => send("stop", {});
+      const speed = document.getElementById("speed");
+      speed.oninput = () => {
+        const ms = parseInt(speed.value, 10);
+        document.getElementById("speed-val").textContent = ms;
+        send("speed_change", { tick_ms: ms });
+      };
+
+      connect();
+    </script>
+  </body>
+</html>

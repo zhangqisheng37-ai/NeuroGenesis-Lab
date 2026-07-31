@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from neurogenesis_lab.server import LiveSession
     from neurogenesis_lab.visualization import LiveMonitor
 
 from neurogenesis_lab import __version__
@@ -141,6 +143,71 @@ def _init_logging(
     return logger, observer, live_monitor, checkpoint_interval, checkpoint_dir
 
 
+def _maybe_open_browser(args: argparse.Namespace, url: str) -> None:
+    """在浏览器中打开实时监控页面（--no-browser 时跳过）。"""
+    if getattr(args, "no_browser", False):
+        return
+    target = url
+    ui_port = getattr(args, "ui_port", None)
+    if ui_port:
+        target = f"{url.rsplit(':', 1)[0]}:{int(ui_port)}"
+    try:
+        import webbrowser
+
+        webbrowser.open(target)
+    except Exception:
+        pass
+
+
+def init_live_session(
+    cfg: SimConfig, args: argparse.Namespace, network: Network
+) -> LiveSession | None:
+    """根据 --live-monitor 初始化实时可视化会话，不可用时降级为 None。"""
+    if not getattr(args, "live_monitor", False):
+        return None
+    try:
+        from neurogenesis_lab.live_protocol import TickMessageBuilder, build_init_message
+        from neurogenesis_lab.server import LiveControlState, LiveServer, LiveSession
+    except Exception as exc:
+        print(f"  警告: 无法加载实时监控服务，需安装 web 依赖 ({exc})")
+        return None
+    host = str(getattr(args, "host", "127.0.0.1") or "127.0.0.1")
+    port = int(getattr(args, "port", 8765) or 8765)
+    tick_ms = max(0, int(getattr(args, "live_tick_ms", 50) or 0))
+    control = LiveControlState(tick_ms=tick_ms)
+    init_message = build_init_message(cfg.to_dict(), len(network.neurons))
+    server = LiveServer(host=host, port=port, control=control, init_message=init_message)
+    try:
+        server.start()
+    except Exception as exc:
+        print(f"  警告: 实时监控服务器启动失败 ({exc})")
+        return None
+    session = LiveSession(server, control, TickMessageBuilder())
+    print(f"  实时监控已启动: {server.url}")
+    _maybe_open_browser(args, server.url)
+    if getattr(args, "wait_for_client", False):
+        timeout = float(getattr(args, "client_wait_timeout", 30.0) or 30.0)
+        print(f"  等待浏览器连接（最多 {timeout:.0f}s）...")
+        if server.wait_for_client(timeout):
+            print(f"  已连接 {server.client_count} 个客户端")
+        else:
+            print("  未等到客户端，继续运行")
+    return session
+
+
+def _hold_live_server(args: argparse.Namespace, session: LiveSession) -> None:
+    """仿真结束后保持服务器供查看，交互终端等待回车后关闭。"""
+    if getattr(args, "no_browser", False) or not sys.stdin.isatty():
+        session.close()
+        return
+    try:
+        input("  实时监控服务器运行中，按 Enter 关闭...")
+    except (EOFError, KeyboardInterrupt):
+        pass
+    finally:
+        session.close()
+
+
 def _run_simulation_loop(
     network: Network,
     cfg: SimConfig,
@@ -151,12 +218,19 @@ def _run_simulation_loop(
     run_end_tick: int,
     checkpoint_interval: int,
     checkpoint_dir: Path,
-) -> tuple[float, AutoLearner]:
-    """执行主仿真循环。"""
+    live_session: LiveSession | None = None,
+) -> tuple[float, AutoLearner, bool]:
+    """执行主仿真循环。返回 (耗时, 学习器, 是否被提前停止)。"""
     auto_learner = AutoLearner(discovery=RuleDiscovery(min_support=2))
     t0 = time.time()
     total_ticks = run_end_tick - run_start_tick + 1
+    stopped_early = False
     for t in range(run_start_tick, run_end_tick + 1):
+        if live_session is not None:
+            live_session.wait_while_paused()
+            if live_session.control.stopped:
+                stopped_early = True
+                break
         snapshot = network.tick(t, dt=cfg.dt)
         learn_report = auto_learner.on_tick(t, snapshot, network)
         snapshot["rule_count"] = learn_report["rule_count"]
@@ -168,6 +242,9 @@ def _run_simulation_loop(
             network.save_checkpoint(cp_path, tick=t)
         if live_monitor is not None:
             live_monitor.on_tick(t, snapshot, network)
+        if live_session is not None:
+            live_session.push_tick(t, snapshot, network)
+            live_session.pace()
         if local_progress_tick % max(1, total_ticks // 5) == 0:
             alive = snapshot["alive_neurons"]
             pe = snapshot["prediction_error"]
@@ -177,7 +254,7 @@ def _run_simulation_loop(
                 f"  tick {local_progress_tick}/{total_ticks} (global={t}): "
                 f"alive={alive}, PE={pe:.4f}, rules={rules}, acc={acc:.3f}"
             )
-    return time.time() - t0, auto_learner
+    return time.time() - t0, auto_learner, stopped_early
 
 
 def _print_summary(
@@ -299,8 +376,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         cfg, args, network
     )
     store, record = _start_tracking(cfg, args, logger.get_output_path())
+    live_session = init_live_session(cfg, args, network)
     try:
-        elapsed, auto_learner = _run_simulation_loop(
+        elapsed, auto_learner, _stopped_early = _run_simulation_loop(
             network,
             cfg,
             logger,
@@ -310,9 +388,12 @@ def cmd_run(args: argparse.Namespace) -> None:
             run_end_tick,
             checkpoint_interval,
             checkpoint_dir,
+            live_session=live_session,
         )
     except BaseException as exc:
         _finish_tracking(store, record, status="failed", error=str(exc) or type(exc).__name__)
+        if live_session is not None:
+            live_session.close()
         raise
     if live_monitor is not None:
         live_monitor.finalize()
@@ -330,6 +411,9 @@ def cmd_run(args: argparse.Namespace) -> None:
         summary=dict(summary),
         final_metrics=final_metrics,
     )
+    if live_session is not None:
+        live_session.finalize(run_end_tick)
+        _hold_live_server(args, live_session)
     _print_summary(
         elapsed=elapsed,
         output_path=output_path,
