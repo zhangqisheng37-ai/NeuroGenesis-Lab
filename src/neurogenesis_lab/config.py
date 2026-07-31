@@ -354,10 +354,41 @@ def default_sim_config() -> SimConfig:
     return SimConfig()
 
 
+def _coerce_value(value: Any, type_name: Any) -> Any:
+    """按目标类型名转换字符串值（HTML 表单提交的字段均为字符串）。
+
+    转换失败时返回原值，由后续 validate() 兜底报错。
+    """
+    if not isinstance(value, str):
+        return value
+    if type_name == "bool":
+        return value.strip().lower() in ("1", "true", "yes")
+    if type_name == "int":
+        try:
+            return int(float(value.strip()))
+        except (TypeError, ValueError):
+            return value
+    if type_name == "float":
+        try:
+            return float(value.strip())
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
 def _filter_dataclass_fields(cls: type, data: Mapping[str, Any]) -> dict[str, Any]:
-    """仅保留 dataclass 声明的字段，忽略未知键。"""
-    valid = {f.name for f in fields(cls)}
-    return {k: v for k, v in data.items() if k in valid}
+    """仅保留 dataclass 声明的字段并做类型转换，忽略未知键。"""
+    valid = {f.name: f.type for f in fields(cls)}
+    result: dict[str, Any] = {}
+    for k, v in data.items():
+        if k not in valid:
+            continue
+        type_name = valid[k]
+        # dict 类型字段收到非 dict 值（如表单字符串）时忽略，使用默认值兜底
+        if type_name.startswith("dict") and not isinstance(v, dict):
+            continue
+        result[k] = _coerce_value(v, type_name)
+    return result
 
 
 def sim_config_from_dict(data: Mapping[str, Any]) -> SimConfig:
@@ -377,10 +408,12 @@ def sim_config_from_dict(data: Mapping[str, Any]) -> SimConfig:
     scalar_keys = {
         f.name for f in fields(SimConfig) if f.name not in ("neuron", "network", "evolution")
     }
-    scalar = {k: v for k, v in data.items() if k in scalar_keys}
+    scalar = _filter_dataclass_fields(
+        SimConfig, {k: v for k, v in data.items() if k in scalar_keys}
+    )
     sim_group = data.get("simulation")
     if isinstance(sim_group, Mapping):
-        scalar.update({k: v for k, v in sim_group.items() if k in scalar_keys})
+        scalar.update(_filter_dataclass_fields(SimConfig, sim_group))
 
     def _sub(cls: type, name: str) -> Any:
         raw = data.get(name)

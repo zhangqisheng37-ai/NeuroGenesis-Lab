@@ -271,6 +271,11 @@ class NetworkMonitor {
         this._updateExperimentId();
         this._applyStatus(status.state || "running");
         this._connect();
+      } else if (status.state === "finished" && status.experiment_id) {
+        // 仿真在页面加载前已结束：恢复结果入口与启动面板
+        this.experimentId = status.experiment_id;
+        this._updateExperimentId();
+        this._applyStatus("finished");
       }
     } catch (e) {
       console.warn("查询运行状态失败:", e);

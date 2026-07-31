@@ -18,6 +18,7 @@ from neurogenesis_lab.config import (
     NetworkParams,
     NeuronParams,
     SimConfig,
+    sim_config_from_dict,
 )
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -138,7 +139,7 @@ def _dict_to_toml(data: dict[str, Any], section: str = "") -> str:
 
 
 def _build_sim_config(config_data: dict[str, Any]) -> SimConfig:
-    """从 JSON 字典构建 SimConfig 实例。
+    """从 JSON 字典构建 SimConfig 实例（含字符串→数值的类型转换）。
 
     Args:
         config_data: 前端提交的配置字典，可包含 simulation/neuron/network/evolution 子键。
@@ -146,18 +147,7 @@ def _build_sim_config(config_data: dict[str, Any]) -> SimConfig:
     Returns:
         构建完成的 SimConfig 实例。
     """
-    sim_section = config_data.get("simulation", {})
-    neuron = NeuronParams(**config_data.get("neuron", {}))
-    network = NetworkParams(**config_data.get("network", {}))
-    evolution = EvolutionParams(**config_data.get("evolution", {}))
-    return SimConfig(
-        ticks=sim_section.get("ticks", 100),
-        seed=sim_section.get("seed", 42),
-        dt=sim_section.get("dt", 1.0),
-        neuron=neuron,
-        network=network,
-        evolution=evolution,
-    )
+    return sim_config_from_dict(config_data)
 
 
 # ── 路由端点 ──────────────────────────────────────────────────
@@ -192,7 +182,10 @@ async def validate_config(request: Request) -> JSONResponse:
     except (TypeError, ValueError) as exc:
         return JSONResponse({"valid": False, "errors": [f"参数构建失败: {exc}"]})
 
-    errors = sim.validate()
+    try:
+        errors = sim.validate()
+    except (TypeError, ValueError) as exc:
+        return JSONResponse({"valid": False, "errors": [f"参数类型错误: {exc}"]})
     return JSONResponse({"valid": len(errors) == 0, "errors": errors})
 
 

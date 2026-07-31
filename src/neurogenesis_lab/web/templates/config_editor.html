@@ -152,7 +152,13 @@
     } else if (info.type === "float") {
       input = `<input type="number" id="${fieldId}" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="float" value="${info.default ?? 0}" step="0.01">`;
     } else {
-      input = `<input type="text" id="${fieldId}" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="str" value="${info.default ?? ""}">`;
+      // dict/其他复杂字段以 JSON 文本编辑（textarea 内引号无需转义）
+      const defaultStr =
+        info.default && typeof info.default === "object"
+          ? JSON.stringify(info.default)
+          : String(info.default ?? "");
+      const escaped = defaultStr.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      input = `<textarea id="${fieldId}" rows="2" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="str">${escaped}</textarea>`;
     }
 
     return `
@@ -181,6 +187,14 @@
         if (isNaN(val)) val = 0;
       } else {
         val = el.value;
+        // dict 字段以 JSON 文本编辑：解析为对象，失败时保留字符串由后端兜底
+        if (typeof val === "string" && val.trim().startsWith("{")) {
+          try {
+            val = JSON.parse(val);
+          } catch (e) {
+            /* 保留原字符串 */
+          }
+        }
       }
       if (data[section]) data[section][field] = val;
     });
