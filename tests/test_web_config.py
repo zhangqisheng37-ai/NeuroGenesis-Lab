@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from neurogenesis_lab.web.app import create_web_app
+from neurogenesis_lab.web.routes import config as config_mod
 
 
 @pytest.fixture
@@ -17,6 +18,15 @@ def client(tmp_path):
     db = tmp_path / "test.db"
     app = create_web_app(db_path=str(db))
     return TestClient(app)
+
+
+@pytest.fixture
+def preset_dir(tmp_path, monkeypatch):
+    """将预设保存目录重定向到临时目录，避免污染项目 experiments/。"""
+    target = tmp_path / "presets"
+    target.mkdir()
+    monkeypatch.setattr(config_mod, "_EXPERIMENTS_DIR", target)
+    return target
 
 
 def test_get_schema(client):
@@ -64,7 +74,7 @@ def test_validate_config_bad_json(client):
     assert body["valid"] is False
 
 
-def test_save_config(client):
+def test_save_config(client, preset_dir):
     """保存配置为 TOML 文件。"""
     resp = client.post(
         "/api/config/save",
@@ -76,6 +86,7 @@ def test_save_config(client):
     assert resp.status_code == 200
     body = resp.json()
     assert "test_preset.toml" in body["path"]
+    assert (preset_dir / "test_preset.toml").is_file()
 
 
 def test_save_config_missing_name(client):
@@ -99,7 +110,7 @@ def test_list_presets(client):
     assert isinstance(data, list)
 
 
-def test_load_preset_existing(client):
+def test_load_preset_existing(client, preset_dir):
     """加载已有预设文件。"""
     # 先保存一个
     client.post(
