@@ -12,6 +12,7 @@ from neurogenesis_lab.cli.info import cmd_info
 from neurogenesis_lab.cli.list import cmd_list
 from neurogenesis_lab.cli.run import cmd_run
 from neurogenesis_lab.cli.serve import cmd_serve
+from neurogenesis_lab.cli.web import cmd_web
 
 _DEFAULT_DB = "outputs/experiments.db"
 
@@ -197,6 +198,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Rust 并行 LIF 微基准神经元数量",
     )
 
+    # web — Web 管理界面
+    web_parser = subparsers.add_parser("web", help="启动 Web 管理界面")
+    web_parser.add_argument("--host", type=str, default="127.0.0.1", help="绑定主机")
+    web_parser.add_argument("--port", type=int, default=8080, help="绑定端口")
+    web_parser.add_argument("--db", type=str, default=_DEFAULT_DB, help="实验数据库路径")
+
     # info
     subparsers.add_parser("info", help="显示版本与配置信息")
 
@@ -246,6 +253,8 @@ def main() -> None:
         cmd_compare(args)
     elif args.command == "delete":
         cmd_delete(args)
+    elif args.command == "web":
+        cmd_web(args)
     elif args.command == "serve":
         cmd_serve(args)
     else:

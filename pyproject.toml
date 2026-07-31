@@ -15,7 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 viz = ["matplotlib>=3.5"]
-web = ["fastapi>=0.110", "uvicorn>=0.29"]
+web = ["fastapi>=0.110", "uvicorn>=0.29", "jinja2>=3.0"]
 rust = ["maturin>=1.7"]
 dev = [
   "pytest>=7.0",
@@ -46,6 +46,8 @@ packages = ["src/neurogenesis_lab"]
 [tool.hatch.build.targets.wheel.force-include]
 "src/neurogenesis_lab/py.typed" = "neurogenesis_lab/py.typed"
 "src/neurogenesis_lab/web/live.html" = "neurogenesis_lab/web/live.html"
+"src/neurogenesis_lab/web/templates" = "neurogenesis_lab/web/templates"
+"src/neurogenesis_lab/web/static" = "neurogenesis_lab/web/static"
 
  [tool.ruff]
  line-length = 100

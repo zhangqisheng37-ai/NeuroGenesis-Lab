@@ -3,25 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 from pathlib import Path
 
-from neurogenesis_lab.experiments import ExperimentStore
-
-
-def _remove_output_dir(experiment_id: str, output_dir: str | None) -> bool:
-    """安全删除实验输出目录 — 仅当目录名与实验 ID 一致时执行。"""
-    if not output_dir:
-        return False
-    path = Path(output_dir)
-    if not path.is_dir():
-        return False
-    if path.name != experiment_id:
-        print(f"  跳过输出目录（目录名与实验 ID 不一致，拒绝删除）: {path}")
-        return False
-    shutil.rmtree(path)
-    return True
+from neurogenesis_lab.experiments import ExperimentStore, remove_output_dir
 
 
 def cmd_delete(args: argparse.Namespace) -> None:
@@ -41,7 +26,7 @@ def cmd_delete(args: argparse.Namespace) -> None:
                 continue
             files_removed = False
             if not keep_files:
-                files_removed = _remove_output_dir(exp_id, record.output_dir)
+                files_removed = remove_output_dir(exp_id, record.output_dir)
             store.delete(exp_id)
             deleted += 1
             suffix = "（含输出文件）" if files_removed else "（仅元数据）"

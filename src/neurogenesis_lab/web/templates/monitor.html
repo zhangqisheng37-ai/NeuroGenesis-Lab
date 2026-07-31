@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}实时监控{% endblock %}
+
+{% block content %}
+<div class="monitor-layout">
+  <!-- 左侧：网络可视化画布 -->
+  <div class="monitor-canvas-wrap">
+    <div class="monitor-header">
+      <h2 class="monitor-title">神经网络实时监控</h2>
+      <span id="conn-state" class="conn-indicator offline">未连接</span>
+      <span id="status-badge" class="status-badge">—</span>
+    </div>
+    <svg id="network-canvas"></svg>
+  </div>
+
+  <!-- 右侧：统计 + 控制面板 -->
+  <aside class="monitor-sidebar">
+    <div>
+      <div class="panel-label">种群指标</div>
+      <div class="stats-grid" id="stats"></div>
+    </div>
+
+    <div class="controls-panel">
+      <div class="panel-label">仿真控制</div>
+      <div class="btn-row">
+        <button id="btn-pause" class="ctrl-btn">暂停</button>
+        <button id="btn-resume" class="ctrl-btn active">继续</button>
+      </div>
+      <div class="btn-row">
+        <button id="btn-stop" class="ctrl-btn danger">停止仿真</button>
+      </div>
+      <div class="speed-control">
+        <label for="speed">每 tick 间隔：<span id="speed-val">50</span> ms</label>
+        <input type="range" id="speed" min="0" max="500" step="10" value="50" />
+      </div>
+    </div>
+
+    <div class="legend-panel">
+      <div class="panel-label">图例</div>
+      <div class="legend-item">
+        <span class="dot" style="background:#14b8a6"></span>存活神经元（亮度随能量）
+      </div>
+      <div class="legend-item">
+        <span class="dot" style="background:#f59e0b"></span>本 tick 放电
+      </div>
+      <div class="legend-item">
+        <span class="dot" style="background:#3b4252"></span>死亡神经元
+      </div>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/monitor.js"></script>
+{% endblock %}

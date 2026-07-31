@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}仪表盘{% endblock %} — NeuroGenesis Lab</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"
+    integrity="sha512-vc58qvvBdrDR4etbxMdlTt4GBQk1qjvyORR2nrsPsFPyrs+/u5c3+1Ct6upOgdZoIl7eq6k3a1UPDSNAQi/32A=="
+    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <a href="/">NeuroGenesis Lab</a>
+      <span class="navbar-version">v{{ version }}</span>
+    </div>
+    <ul class="navbar-links">
+      <li><a href="/" class="nav-link">仪表盘</a></li>
+      <li><a href="/experiments" class="nav-link">实验列表</a></li>
+      <li><a href="/configure" class="nav-link">新建实验</a></li>
+      <li><a href="/monitor" class="nav-link">实时监控</a></li>
+    </ul>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    <span>NeuroGenesis Lab v{{ version }}</span>
+  </footer>
+
+  <script src="/static/js/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

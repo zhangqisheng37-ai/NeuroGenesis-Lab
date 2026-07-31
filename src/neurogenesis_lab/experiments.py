@@ -396,3 +396,45 @@ class ExperimentStore:
         exc_tb: TracebackType | None,
     ) -> None:
         self.close()
+
+
+# ── 公共工具函数（供 CLI 和 Web API 共享使用）──────────────────
+
+
+def flatten_config(config: dict[str, Any], prefix: str = "") -> dict[str, Any]:
+    """将嵌套配置字典展平为点分键（如 network.max_neurons）。"""
+    flat: dict[str, Any] = {}
+    for key, value in config.items():
+        full_key = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            flat.update(flatten_config(value, full_key))
+        else:
+            flat[full_key] = value
+    return flat
+
+
+def config_diff_keys(configs: list[dict[str, Any]]) -> list[str]:
+    """收集在各实验间取值不同的配置键。"""
+    all_keys = sorted({key for cfg in configs for key in cfg})
+    diff_keys = []
+    for key in all_keys:
+        values = [cfg.get(key) for cfg in configs]
+        if any(v != values[0] for v in values[1:]):
+            diff_keys.append(key)
+    return diff_keys
+
+
+def remove_output_dir(experiment_id: str, output_dir: str | None) -> bool:
+    """安全删除实验输出目录 — 仅当目录名与实验 ID 一致时执行。"""
+    import shutil
+
+    if not output_dir:
+        return False
+    path = Path(output_dir)
+    if not path.is_dir():
+        return False
+    if path.name != experiment_id:
+        print(f"  跳过输出目录（目录名与实验 ID 不一致，拒绝删除）: {path}")
+        return False
+    shutil.rmtree(path)
+    return True

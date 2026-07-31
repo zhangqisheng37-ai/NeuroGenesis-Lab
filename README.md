@@ -11,7 +11,7 @@ NeuroGenesis Lab 是一个基于 Python 的神经进化仿真框架，用于研�
 
 - 当前版本：`v0.6.1`（`src/neurogenesis_lab/__init__.py`）
 - 当前 Schema：`2.0.0`（`src/neurogenesis_lab/config.py`）
-- CLI 子命令：`run` / `benchmark` / `info`
+- CLI 子命令：`run` / `benchmark` / `info` / `web`
 - 双引擎统一协议：`Network` 与 `VectorizedNetwork` 均实现 `SimEngine`（`TickSnapshot` / `EngineSummary`）
 - 大模块子包化：`network/`（8 模块）、`vectorized/`（7 模块）、`learning/`（4 模块）
 
@@ -81,6 +81,14 @@ python -m neurogenesis_lab run --resume-from outputs/checkpoints/checkpoint_tick
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100 --rust-size 10000
 ```
+
+### Web 管理界面
+
+```bash
+python -m neurogenesis_lab web --port 8080
+```
+
+浏览器访问 `http://127.0.0.1:8080`，通过图形界面管理实验、编辑配置、实时监控仿真。
 
 ## 输出说明
 

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}仪表盘{% endblock %}
+
+{% block content %}
+<section class="overview-grid">
+  <div class="card stat-card">
+    <div class="card-header">系统版本</div>
+    <div class="card-body">
+      <span class="stat-value">{{ version }}</span>
+    </div>
+  </div>
+
+  <div class="card stat-card">
+    <div class="card-header">实验总数</div>
+    <div class="card-body">
+      <span class="stat-value">{{ total_experiments }}</span>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <h2>最近实验</h2>
+  {% if recent_experiments %}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>实验 ID</th>
+        <th>状态</th>
+        <th>创建时间</th>
+        <th>Seed</th>
+        <th>神经元数</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for exp in recent_experiments %}
+      <tr>
+        <td><a href="/experiments/{{ exp.experiment_id }}">{{ exp.experiment_id }}</a></td>
+        <td><span class="badge badge-{{ exp.status }}">{{ exp.status }}</span></td>
+        <td>{{ exp.created_at }}</td>
+        <td>{{ exp.seed }}</td>
+        <td>{{ exp.neurons }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty-state">暂无实验记录。运行 <code>neurogenesis-lab run</code> 开始第一个实验。</p>
+  {% endif %}
+</section>
+
+<section class="section">
+  <h2>快速操作</h2>
+  <div class="action-grid">
+    <a href="/configure" class="card action-card">
+      <div class="card-body">
+        <h3>新建实验</h3>
+        <p>配置参数并启动仿真实验</p>
+      </div>
+    </a>
+    <a href="/experiments" class="card action-card">
+      <div class="card-body">
+        <h3>查看所有实验</h3>
+        <p>浏览历史实验数据与指标</p>
+      </div>
+    </a>
+    <a href="/monitor" class="card action-card">
+      <div class="card-body">
+        <h3>启动实时监控</h3>
+        <p>通过 WebSocket 实时观察仿真过程</p>
+      </div>
+    </a>
+  </div>
+</section>
+
+<section class="section">
+  <h2>系统信息</h2>
+  <div class="card">
+    <table class="table">
+      <tbody>
+        <tr>
+          <td style="font-weight:600; width:160px;">版本号</td>
+          <td>{{ version }}</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">Python 版本</td>
+          <td>{{ python_version }}</td>
+        </tr>
+        <tr>
+          <td style="font-weight:600;">数据库路径</td>
+          <td><code>{{ db_path }}</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}

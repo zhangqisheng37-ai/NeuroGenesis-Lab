@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block title %}
+  {% if mode == "compare" %}实验对比{% else %}实验详情{% endif %}
+{% endblock %}
+
+{% block content %}
+{% if mode == "detail" %}
+  {# ── 详情模式 ─────────────────────────────────────────────── #}
+  {% if experiment is none %}
+    <div class="section">
+      <p class="empty-state">{{ error | default("实验不存在") }}</p>
+      <a href="/experiments" class="btn">← 返回列表</a>
+    </div>
+  {% else %}
+    <div class="section">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+        <h2 style="margin:0;">{{ experiment.experiment_id }}</h2>
+        <a href="/experiments" class="btn">← 返回列表</a>
+      </div>
+
+      <!-- 运行摘要 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">运行摘要</div>
+        <div class="card-body">
+          <table class="table">
+            <tr><th style="width:140px;">状态</th>
+              <td><span class="badge badge-{{ experiment.status }}">{{ experiment.status }}</span></td></tr>
+            <tr><th>实验名称</th><td>{{ experiment.experiment_name or "—" }}</td></tr>
+            <tr><th>Seed</th><td>{{ experiment.seed if experiment.seed is not none else "—" }}</td></tr>
+            <tr><th>Ticks</th><td>{{ experiment.ticks if experiment.ticks is not none else "—" }}</td></tr>
+            <tr><th>神经元数</th><td>{{ experiment.neurons if experiment.neurons is not none else "—" }}</td></tr>
+            <tr><th>耗时</th><td>{{ "%.2f s" | format(experiment.runtime_seconds) if experiment.runtime_seconds is not none else "—" }}</td></tr>
+            <tr><th>创建时间</th><td>{{ experiment.created_at }}</td></tr>
+            <tr><th>完成时间</th><td>{{ experiment.finished_at or "—" }}</td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- 配置参数 -->
+      {% if experiment.config %}
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">配置参数</div>
+        <div class="card-body">
+          <table class="table">
+            {% for section, params in experiment.config.items() %}
+              {% if params is mapping %}
+                <tr><th colspan="2" style="color:var(--accent);font-size:13px;">{{ section }}</th></tr>
+                {% for k, v in params.items() %}
+                  <tr><td style="padding-left:1.5rem;color:var(--muted);">{{ k }}</td><td>{{ v }}</td></tr>
+                {% endfor %}
+              {% else %}
+                <tr><td style="color:var(--muted);">{{ section }}</td><td>{{ params }}</td></tr>
+              {% endif %}
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- 最终指标 -->
+      {% if experiment.final_metrics or experiment.summary %}
+      <div class="card">
+        <div class="card-header">指标摘要</div>
+        <div class="card-body">
+          <table class="table">
+            {% for k, v in experiment.summary.items() %}
+              <tr><td style="color:var(--muted);">{{ k }}</td><td>{{ v }}</td></tr>
+            {% endfor %}
+            {% for k, v in experiment.final_metrics.items() %}
+              <tr><td style="color:var(--muted);">{{ k }}</td><td>{{ v }}</td></tr>
+            {% endfor %}
+          </table>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  {% endif %}
+
+{% elif mode == "compare" %}
+  {# ── 对比模式 ─────────────────────────────────────────────── #}
+  <div class="section">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <h2 style="margin:0;">实验对比（{{ experiments | length }} 个）</h2>
+      <a href="/experiments" class="btn">← 返回列表</a>
+    </div>
+
+    {% if experiments | length < 2 %}
+      <p class="empty-state">至少需要两个实验才能进行对比。</p>
+    {% else %}
+      <!-- 基本信息对比 -->
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">基本信息</div>
+        <div class="card-body" style="overflow-x:auto;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>字段</th>
+                {% for exp in experiments %}
+                  <th><a href="/experiments/{{ exp.experiment_id }}">{{ exp.experiment_id }}</a></th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="color:var(--muted);">状态</td>
+                {% for exp in experiments %}
+                  <td><span class="badge badge-{{ exp.status }}">{{ exp.status }}</span></td>
+                {% endfor %}
+              </tr>
+              <tr>
+                <td style="color:var(--muted);">Seed</td>
+                {% for exp in experiments %}<td>{{ exp.seed if exp.seed is not none else "—" }}</td>{% endfor %}
+              </tr>
+              <tr>
+                <td style="color:var(--muted);">Ticks</td>
+                {% for exp in experiments %}<td>{{ exp.ticks if exp.ticks is not none else "—" }}</td>{% endfor %}
+              </tr>
+              <tr>
+                <td style="color:var(--muted);">神经元数</td>
+                {% for exp in experiments %}<td>{{ exp.neurons if exp.neurons is not none else "—" }}</td>{% endfor %}
+              </tr>
+              <tr>
+                <td style="color:var(--muted);">耗时(s)</td>
+                {% for exp in experiments %}
+                  <td>{{ "%.2f" | format(exp.runtime_seconds) if exp.runtime_seconds is not none else "—" }}</td>
+                {% endfor %}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 参数差异表 -->
+      {% if diff_keys %}
+      <div class="card" style="margin-bottom:1rem;">
+        <div class="card-header">参数差异</div>
+        <div class="card-body" style="overflow-x:auto;">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>参数</th>
+                {% for exp in experiments %}
+                  <th>{{ exp.experiment_id }}</th>
+                {% endfor %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for key in diff_keys %}
+              <tr>
+                <td style="color:var(--muted);">{{ key }}</td>
+                {% for fc in flat_configs %}
+                  <td>{{ fc.get(key, "—") }}</td>
+                {% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- 指标对比图表 -->
+      <div class="card">
+        <div class="card-header">指标对比</div>
+        <div class="card-body">
+          <div id="compare-chart" style="width:100%;min-height:300px;"></div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if mode == "compare" and experiments | length >= 2 %}
+<script src="/static/js/charts.js"></script>
+<script>
+(function () {
+  const experiments = {{ experiments | tojson }};
+  const data = experiments.map(exp => {
+    const values = {};
+    Object.assign(values, exp.summary || {}, exp.final_metrics || {});
+    return { label: exp.experiment_id, values };
+  });
+  renderBarChart("compare-chart", data, { title: "指标对比" });
+})();
+</script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+
+{% block title %}实验列表{% endblock %}
+
+{% block content %}
+<div class="section">
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+    <h2 style="margin:0;">实验列表</h2>
+    <div style="display:flex; gap:0.5rem;">
+      <button id="btn-batch-delete" class="btn btn-danger" style="display:none;" onclick="batchDelete()">批量删除</button>
+      <button class="btn" onclick="showSystemInfo()">系统信息</button>
+      <a href="/configure" class="btn btn-primary">+ 新建实验</a>
+    </div>
+  </div>
+
+  <!-- 过滤表单 -->
+  <form method="get" action="/experiments" class="card" style="padding:0.75rem 1rem; margin-bottom:1rem;">
+    <div style="display:flex; align-items:center; gap:0.75rem;">
+      <label for="filter-input" style="color:var(--muted); font-size:13px; white-space:nowrap;">过滤：</label>
+      <input
+        id="filter-input"
+        name="filter"
+        type="text"
+        class="form-input"
+        value="{{ filter }}"
+        placeholder="例如：status=completed,neurons>10"
+        style="flex:1;"
+      >
+      <button type="submit" class="btn">应用</button>
+      {% if filter %}
+        <a href="/experiments" class="btn" style="color:var(--muted);">清除</a>
+      {% endif %}
+    </div>
+  </form>
+
+  <!-- 实验表格 -->
+  <div class="card">
+    <table class="table" id="experiments-table">
+      <thead>
+        <tr>
+          <th style="width:36px;"><input type="checkbox" id="check-all" onchange="toggleAll(this)"></th>
+          <th>实验 ID</th>
+          <th>名称</th>
+          <th>状态</th>
+          <th>创建时间</th>
+          <th>Seed</th>
+          <th>神经元</th>
+          <th>用时(s)</th>
+          <th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="experiments-tbody">
+        <tr><td colspan="9" class="empty-state">加载中…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- 系统信息模态框 -->
+<div id="sysinfo-modal" class="modal" style="display:none;">
+  <div class="modal-backdrop" onclick="closeSystemInfo()"></div>
+  <div class="modal-content card" style="width:480px; max-width:90vw; padding:1.5rem;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <h3 style="margin:0;">系统信息</h3>
+      <button class="btn" style="padding:2px 8px;" onclick="closeSystemInfo()">✕</button>
+    </div>
+    <table class="table">
+      <tbody>
+        <tr><td style="font-weight:600; width:120px;">版本号</td><td id="si-version">—</td></tr>
+        <tr><td style="font-weight:600;">数据库路径</td><td><code id="si-dbpath">—</code></td></tr>
+        <tr><td style="font-weight:600;">实验总数</td><td id="si-total">—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _experiments = [];
+
+(async function () {
+  const tbody = document.getElementById("experiments-tbody");
+  try {
+    _experiments = await apiGet("/api/experiments?limit={{ limit }}{% if filter %}&filter={{ filter | urlencode }}{% endif %}");
+    if (!_experiments.length) {
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-state">暂无实验记录</td></tr>';
+      return;
+    }
+    renderTable();
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty-state">加载失败：${err.message}</td></tr>`;
+  }
+})();
+
+function renderTable() {
+  const tbody = document.getElementById("experiments-tbody");
+  tbody.innerHTML = _experiments.map(exp => {
+    const statusClass = `badge-${exp.status}`;
+    const name = exp.experiment_name || "—";
+    const created = exp.created_at ? exp.created_at.replace("T", " ").slice(0, 19) : "—";
+    const runtime = exp.runtime_seconds != null ? exp.runtime_seconds.toFixed(2) : "—";
+    const neurons = exp.neurons != null ? exp.neurons : "—";
+    const seed = exp.seed != null ? exp.seed : "—";
+    return `
+      <tr>
+        <td><input type="checkbox" class="row-check" value="${exp.experiment_id}" onchange="updateBatchBtn()"></td>
+        <td><a href="/experiments/${encodeURIComponent(exp.experiment_id)}">${exp.experiment_id}</a></td>
+        <td>${name}</td>
+        <td><span class="badge ${statusClass}">${exp.status}</span></td>
+        <td>${created}</td>
+        <td>${seed}</td>
+        <td>${neurons}</td>
+        <td>${runtime}</td>
+        <td>
+          <button class="btn btn-danger" style="padding:2px 8px;font-size:12px;"
+            onclick="deleteExperiment('${exp.experiment_id}')">删除</button>
+        </td>
+      </tr>`;
+  }).join("");
+}
+
+function toggleAll(master) {
+  document.querySelectorAll(".row-check").forEach(cb => { cb.checked = master.checked; });
+  updateBatchBtn();
+}
+
+function getSelected() {
+  return Array.from(document.querySelectorAll(".row-check:checked")).map(cb => cb.value);
+}
+
+function updateBatchBtn() {
+  const sel = getSelected();
+  document.getElementById("btn-batch-delete").style.display = sel.length ? "" : "none";
+}
+
+async function batchDelete() {
+  const ids = getSelected();
+  if (!ids.length) return;
+  if (!confirmAction(`确认删除选中的 ${ids.length} 个实验？此操作不可撤销。`)) return;
+  let ok = 0;
+  for (const id of ids) {
+    try {
+      await apiDelete(`/api/experiments/${encodeURIComponent(id)}`);
+      ok++;
+    } catch (err) {
+      showToast(`删除 ${id} 失败：${err.message}`, "error");
+    }
+  }
+  if (ok) showToast(`已删除 ${ok} 个实验`, "success");
+  location.reload();
+}
+
+async function deleteExperiment(id) {
+  if (!confirmAction(`确认删除实验 "${id}"？此操作不可撤销。`)) return;
+  try {
+    await apiDelete(`/api/experiments/${encodeURIComponent(id)}`);
+    showToast(`实验 ${id} 已删除`, "success");
+    location.reload();
+  } catch (err) {
+    showToast(`删除失败：${err.message}`, "error");
+  }
+}
+
+async function showSystemInfo() {
+  const modal = document.getElementById("sysinfo-modal");
+  try {
+    const data = await apiGet("/api/experiments?limit=1");
+    document.getElementById("si-total").textContent = _experiments.length;
+  } catch (_) {}
+  // 从页面全局获取版本信息
+  const footer = document.querySelector(".footer span");
+  if (footer) {
+    document.getElementById("si-version").textContent = footer.textContent.trim();
+  }
+  modal.style.display = "flex";
+}
+
+function closeSystemInfo() {
+  document.getElementById("sysinfo-modal").style.display = "none";
+}
+</script>
+{% endblock %}

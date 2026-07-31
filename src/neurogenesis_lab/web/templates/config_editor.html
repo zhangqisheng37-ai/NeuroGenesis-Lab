@@ -1,0 +1,345 @@
+{% extends "base.html" %}
+{% block title %}配置编辑器{% endblock %}
+
+{% block content %}
+<div class="section">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+    <h2 style="margin:0;">配置编辑器</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+      <label for="preset-select" style="color:var(--muted);font-size:13px;">预设模板：</label>
+      <select id="preset-select" class="form-select" style="width:200px;">
+        <option value="">— 选择预设 —</option>
+      </select>
+      <button class="btn" id="btn-load-preset">加载</button>
+    </div>
+  </div>
+</div>
+
+<form id="config-form" autocomplete="off">
+  <!-- 仿真基础 -->
+  <div class="card config-section" style="margin-bottom:1rem;">
+    <div class="card-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+         data-toggle="section-simulation">
+      <span>仿真基础 (Simulation)</span>
+      <span class="collapse-icon">▼</span>
+    </div>
+    <div class="card-body" id="section-simulation"></div>
+  </div>
+
+  <!-- 神经元参数 -->
+  <div class="card config-section" style="margin-bottom:1rem;">
+    <div class="card-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+         data-toggle="section-neuron">
+      <span>神经元参数 (Neuron)</span>
+      <span class="collapse-icon">▼</span>
+    </div>
+    <div class="card-body" id="section-neuron"></div>
+  </div>
+
+  <!-- 网络参数 -->
+  <div class="card config-section" style="margin-bottom:1rem;">
+    <div class="card-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+         data-toggle="section-network">
+      <span>网络参数 (Network)</span>
+      <span class="collapse-icon">▼</span>
+    </div>
+    <div class="card-body" id="section-network"></div>
+  </div>
+
+  <!-- 演化参数 -->
+  <div class="card config-section" style="margin-bottom:1rem;">
+    <div class="card-header" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;"
+         data-toggle="section-evolution">
+      <span>演化参数 (Evolution)</span>
+      <span class="collapse-icon">▼</span>
+    </div>
+    <div class="card-body" id="section-evolution"></div>
+  </div>
+</form>
+
+<!-- 操作按钮 -->
+<div style="display:flex;gap:0.75rem;margin-top:1rem;flex-wrap:wrap;align-items:center;">
+  <div id="validation-status" style="font-size:13px;color:var(--muted);"></div>
+  <div style="flex:1;"></div>
+  <button class="btn" id="btn-export">导出 TOML</button>
+  <button class="btn btn-primary" id="btn-save-preset">保存为预设</button>
+</div>
+
+<!-- 错误列表 -->
+<div id="error-list" style="margin-top:0.75rem;"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  let schema = {};
+  let debounceTimer = null;
+
+  // 字段描述映射
+  const FIELD_DESC = {
+    // simulation
+    ticks: "仿真总步数", seed: "随机种子", dt: "时间步长(ms)",
+    // neuron
+    v_rest: "静息电位(mV)", v_reset: "重置电位(mV)", v_th: "放电阈值(mV)",
+    tau_m: "膜时间常数(ms)", r_m: "膜电阻缩放因子", spike_cost: "放电能量消耗",
+    input_gain: "输入能量增益", mem_size: "记忆缓冲区容量",
+    // network
+    reproduction_threshold: "繁殖能量阈值", reproduction_share: "繁殖能量分配比例",
+    mutation_scale: "变异幅度缩放", energy_decay: "每步能量衰减",
+    max_neurons: "最大神经元数", max_links: "最大连接数",
+    corpse_ttl: "尸体存活步数", scavenger_radius: "拾荒搜索半径",
+    input_current_scale: "输入电流缩放", background_current: "背景电流",
+    spontaneous_spike_rate: "自发放电概率", low_activation_threshold: "低激活阈值",
+    move_cost: "移动能量消耗", energy_cap: "能量上限",
+    adaptive_decay: "自适应衰减", adaptive_reproduction: "自适应繁殖",
+    endangered_threshold: "濒危告警阈值",
+    // evolution
+    fitness_weights: "适应度权重", mutation_amplitude: "变异幅度",
+    energy_budget_per_tick: "每步能量预算", congestion_penalty: "拥塞惩罚",
+    min_neurons: "最小存活数",
+  };
+
+  // ── 初始化 ────────────────────────────────────────────────
+  async function init() {
+    try {
+      schema = await apiGet("/api/config/schema");
+      renderAllSections();
+      loadPresets();
+      // 检查 URL 参数
+      const params = new URLSearchParams(window.location.search);
+      const preset = params.get("preset");
+      if (preset) {
+        document.getElementById("preset-select").value = preset;
+        loadPresetContent(preset);
+      }
+    } catch (e) {
+      showToast("加载 Schema 失败: " + e.message, "error");
+    }
+  }
+
+  // ── 渲染表单字段 ──────────────────────────────────────────
+  function renderAllSections() {
+    for (const [section, fields] of Object.entries(schema)) {
+      const container = document.getElementById("section-" + section);
+      if (!container) continue;
+      let html = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:0.75rem;">';
+      for (const [name, info] of Object.entries(fields)) {
+        html += renderField(section, name, info);
+      }
+      html += "</div>";
+      container.innerHTML = html;
+    }
+  }
+
+  function renderField(section, name, info) {
+    const desc = FIELD_DESC[name] || name;
+    const fieldId = `field-${section}-${name}`;
+    let input = "";
+
+    if (info.type === "bool") {
+      const checked = info.default ? "checked" : "";
+      input = `<input type="checkbox" id="${fieldId}" data-section="${section}" data-field="${name}" data-type="bool" ${checked} class="config-field">`;
+    } else if (info.type === "int") {
+      input = `<input type="number" id="${fieldId}" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="int" value="${info.default ?? 0}" step="1">`;
+    } else if (info.type === "float") {
+      input = `<input type="number" id="${fieldId}" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="float" value="${info.default ?? 0}" step="0.01">`;
+    } else {
+      input = `<input type="text" id="${fieldId}" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="str" value="${info.default ?? ""}">`;
+    }
+
+    return `
+      <div class="form-group" style="margin-bottom:0.5rem;">
+        <label for="${fieldId}">${name} <span style="color:var(--muted);font-size:11px;">(${desc})</span></label>
+        ${input}
+        <div class="field-error" id="err-${fieldId}" style="color:var(--danger);font-size:11px;display:none;"></div>
+      </div>`;
+  }
+
+  // ── 收集表单数据 ──────────────────────────────────────────
+  function collectFormData() {
+    const data = { simulation: {}, neuron: {}, network: {}, evolution: {} };
+    document.querySelectorAll(".config-field").forEach((el) => {
+      const section = el.dataset.section;
+      const field = el.dataset.field;
+      const type = el.dataset.type;
+      let val;
+      if (type === "bool") {
+        val = el.checked;
+      } else if (type === "int") {
+        val = parseInt(el.value, 10);
+        if (isNaN(val)) val = 0;
+      } else if (type === "float") {
+        val = parseFloat(el.value);
+        if (isNaN(val)) val = 0;
+      } else {
+        val = el.value;
+      }
+      if (data[section]) data[section][field] = val;
+    });
+    return data;
+  }
+
+  // ── 校验 ──────────────────────────────────────────────────
+  async function validateConfig() {
+    const data = collectFormData();
+    try {
+      const result = await apiPost("/api/config/validate", data);
+      showValidationResult(result);
+    } catch (e) {
+      showToast("校验请求失败: " + e.message, "error");
+    }
+  }
+
+  function showValidationResult(result) {
+    const statusEl = document.getElementById("validation-status");
+    const errorListEl = document.getElementById("error-list");
+    // 清除字段级错误
+    document.querySelectorAll(".field-error").forEach((el) => {
+      el.style.display = "none";
+      el.textContent = "";
+    });
+
+    if (result.valid) {
+      statusEl.innerHTML = '<span style="color:var(--accent);">✓ 配置合法</span>';
+      errorListEl.innerHTML = "";
+    } else {
+      statusEl.innerHTML = `<span style="color:var(--danger);">✗ 发现 ${result.errors.length} 个问题</span>`;
+      let html = '<div style="margin-top:0.5rem;">';
+      for (const err of result.errors) {
+        html += `<div style="color:var(--danger);font-size:12px;margin-bottom:0.25rem;">• ${err}</div>`;
+      }
+      html += "</div>";
+      errorListEl.innerHTML = html;
+    }
+  }
+
+  function debounceValidate() {
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(validateConfig, 300);
+  }
+
+  // ── 预设管理 ──────────────────────────────────────────────
+  async function loadPresets() {
+    try {
+      const presets = await apiGet("/api/config/presets");
+      const select = document.getElementById("preset-select");
+      for (const p of presets) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      }
+    } catch (e) {
+      // 静默失败
+    }
+  }
+
+  async function loadPresetContent(name) {
+    try {
+      const data = await apiGet("/api/config/presets/" + encodeURIComponent(name));
+      if (data.error) {
+        showToast(data.error, "error");
+        return;
+      }
+      fillFormFromData(data);
+      showToast("已加载预设: " + name, "success");
+    } catch (e) {
+      showToast("加载预设失败: " + e.message, "error");
+    }
+  }
+
+  function fillFormFromData(data) {
+    for (const [section, fields] of Object.entries(data)) {
+      if (typeof fields !== "object" || fields === null) continue;
+      for (const [name, value] of Object.entries(fields)) {
+        const el = document.getElementById(`field-${section}-${name}`);
+        if (!el) continue;
+        if (el.type === "checkbox") {
+          el.checked = !!value;
+        } else {
+          el.value = value;
+        }
+      }
+    }
+  }
+
+  // ── 导出 / 保存 ───────────────────────────────────────────
+  async function exportToml() {
+    const data = collectFormData();
+    const name = prompt("请输入文件名（不含扩展名）：", "custom_config");
+    if (!name) return;
+    try {
+      const result = await apiPost("/api/config/save", { name, config: data });
+      if (result.error) {
+        showToast(result.error + (result.details ? ": " + result.details.join(", ") : ""), "error");
+        return;
+      }
+      showToast("已导出: " + result.path, "success");
+    } catch (e) {
+      showToast("导出失败: " + e.message, "error");
+    }
+  }
+
+  async function savePreset() {
+    const data = collectFormData();
+    const name = prompt("请输入预设名称（不含扩展名）：", "");
+    if (!name) return;
+    try {
+      const result = await apiPost("/api/config/save", { name, config: data });
+      if (result.error) {
+        showToast(result.error + (result.details ? ": " + result.details.join(", ") : ""), "error");
+        return;
+      }
+      showToast("已保存预设: " + result.path, "success");
+      // 刷新预设列表
+      const select = document.getElementById("preset-select");
+      select.innerHTML = '<option value="">— 选择预设 —</option>';
+      loadPresets();
+    } catch (e) {
+      showToast("保存失败: " + e.message, "error");
+    }
+  }
+
+  // ── 折叠/展开 ─────────────────────────────────────────────
+  document.querySelectorAll("[data-toggle]").forEach((header) => {
+    header.addEventListener("click", () => {
+      const targetId = header.dataset.toggle;
+      const body = document.getElementById(targetId);
+      if (!body) return;
+      const icon = header.querySelector(".collapse-icon");
+      if (body.style.display === "none") {
+        body.style.display = "";
+        if (icon) icon.textContent = "▼";
+      } else {
+        body.style.display = "none";
+        if (icon) icon.textContent = "▶";
+      }
+    });
+  });
+
+  // ── 事件绑定 ──────────────────────────────────────────────
+  document.getElementById("btn-load-preset").addEventListener("click", () => {
+    const name = document.getElementById("preset-select").value;
+    if (name) loadPresetContent(name);
+  });
+  document.getElementById("btn-export").addEventListener("click", exportToml);
+  document.getElementById("btn-save-preset").addEventListener("click", savePreset);
+
+  // 输入变化时 debounce 校验
+  document.addEventListener("input", (e) => {
+    if (e.target.classList.contains("config-field")) {
+      debounceValidate();
+    }
+  });
+  document.addEventListener("change", (e) => {
+    if (e.target.classList.contains("config-field")) {
+      debounceValidate();
+    }
+  });
+
+  init();
+})();
+</script>
+{% endblock %}

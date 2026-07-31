@@ -7,19 +7,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from neurogenesis_lab.experiments import ExperimentRecord, ExperimentStore
-
-
-def _flatten_config(config: dict[str, Any], prefix: str = "") -> dict[str, Any]:
-    """将嵌套配置字典展平为点分键（如 network.max_neurons）。"""
-    flat: dict[str, Any] = {}
-    for key, value in config.items():
-        full_key = f"{prefix}.{key}" if prefix else key
-        if isinstance(value, dict):
-            flat.update(_flatten_config(value, full_key))
-        else:
-            flat[full_key] = value
-    return flat
+from neurogenesis_lab.experiments import (
+    ExperimentRecord,
+    ExperimentStore,
+    config_diff_keys,
+    flatten_config,
+)
 
 
 def _format_value(value: Any) -> str:
@@ -46,17 +39,6 @@ def _print_table(
     print("  ".join("-" * w for w in widths))
     for row in rows:
         print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
-
-
-def _config_diff_keys(configs: list[dict[str, Any]]) -> list[str]:
-    """收集在各实验间取值不同的配置键。"""
-    all_keys = sorted({key for cfg in configs for key in cfg})
-    diff_keys = []
-    for key in all_keys:
-        values = [cfg.get(key) for cfg in configs]
-        if any(v != values[0] for v in values[1:]):
-            diff_keys.append(key)
-    return diff_keys
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
@@ -88,8 +70,8 @@ def cmd_compare(args: argparse.Namespace) -> None:
         )
 
     # 参数差异（仅展示取值不同的配置项）
-    flat_configs = [_flatten_config(r.config) for r in records]
-    diff_keys = _config_diff_keys(flat_configs)
+    flat_configs = [flatten_config(r.config) for r in records]
+    diff_keys = config_diff_keys(flat_configs)
     if diff_keys:
         _print_table("参数差异:", diff_keys, flat_configs, headers)
     else:
