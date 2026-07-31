@@ -14,6 +14,7 @@ from neurogenesis_lab import __version__
 from neurogenesis_lab.cli.config_builder import build_sim_config, validate_run_config
 from neurogenesis_lab.config import SCHEMA_VERSION, SimConfig, seed_all
 from neurogenesis_lab.encoding import Encoder, Event
+from neurogenesis_lab.experiments import ExperimentRecord, ExperimentStore, utc_now_iso
 from neurogenesis_lab.learning import AutoLearner, RuleDiscovery
 from neurogenesis_lab.network import Network
 from neurogenesis_lab.neuron import AdExNeuron, IzhikevichNeuron, LIFNeuron
@@ -210,20 +211,80 @@ def _print_summary(
         )
 
 
+def _start_tracking(
+    cfg: SimConfig, args: argparse.Namespace, output_path: Path
+) -> tuple[ExperimentStore | None, ExperimentRecord | None]:
+    """创建实验追踪记录（status=running），失败时降级为不追踪。"""
+    try:
+        output_dir = output_path.parent
+        db_path = Path(getattr(args, "output", "outputs") or "outputs") / "experiments.db"
+        store = ExperimentStore(db_path)
+        record = ExperimentRecord(
+            experiment_id=output_dir.name,
+            experiment_name=getattr(args, "experiment_name", None),
+            command="run",
+            status="running",
+            version=__version__,
+            seed=cfg.seed,
+            ticks=cfg.ticks,
+            neurons=int(getattr(args, "neurons", 8) or 8),
+            output_dir=str(output_dir),
+            output_file=str(output_path),
+            config=cfg.to_dict(),
+            cli_args={
+                key: value
+                for key, value in vars(args).items()
+                if isinstance(value, (str, int, float, bool)) or value is None
+            },
+        )
+        store.save(record)
+        return store, record
+    except Exception as exc:
+        print(f"  警告: 实验追踪初始化失败 ({exc})")
+        return None, None
+
+
+def _finish_tracking(
+    store: ExperimentStore | None,
+    record: ExperimentRecord | None,
+    *,
+    status: str,
+    runtime_seconds: float | None = None,
+    summary: dict[str, Any] | None = None,
+    final_metrics: dict[str, Any] | None = None,
+    error: str | None = None,
+) -> None:
+    """写入实验结束元数据并关闭存储，失败时仅告警。"""
+    if store is None or record is None:
+        return
+    try:
+        record.status = status
+        record.finished_at = utc_now_iso()
+        record.runtime_seconds = runtime_seconds
+        record.summary = dict(summary or {})
+        record.final_metrics = dict(final_metrics or {})
+        record.error = error
+        store.save(record)
+    except Exception as exc:
+        print(f"  警告: 实验元数据写入失败 ({exc})")
+    finally:
+        store.close()
+
+
 def _finalize_run(
     *,
     run_end_tick: int,
     network: Network,
     observer: NetworkObserver,
     logger: ObservabilityLogger,
-) -> tuple[EngineSummary, Path]:
+) -> tuple[EngineSummary, dict[str, Any], Path]:
     """收尾运行，写出摘要并关闭日志。"""
     final_metrics = observer.get_network_metrics(run_end_tick)
     summary = network.get_summary()
     logger.log_summary(run_end_tick, final_metrics)
     output_path = logger.get_output_path()
     logger.close()
-    return summary, output_path
+    return summary, final_metrics, output_path
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -237,24 +298,37 @@ def cmd_run(args: argparse.Namespace) -> None:
     logger, observer, live_monitor, checkpoint_interval, checkpoint_dir = _init_logging(
         cfg, args, network
     )
-    elapsed, auto_learner = _run_simulation_loop(
-        network,
-        cfg,
-        logger,
-        observer,
-        live_monitor,
-        run_start_tick,
-        run_end_tick,
-        checkpoint_interval,
-        checkpoint_dir,
-    )
+    store, record = _start_tracking(cfg, args, logger.get_output_path())
+    try:
+        elapsed, auto_learner = _run_simulation_loop(
+            network,
+            cfg,
+            logger,
+            observer,
+            live_monitor,
+            run_start_tick,
+            run_end_tick,
+            checkpoint_interval,
+            checkpoint_dir,
+        )
+    except BaseException as exc:
+        _finish_tracking(store, record, status="failed", error=str(exc) or type(exc).__name__)
+        raise
     if live_monitor is not None:
         live_monitor.finalize()
-    summary, output_path = _finalize_run(
+    summary, final_metrics, output_path = _finalize_run(
         run_end_tick=run_end_tick,
         network=network,
         observer=observer,
         logger=logger,
+    )
+    _finish_tracking(
+        store,
+        record,
+        status="completed",
+        runtime_seconds=elapsed,
+        summary=dict(summary),
+        final_metrics=final_metrics,
     )
     _print_summary(
         elapsed=elapsed,

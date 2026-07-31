@@ -6,8 +6,13 @@ import argparse
 
 from neurogenesis_lab import __version__
 from neurogenesis_lab.cli.benchmark import cmd_benchmark
+from neurogenesis_lab.cli.compare import cmd_compare
+from neurogenesis_lab.cli.delete import cmd_delete
 from neurogenesis_lab.cli.info import cmd_info
+from neurogenesis_lab.cli.list import cmd_list
 from neurogenesis_lab.cli.run import cmd_run
+
+_DEFAULT_DB = "outputs/experiments.db"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -57,6 +62,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="低激活告警阈值（总放电/总传播任一不高于该值则告警）",
     )
     run_parser.add_argument("--output", type=str, default="outputs", help="输出目录")
+    run_parser.add_argument(
+        "--experiment-name",
+        type=str,
+        default=None,
+        help="实验名称（记录到实验元数据，便于 list/compare 检索）",
+    )
     run_parser.add_argument("--config", type=str, default=None, help="TOML 配置文件路径")
     run_parser.add_argument("--debug", action="store_true", help="开启 debug 模式")
     run_parser.add_argument(
@@ -132,6 +143,32 @@ def _build_parser() -> argparse.ArgumentParser:
     # info
     subparsers.add_parser("info", help="显示版本与配置信息")
 
+    # list
+    list_parser = subparsers.add_parser("list", help="列出已追踪的实验")
+    list_parser.add_argument("--db", type=str, default=_DEFAULT_DB, help="实验数据库路径")
+    list_parser.add_argument(
+        "--filter",
+        type=str,
+        default=None,
+        help='过滤表达式，如 "neurons>100,seed=42"（op: > < >= <= = !=，多条件用 , 或 and 连接）',
+    )
+    list_parser.add_argument("--limit", type=int, default=0, help="最多显示条数，0=不限")
+
+    # compare
+    compare_parser = subparsers.add_parser("compare", help="对比多个实验的参数与结果")
+    compare_parser.add_argument("experiment_ids", nargs="+", help="待对比的实验 ID（≥2 个）")
+    compare_parser.add_argument("--db", type=str, default=_DEFAULT_DB, help="实验数据库路径")
+
+    # delete
+    delete_parser = subparsers.add_parser("delete", help="删除实验元数据与输出文件")
+    delete_parser.add_argument("experiment_ids", nargs="+", help="待删除的实验 ID")
+    delete_parser.add_argument("--db", type=str, default=_DEFAULT_DB, help="实验数据库路径")
+    delete_parser.add_argument(
+        "--keep-files",
+        action="store_true",
+        help="仅删除元数据，保留输出文件",
+    )
+
     return parser
 
 
@@ -146,5 +183,11 @@ def main() -> None:
         cmd_benchmark(args)
     elif args.command == "info":
         cmd_info(args)
+    elif args.command == "list":
+        cmd_list(args)
+    elif args.command == "compare":
+        cmd_compare(args)
+    elif args.command == "delete":
+        cmd_delete(args)
     else:
         parser.print_help()
