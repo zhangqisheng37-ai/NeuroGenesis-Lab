@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
+import logging
 import types
 from typing import Any
-import importlib
 
 from neurogenesis_lab.config import SCHEMA_VERSION
+
+_logger = logging.getLogger(__name__)
 
 core: types.ModuleType | None
 try:
@@ -64,17 +67,20 @@ def parallel_lif_tick_safe(
 
     core_mod = core
     if core_mod is not None and HAS_RUST_CORE and hasattr(core_mod, "parallel_lif_tick"):
-        out_v, spikes = core_mod.parallel_lif_tick(
-            voltages,
-            v_rest,
-            v_reset,
-            v_th,
-            tau_m,
-            r_m,
-            inputs,
-            dt,
-        )
-        return list(out_v), list(spikes), "rust"
+        try:
+            out_v, spikes = core_mod.parallel_lif_tick(
+                voltages,
+                v_rest,
+                v_reset,
+                v_th,
+                tau_m,
+                r_m,
+                inputs,
+                dt,
+            )
+            return list(out_v), list(spikes), "rust"
+        except Exception as exc:  # noqa: BLE001 - Rust 运行期错误必须降级而非崩溃
+            _logger.warning("Rust parallel_lif_tick 调用失败，回退 Python 实现: %s", exc)
 
     out_v = list(voltages)
     spikes = [False] * len(out_v)
@@ -101,12 +107,15 @@ def mine_pattern_counts_safe(
 
     core_mod = core
     if core_mod is not None and HAS_RUST_CORE and hasattr(core_mod, "mine_pattern_counts"):
-        tri_rows, bi_rows = core_mod.mine_pattern_counts(samples, min_support)
-        rust_trigram_support = {
-            (int(a), int(b), int(c)): int(support) for a, b, c, support in tri_rows
-        }
-        rust_bigram_support = {(int(a), int(b)): int(support) for a, b, support in bi_rows}
-        return rust_trigram_support, rust_bigram_support, "rust"
+        try:
+            tri_rows, bi_rows = core_mod.mine_pattern_counts(samples, min_support)
+            rust_trigram_support = {
+                (int(a), int(b), int(c)): int(support) for a, b, c, support in tri_rows
+            }
+            rust_bigram_support = {(int(a), int(b)): int(support) for a, b, support in bi_rows}
+            return rust_trigram_support, rust_bigram_support, "rust"
+        except Exception as exc:  # noqa: BLE001 - Rust 运行期错误必须降级而非崩溃
+            _logger.warning("Rust mine_pattern_counts 调用失败，回退 Python 实现: %s", exc)
 
     trigram_support: dict[tuple[int, int, int], int] = {}
     bigram_support: dict[tuple[int, int], int] = {}

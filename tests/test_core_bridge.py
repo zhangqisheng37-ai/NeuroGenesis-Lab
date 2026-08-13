@@ -91,3 +91,46 @@ def test_mine_pattern_counts_safe_python_fallback(monkeypatch) -> None:
     assert backend == "python-fallback"
     assert trigram.get((1, 2, 3)) == 2
     assert bigram.get((1, 2)) == 3
+
+
+def test_parallel_lif_tick_safe_falls_back_when_rust_raises(monkeypatch) -> None:
+    """Rust 模块存在但调用时抛异常（ABI 不匹配/panic）应降级而非崩溃。"""
+    fake_core = Mock()
+    fake_core.parallel_lif_tick.side_effect = RuntimeError("Rust ABI mismatch")
+
+    monkeypatch.setattr(core_bridge, "HAS_RUST_CORE", True)
+    monkeypatch.setattr(core_bridge, "core", fake_core)
+
+    out_v, spikes, backend = core_bridge.parallel_lif_tick_safe(
+        [-65.0, -60.0],
+        v_rest=-65.0,
+        v_reset=-65.0,
+        v_th=-55.0,
+        tau_m=20.0,
+        r_m=1.0,
+        inputs=[0.0, 200.0],
+        dt=1.0,
+    )
+
+    assert backend == "python-fallback"
+    assert len(out_v) == 2
+    assert spikes == [False, True]
+    assert abs(out_v[1] - (-50.25)) < 1e-9, "降级后 Python 计算应正确"
+
+
+def test_mine_pattern_counts_safe_falls_back_when_rust_raises(monkeypatch) -> None:
+    """Rust 模式挖掘运行期抛异常时应降级到 Python 实现。"""
+    fake_core = Mock()
+    fake_core.mine_pattern_counts.side_effect = RuntimeError("Rust panic")
+
+    monkeypatch.setattr(core_bridge, "HAS_RUST_CORE", True)
+    monkeypatch.setattr(core_bridge, "core", fake_core)
+
+    trigram, bigram, backend = core_bridge.mine_pattern_counts_safe(
+        [[1, 2, 3], [1, 2, 3], [1, 2]],
+        min_support=2,
+    )
+
+    assert backend == "python-fallback"
+    assert trigram.get((1, 2, 3)) == 2
+    assert bigram.get((1, 2)) == 3
