@@ -51,11 +51,11 @@ _templates = Jinja2Templates(directory=str(_TEMPLATE_DIR))
 _simulation_lock = threading.Lock()
 _simulation_state: dict[str, Any] = {
     "running": False,
-    "control": None,      # LiveControlState
-    "thread": None,       # threading.Thread
-    "config": None,       # SimConfig
+    "control": None,  # LiveControlState
+    "thread": None,  # threading.Thread
+    "config": None,  # SimConfig
     "tick": 0,
-    "state": "idle",      # idle / running / paused / finished
+    "state": "idle",  # idle / running / paused / finished
     "tick_ms": 50,
     "experiment_id": None,  # 当前运行对应的实验记录 ID
     "message_queue": None,  # deque
@@ -75,18 +75,6 @@ def _reset_simulation_state() -> None:
     _simulation_state["experiment_id"] = None
     _simulation_state["message_queue"] = None
     _simulation_state["message_event"] = None
-
-
-async def _broadcast(message: dict[str, Any]) -> None:
-    """向所有已连接的 WebSocket 客户端广播消息。"""
-    dead: list[WebSocket] = []
-    for ws in list(_ws_clients):
-        try:
-            await ws.send_json(message)
-        except Exception:
-            dead.append(ws)
-    for ws in dead:
-        _ws_clients.discard(ws)
 
 
 def _push_message(message: dict[str, Any]) -> None:

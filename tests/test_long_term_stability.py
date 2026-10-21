@@ -238,8 +238,6 @@ def test_energy_cap_enforcement():
             ), f"神经元 {neuron.id} 能量超过上限: {neuron.energy} > {network.energy_cap}"
 
 
-
-
 def _init_pair_engines(seed: int, size: int = 20) -> tuple[Network, VectorizedNetwork]:
     """初始化同 seed 的双引擎对照组。"""
     random.seed(seed)
@@ -313,4 +311,3 @@ def test_long_term_dual_engine_population_trend_consistency() -> None:
         f"尾段波动趋势偏差过大: std={std_tail_std:.2f}, vec={vec_tail_std:.2f}, "
         f"ratio={std_diff_ratio:.2%}"
     )
-

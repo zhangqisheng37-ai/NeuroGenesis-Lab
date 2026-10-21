@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
   <title>{% block title %}仪表盘{% endblock %} — NeuroGenesis Lab</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/css/app.css">
@@ -11,18 +12,28 @@
     crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body class="{% block body_class %}{% endblock %}">
+  {% set current_path = request.url.path %}
   <nav class="navbar">
     <div class="navbar-brand">
-      <span class="brand-icon">🧬</span>
+      <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3.1"></circle>
+        <path d="M12 3.4v5.5M12 15.1v5.5M3.4 12h5.5M15.1 12h5.5"></path>
+        <path d="M6.2 6.2l3.6 3.6M14.2 14.2l3.6 3.6M17.8 6.2l-3.6 3.6M9.8 14.2l-3.6 3.6"></path>
+        <circle cx="12" cy="2.8" r="1.1"></circle>
+        <circle cx="12" cy="21.2" r="1.1"></circle>
+        <circle cx="2.8" cy="12" r="1.1"></circle>
+        <circle cx="21.2" cy="12" r="1.1"></circle>
+      </svg>
       <a href="/">NeuroGenesis Lab</a>
       <span class="navbar-version">v{{ version }}</span>
     </div>
     <ul class="navbar-links">
-      <li><a href="/" class="nav-link">仪表盘</a></li>
-      <li><a href="/experiments" class="nav-link">实验列表</a></li>
-      <li><a href="/configure" class="nav-link">新建实验</a></li>
-      <li><a href="/monitor" class="nav-link">实时监控</a></li>
-      <li><a href="/benchmark" class="nav-link">Benchmark</a></li>
+      <li><a href="/" class="nav-link{% if current_path == '/' %} active{% endif %}">仪表盘</a></li>
+      <li><a href="/experiments" class="nav-link{% if current_path.startswith('/experiments') %} active{% endif %}">实验列表</a></li>
+      <li><a href="/configure" class="nav-link{% if current_path == '/configure' %} active{% endif %}">新建实验</a></li>
+      <li><a href="/monitor" class="nav-link{% if current_path == '/monitor' %} active{% endif %}">实时监控</a></li>
+      <li><a href="/benchmark" class="nav-link{% if current_path == '/benchmark' %} active{% endif %}">Benchmark</a></li>
     </ul>
   </nav>
 

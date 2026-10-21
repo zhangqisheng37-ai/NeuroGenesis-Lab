@@ -2,6 +2,8 @@
 
 from unittest.mock import Mock
 
+import pytest
+
 from neurogenesis_lab import core_bridge
 
 
@@ -31,8 +33,6 @@ def test_parallel_lif_tick_safe_python_fallback(monkeypatch) -> None:
     assert len(spikes) == 2
 
 
-
-
 def test_parallel_lif_tick_safe_uses_rust_path(monkeypatch) -> None:
     fake_core = Mock()
     fake_core.parallel_lif_tick.return_value = ([-65.0, -65.0], [False, True])
@@ -55,10 +55,6 @@ def test_parallel_lif_tick_safe_uses_rust_path(monkeypatch) -> None:
     assert out_v == [-65.0, -65.0]
     assert spikes == [False, True]
     fake_core.parallel_lif_tick.assert_called_once()
-
-
-
-
 
 
 def test_mine_pattern_counts_safe_uses_rust_path(monkeypatch) -> None:
@@ -115,7 +111,32 @@ def test_parallel_lif_tick_safe_falls_back_when_rust_raises(monkeypatch) -> None
     assert backend == "python-fallback"
     assert len(out_v) == 2
     assert spikes == [False, True]
-    assert abs(out_v[1] - (-50.25)) < 1e-9, "降级后 Python 计算应正确"
+    # dv = (-(-60 + 65) + 200) / 20 = 9.75 -> -50.25 达阈值，
+    # 与 Rust 路径一致：放电后回归 v_reset（-65.0），而非保留积分值
+    assert out_v[0] == pytest.approx(-65.0)
+    assert out_v[1] == pytest.approx(-65.0)
+
+
+def test_parallel_lif_tick_safe_fallback_integrates_voltage(monkeypatch) -> None:
+    """降级路径在未达阈值时应保留积分后的膜电位且不标记放电。"""
+    monkeypatch.setattr(core_bridge, "HAS_RUST_CORE", False)
+
+    out_v, spikes, backend = core_bridge.parallel_lif_tick_safe(
+        [-65.0, -60.0],
+        v_rest=-65.0,
+        v_reset=-65.0,
+        v_th=-55.0,
+        tau_m=20.0,
+        r_m=1.0,
+        inputs=[0.0, 100.0],
+        dt=1.0,
+    )
+
+    assert backend == "python-fallback"
+    # dv = (-(-60 + 65) + 100) / 20 = 4.75 -> -55.25，未达 -55 阈值
+    assert out_v[0] == pytest.approx(-65.0)
+    assert out_v[1] == pytest.approx(-55.25)
+    assert spikes == [False, False]
 
 
 def test_mine_pattern_counts_safe_falls_back_when_rust_raises(monkeypatch) -> None:

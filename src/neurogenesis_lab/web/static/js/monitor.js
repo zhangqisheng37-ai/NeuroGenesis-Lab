@@ -38,15 +38,23 @@ class TimeSeriesChart {
     this.width = 0;
     this.height = 170;
     this._measure();
-    window.addEventListener("resize", () => this._measure());
+    const parent = this.svg.node()?.parentElement;
+    if (parent && typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(() => this._measure()).observe(parent);
+    } else {
+      window.addEventListener("resize", () => this._measure());
+    }
   }
 
   _measure() {
     const el = this.svg.node();
     if (!el || !el.parentElement) return;
-    this.width = Math.max(el.parentElement.clientWidth || 300, 200);
+    const width = Math.max(el.parentElement.clientWidth || 300, 200);
+    if (width === this.width) return;
+    this.width = width;
     this.height = 170;
     this.svg.attr("viewBox", `0 0 ${this.width} ${this.height}`);
+    if (this.series.alive.length) this.render();
   }
 
   /** 追加一个数据点并裁剪窗口。 */
@@ -156,18 +164,25 @@ class NetworkMonitor {
     this._checkRunning();
   }
 
-  /** 初始化 SVG 画布尺寸与窗口监听。 */
+  /** 初始化 SVG 画布尺寸，并跟随容器尺寸变化（不依赖 window resize）。 */
   _initSVG() {
     const wrap = document.querySelector(".monitor-canvas-wrap");
     if (!wrap) return;
-    this.width = wrap.clientWidth;
-    this.height = wrap.clientHeight;
-    this.svg.attr("viewBox", `0 0 ${this.width} ${this.height}`);
-    window.addEventListener("resize", () => {
-      this.width = wrap.clientWidth;
-      this.height = wrap.clientHeight;
-      this.svg.attr("viewBox", `0 0 ${this.width} ${this.height}`);
-    });
+    const sync = () => {
+      const w = wrap.clientWidth;
+      const h = wrap.clientHeight;
+      if (!w || !h || (w === this.width && h === this.height)) return;
+      this.width = w;
+      this.height = h;
+      this.svg.attr("viewBox", `0 0 ${w} ${h}`);
+    };
+    sync();
+    // 启动/暂停会隐藏启动面板改变列宽，需监听容器自身尺寸
+    if (typeof ResizeObserver !== "undefined") {
+      new ResizeObserver(sync).observe(wrap);
+    } else {
+      window.addEventListener("resize", sync);
+    }
   }
 
   /** 绑定控制面板按钮事件。 */
@@ -543,7 +558,11 @@ class NetworkMonitor {
     if (btnStop) btnStop.disabled = !running;
 
     // 启动面板在空闲与结束时可见（结束后可立即配置再次运行）；结果入口在结束时显示
-    if (launchPanel) launchPanel.style.display = (state === "idle" || state === "finished") ? "" : "none";
+    const showLaunch = state === "idle" || state === "finished";
+    if (launchPanel) launchPanel.style.display = showLaunch ? "" : "none";
+    // 首列随之收缩，避免画布被自动放置到窄列
+    const layout = document.querySelector(".workbench-layout");
+    if (layout) layout.classList.toggle("is-running", !showLaunch);
     if (resultLink) resultLink.style.display = finished ? "" : "none";
     if (finished && this.experimentId) {
       const link = document.getElementById("result-link-a");

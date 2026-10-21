@@ -1,12 +1,18 @@
 # cli — 命令行接口
 
-CLI 子包（v0.6.0 从 `__main__.py` 拆分），提供 `run` / `benchmark` / `info` 三个命令。
+CLI 子包（v0.6.0 从 `__main__.py` 拆分），提供 8 个子命令：
+`run` / `serve` / `web` / `list` / `compare` / `delete` / `benchmark` / `info`。
 
 ## 模块结构
 
 - **`cli.parser`** — argparse 参数定义
 - **`cli.config_builder`** — TOML 解析与 SimConfig 构建 (`build_sim_config`)
 - **`cli.run`** — `cmd_run()` 仿真运行入口
+- **`cli.serve`** — `cmd_serve()` 独立实时可视化服务
+- **`cli.web`** — `cmd_web()` Web 管理界面
+- **`cli.list`** — `cmd_list()` 实验列表与过滤查询
+- **`cli.compare`** — `cmd_compare()` 多实验参数/指标对比
+- **`cli.delete`** — `cmd_delete()` 删除实验元数据与输出
 - **`cli.benchmark`** — `cmd_benchmark()` 性能基准
 - **`cli.info`** — `cmd_info()` 版本信息
 

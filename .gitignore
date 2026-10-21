@@ -42,6 +42,7 @@ htmlcov/
 .nox/
 .coverage
 .coverage.*
+.coverage_ctx.json
 .cache
 nosetests.xml
 coverage.xml
@@ -142,8 +143,9 @@ cython_debug/
 # Pytest temporary files
 .pytest_tmp/
 
-# Runtime outputs
-outputs/
+# Runtime outputs（仅跟踪目录约定说明，实验产物不入库）
+outputs/*
+!outputs/README.md
 
 # Scratch / backup copies of source modules (never track duplicates of src/)
 tmp_orig_*.py

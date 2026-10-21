@@ -27,7 +27,7 @@ python -m neurogenesis_lab info
 
 `info` 会输出：
 
-- 版本（`v0.6.0`）
+- 版本（`v0.6.1`）
 - Schema（`2.0.0`）
 - Rust Core 可用性与组件列表
 - 默认配置 JSON

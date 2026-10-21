@@ -111,8 +111,6 @@ def test_checkpoint_missing_optional_keys_restores(tmp_path: Path) -> None:
     assert len(restored.neurons) == len(net.neurons)
 
 
-
-
 def test_run_checkpoint_resume_summary_consistency(tmp_path: Path) -> None:
     """端到端链路：run -> checkpoint -> resume 与连续运行摘要一致。"""
     seed = 2026

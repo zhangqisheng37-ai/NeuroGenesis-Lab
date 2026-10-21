@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, TYPE_CHECKING, Mapping
+from typing import Any, IO, TYPE_CHECKING, Mapping
 
 if TYPE_CHECKING:
     from neurogenesis_lab.network import Network
@@ -305,15 +305,26 @@ def plot_network_topology(
         return None
 
 
+def _open_text(path: Path) -> IO[str]:
+    """按文件后缀选择文本流打开方式（``.gz`` 自动解压）
+
+    Args:
+        path: 待读取的文件路径
+
+    Returns:
+        以文本模式打开的文件对象，支持 with 语句
+    """
+    import gzip
+
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8")
+    return open(path, "rt", encoding="utf-8")
+
+
 def load_jsonl_data(path: Path) -> list[dict[str, Any]]:
     """加载 JSONL 数据"""
-    import gzip
-    from typing import Callable, IO
-
-    data = []
-    open_func: Callable[..., IO[str]] = gzip.open if path.suffix == ".gz" else open
-
-    with open_func(path, "rt", encoding="utf-8") as f:
+    data: list[dict[str, Any]] = []
+    with _open_text(path) as f:
         for line in f:
             line = line.strip()
             if line:

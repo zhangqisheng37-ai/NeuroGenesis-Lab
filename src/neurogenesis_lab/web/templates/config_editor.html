@@ -5,7 +5,7 @@
 {% block content %}
 <div class="section">
   <div class="page-header">
-    <span class="page-icon">⚙️</span>
+    <span class="page-icon"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.1"/><path d="M12 3.2v2.2M12 18.6v2.2M3.2 12h2.2M18.6 12h2.2M5.9 5.9l1.6 1.6M16.5 16.5l1.6 1.6M18.1 5.9l-1.6 1.6M7.5 16.5l-1.6 1.6"/></svg></span>
     <h2>配置编辑器</h2>
     <div class="page-actions">
       <label for="preset-select" style="color:var(--muted);font-size:13px;">预设模板：</label>
@@ -143,6 +143,7 @@
     const desc = FIELD_DESC[name] || name;
     const fieldId = `field-${section}-${name}`;
     let input = "";
+    let spanStyle = "";
 
     if (info.type === "bool") {
       const checked = info.default ? "checked" : "";
@@ -158,11 +159,13 @@
           ? JSON.stringify(info.default)
           : String(info.default ?? "");
       const escaped = defaultStr.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      input = `<textarea id="${fieldId}" rows="2" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="str">${escaped}</textarea>`;
+      input = `<textarea id="${fieldId}" rows="3" class="form-input config-field" data-section="${section}" data-field="${name}" data-type="str">${escaped}</textarea>`;
+      // 复杂字段（JSON/dict）独占整行，避免在 240px 网格内被截断
+      spanStyle = "grid-column:1/-1;";
     }
 
     return `
-      <div class="form-group" style="margin-bottom:0.5rem;">
+      <div class="form-group" style="margin-bottom:0.5rem;${spanStyle}">
         <label for="${fieldId}">${name} <span style="color:var(--muted);font-size:11px;">(${desc})</span></label>
         ${input}
         <div class="field-error" id="err-${fieldId}" style="color:var(--danger);font-size:11px;display:none;"></div>

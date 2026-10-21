@@ -203,8 +203,6 @@ def test_generate_report(tmp_path):
     assert (output_dir / "learning.png").exists()
 
 
-
-
 @pytest.mark.skipif(not MATPLOTLIB_AVAILABLE, reason="matplotlib 未安装")
 def test_live_monitor_on_tick_updates_network_path(ring_network_factory) -> None:
     monitor = LiveMonitor(plot_interval=1, max_points=10)

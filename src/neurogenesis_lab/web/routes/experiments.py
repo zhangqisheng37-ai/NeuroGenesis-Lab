@@ -107,7 +107,13 @@ async def experiment_detail_page(
 
 
 _VALID_SORT_FIELDS = {
-    "created_at", "experiment_id", "status", "seed", "neurons", "ticks", "runtime_seconds"
+    "created_at",
+    "experiment_id",
+    "status",
+    "seed",
+    "neurons",
+    "ticks",
+    "runtime_seconds",
 }
 
 
@@ -232,9 +238,7 @@ async def api_experiment_output(
 
     output_file = record.output_file
     if not output_file or not Path(output_file).is_file():
-        return JSONResponse(
-            {"lines": [], "total_lines": 0, "truncated": False}
-        )
+        return JSONResponse({"lines": [], "total_lines": 0, "truncated": False})
 
     lines: list[dict] = []
     total_lines = 0

@@ -47,8 +47,10 @@ python -m neurogenesis_lab benchmark --neurons 5000 --ticks 100
 ## 当前状态
 
 - **版本**：v0.6.1
-- **测试基线**：177+ passed, 覆盖率 ~92%
-- **阶段**：Phase 7 已完成，Phase 8 规划中
+- **测试基线**：全量测试通过，覆盖率门禁 ≥90%（CI 强制）
+- **阶段**：Phase 8 进行中 — 实时可视化、实验管理、Web 管理界面已完成
+
+> 实验产物目录约定见仓库根目录 `outputs/README.md`。
 
 ## 导航
 

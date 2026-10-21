@@ -65,7 +65,6 @@ def create_web_app(db_path: str = "outputs/experiments.db") -> FastAPI:
     async def favicon() -> JSONResponse:
         return JSONResponse(content=None, status_code=204)
 
-
     # ── 仪表盘首页 ────────────────────────────────────────────
 
     @app.get("/", response_class=HTMLResponse)
@@ -153,9 +152,7 @@ def create_web_app(db_path: str = "outputs/experiments.db") -> FastAPI:
             compare_n = min(neuron_count, 50)
             _random.seed(seed)
             neurons = [LIFNeuron() for _ in range(compare_n)]
-            net = Network(
-                neurons={n.id: n for n in neurons}, max_neurons=compare_n * 2
-            )
+            net = Network(neurons={n.id: n for n in neurons}, max_neurons=compare_n * 2)
             for i, neuron in enumerate(neurons):
                 for j in range(1, min(4, compare_n)):
                     target = neurons[(i + j) % compare_n]
@@ -168,12 +165,8 @@ def create_web_app(db_path: str = "outputs/experiments.db") -> FastAPI:
             # Rust 并行 LIF
             rust_size = 10000
             rng = _np.random.default_rng(seed)
-            voltages = (
-                rng.normal(loc=-65.0, scale=2.0, size=rust_size).astype(float).tolist()
-            )
-            inputs = (
-                rng.normal(loc=0.5, scale=1.0, size=rust_size).astype(float).tolist()
-            )
+            voltages = rng.normal(loc=-65.0, scale=2.0, size=rust_size).astype(float).tolist()
+            inputs = rng.normal(loc=0.5, scale=1.0, size=rust_size).astype(float).tolist()
             rust_v = voltages
             rust_spikes = 0
             t0 = _time.time()

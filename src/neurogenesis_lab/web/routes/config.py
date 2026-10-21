@@ -100,11 +100,7 @@ def _toml_value(value: Any) -> str:
     if isinstance(value, list):
         return f"[{', '.join(_toml_value(v) for v in value)}]"
     if isinstance(value, dict):
-        return (
-            "{ "
-            + ", ".join(f"{k} = {_toml_value(v)}" for k, v in value.items())
-            + " }"
-        )
+        return "{ " + ", ".join(f"{k} = {_toml_value(v)}" for k, v in value.items()) + " }"
     return str(value)
 
 
